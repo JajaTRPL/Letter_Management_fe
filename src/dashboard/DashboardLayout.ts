@@ -87,9 +87,9 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
             import('../tendik/ProfilTendik').then(({ renderProfilTendik }) => {
                 renderProfilTendik(role);
             });
-        } else if (['kadep', 'kaprodi', 'sekdep', 'sekprodi', 'akademik'].includes(role)) {
-            import('./ProfilAkademik').then(({ renderProfilAkademik }) => {
-                renderProfilAkademik(role);
+        } else if (['kadep', 'kaprodi', 'sekprodi', 'sekdep', 'akademik'].includes(role)) {
+            import('../akademik/ProfilKaprodi').then(({ renderProfilKaprodi }) => {
+                renderProfilKaprodi(role);
             });
         } else {
             Toastify({

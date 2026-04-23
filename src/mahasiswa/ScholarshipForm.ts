@@ -1,11 +1,18 @@
-import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { renderDokumenMahasiswa } from './DokumenMahasiswa';
+import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import Toastify from 'toastify-js';
+
+import { mapApplicationToFormData, mapProfileToFormData } from './scholarship-form/ScholarshipDataMapper';
+import { renderStep1Biodata } from './scholarship-form/Step1Biodata';
+import { renderStep2Keluarga, attachStep2Events } from './scholarship-form/Step2Keluarga';
+import { renderStep3Akademik, attachStep3Events } from './scholarship-form/Step3Akademik';
+import { renderStep4Submit } from './scholarship-form/Step4Submit';
 
 export const renderScholarshipForm = () => {
     let currentStep = 1;
     let formData: any = {
-        siblings: []
+        siblings: [],
+        scholarship_histories: []
     };
 
     const render = () => {
@@ -82,184 +89,11 @@ export const renderScholarshipForm = () => {
 
     const renderStepContent = () => {
         switch (currentStep) {
-            case 1: return `
-                <div class="animate-enter-right space-y-6">
-                    <div class="border-l-4 border-primary-teal pl-4 mb-8">
-                        <h3 class="text-xl font-bold text-gray-800">Biodata Mahasiswa</h3>
-                        <p class="text-sm text-gray-500">Pastikan data akademik Anda sudah benar.</p>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="space-y-2">
-                            <label class="text-sm font-bold text-gray-700">Nomor Induk Mahasiswa (NIM)</label>
-                            <input type="text" name="nim" value="${formData.nim || ''}" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium" placeholder="Contoh: 21/123456/TK/12345">
-                        </div>
-                        <div class="space-y-2">
-                            <label class="text-sm font-bold text-gray-700">Fakultas</label>
-                            <input type="text" name="faculty" value="${formData.faculty || 'Teknik'}" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium">
-                        </div>
-                        <div class="md:col-span-2 space-y-2">
-                            <label class="text-sm font-bold text-gray-700">Program Studi</label>
-                            <input type="text" name="study_program" value="${formData.study_program || ''}" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium" placeholder="Contoh: Teknologi Informasi">
-                        </div>
-                    </div>
-                </div>
-            `;
-            case 2: return `
-                <div class="animate-enter-right space-y-8">
-                    <div class="border-l-4 border-primary-teal pl-4">
-                        <h3 class="text-xl font-bold text-gray-800">Detail Pribadi & Keluarga</h3>
-                        <p class="text-sm text-gray-500">Data ini digunakan untuk analisis kelayakan beasiswa.</p>
-                    </div>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="space-y-2">
-                            <label class="text-sm font-bold text-gray-700">Tempat Lahir</label>
-                            <input type="text" name="pob" value="${formData.pob || ''}" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium">
-                        </div>
-                        <div class="space-y-2">
-                            <label class="text-sm font-bold text-gray-700">Tanggal Lahir</label>
-                            <input type="date" name="dob" value="${formData.dob || ''}" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium">
-                        </div>
-                        <div class="space-y-2">
-                            <label class="text-sm font-bold text-gray-700">Jenis Kelamin</label>
-                            <select name="gender" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium">
-                                <option value="Laki-laki" ${formData.gender === 'Laki-laki' ? 'selected' : ''}>Laki-laki</option>
-                                <option value="Perempuan" ${formData.gender === 'Perempuan' ? 'selected' : ''}>Perempuan</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="space-y-4 pt-4">
-                        <h4 class="font-bold text-gray-800 flex items-center gap-2">
-                            <span class="w-2 h-2 bg-primary-teal rounded-full"></span>
-                            Alamat
-                        </h4>
-                        <div class="grid grid-cols-1 gap-6">
-                            <div class="space-y-2">
-                                <label class="text-sm font-bold text-gray-700">Alamat Asal (KTP)</label>
-                                <textarea name="origin_address" rows="2" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium">${formData.origin_address || ''}</textarea>
-                            </div>
-                            <div class="space-y-2">
-                                <label class="text-sm font-bold text-gray-700">Alamat di Jogja</label>
-                                <textarea name="jogja_address" rows="2" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium">${formData.jogja_address || ''}</textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="space-y-6 pt-4">
-                        <h4 class="font-bold text-gray-800 flex items-center gap-2">
-                            <span class="w-2 h-2 bg-primary-teal rounded-full"></span>
-                            Data Orang Tua / Wali
-                        </h4>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                            <!-- Ayah -->
-                            <div class="space-y-4 p-6 bg-gray-50 rounded-2xl">
-                                <p class="text-xs font-black text-primary-teal uppercase">Ayah</p>
-                                <input type="text" name="father_name" placeholder="Nama Ayah" value="${formData.father_name || ''}" class="w-full px-4 py-2.5 bg-white rounded-lg border-none shadow-sm outline-none text-sm font-medium">
-                                <input type="text" name="father_job" placeholder="Pekerjaan" value="${formData.father_job || ''}" class="w-full px-4 py-2.5 bg-white rounded-lg border-none shadow-sm outline-none text-sm font-medium">
-                                <input type="number" name="father_income" placeholder="Penghasilan (Rp)" value="${formData.father_income || ''}" class="w-full px-4 py-2.5 bg-white rounded-lg border-none shadow-sm outline-none text-sm font-medium">
-                                <select name="father_status" class="w-full px-4 py-2.5 bg-white rounded-lg border-none shadow-sm outline-none text-sm font-medium">
-                                    <option value="Hidup" ${formData.father_status === 'Hidup' ? 'selected' : ''}>Masih Hidup</option>
-                                    <option value="Meninggal" ${formData.father_status === 'Meninggal' ? 'selected' : ''}>Meninggal</option>
-                                </select>
-                            </div>
-                            <!-- Ibu -->
-                            <div class="space-y-4 p-6 bg-gray-50 rounded-2xl">
-                                <p class="text-xs font-black text-pink-500 uppercase">Ibu</p>
-                                <input type="text" name="mother_name" placeholder="Nama Ibu" value="${formData.mother_name || ''}" class="w-full px-4 py-2.5 bg-white rounded-lg border-none shadow-sm outline-none text-sm font-medium">
-                                <input type="text" name="mother_job" placeholder="Pekerjaan" value="${formData.mother_job || ''}" class="w-full px-4 py-2.5 bg-white rounded-lg border-none shadow-sm outline-none text-sm font-medium">
-                                <input type="number" name="mother_income" placeholder="Penghasilan (Rp)" value="${formData.mother_income || ''}" class="w-full px-4 py-2.5 bg-white rounded-lg border-none shadow-sm outline-none text-sm font-medium">
-                                <select name="mother_status" class="w-full px-4 py-2.5 bg-white rounded-lg border-none shadow-sm outline-none text-sm font-medium">
-                                    <option value="Hidup" ${formData.mother_status === 'Hidup' ? 'selected' : ''}>Masih Hidup</option>
-                                    <option value="Meninggal" ${formData.mother_status === 'Meninggal' ? 'selected' : ''}>Meninggal</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            case 3: return `
-                <div class="animate-enter-right space-y-8">
-                    <div class="border-l-4 border-primary-teal pl-4">
-                        <h3 class="text-xl font-bold text-gray-800">Detail Beasiswa & Akademik</h3>
-                        <p class="text-sm text-gray-500">Informasi spesifik mengenai beasiswa yang diajukan.</p>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="md:col-span-2 space-y-2">
-                            <label class="text-sm font-bold text-gray-700">Nama Beasiswa yang Diajukan</label>
-                            <input type="text" name="scholarship_name" value="${formData.scholarship_name || ''}" placeholder="Misal: Beasiswa Djarum 2024" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium">
-                        </div>
-                        <div class="space-y-2">
-                            <label class="text-sm font-bold text-gray-700">Semester Saat Ini</label>
-                            <input type="number" name="current_semester" value="${formData.current_semester || ''}" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium">
-                        </div>
-                        <div class="space-y-2">
-                            <label class="text-sm font-bold text-gray-700">IPK Terakhir</label>
-                            <input type="number" step="0.01" name="ipk" value="${formData.ipk || ''}" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium">
-                        </div>
-                        <div class="space-y-2">
-                            <label class="text-sm font-bold text-gray-700">Jumlah Tanggungan Keluarga</label>
-                            <input type="number" name="family_dependents" value="${formData.family_dependents || ''}" class="w-full px-5 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-teal/20 outline-none transition-all font-medium">
-                        </div>
-                    </div>
-
-                    <div class="space-y-4 pt-4">
-                        <h4 class="font-bold text-gray-800 flex items-center gap-2">
-                            <span class="w-2 h-2 bg-primary-teal rounded-full"></span>
-                            Dokumen Pendukung
-                        </h4>
-                        <div class="p-8 border-2 border-dashed border-gray-200 rounded-[24px] bg-gray-50 hover:bg-gray-100/50 hover:border-primary-teal/30 transition-all cursor-pointer relative group">
-                            <input type="file" id="ktm-upload" class="absolute inset-0 opacity-0 cursor-pointer">
-                            <div class="flex flex-col items-center gap-3 text-center">
-                                <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary-teal">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                        <polyline points="17 8 12 3 7 8"></polyline>
-                                        <line x1="12" y1="3" x2="12" y2="15"></line>
-                                    </svg>
-                                </div>
-                                <div id="ktm-preview-name">
-                                    <p class="text-sm font-bold text-gray-700">Upload KTM (Kartu Tanda Mahasiswa)</p>
-                                    <p class="text-xs text-gray-400 mt-1">Format: PDF atau Image (Max 2MB)</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            case 4: return `
-                <div class="animate-enter-right space-y-8 text-center py-8">
-                    <div class="w-24 h-24 bg-teal-50 text-primary-teal rounded-full flex items-center justify-center mx-auto mb-6">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                        </svg>
-                    </div>
-                    <div class="max-w-md mx-auto">
-                        <h3 class="text-2xl font-black text-gray-800 mb-4">Siap untuk Kirim?</h3>
-                        <p class="text-gray-500 text-sm leading-relaxed">
-                            Pastikan semua data yang Anda masukkan sudah benar. Setelah dikirim, Anda tidak dapat mengubah data sampai proses verifikasi selesai.
-                        </p>
-                    </div>
-                    
-                    <div class="bg-gray-50 rounded-2xl p-6 text-left space-y-3 max-w-lg mx-auto">
-                        <div class="flex justify-between text-xs border-b border-gray-200 pb-2">
-                            <span class="text-gray-400 uppercase font-bold tracking-widest">Jenis Surat</span>
-                            <span class="text-gray-800 font-bold">Permohonan Beasiswa</span>
-                        </div>
-                        <div class="flex justify-between text-xs border-b border-gray-200 pb-2">
-                            <span class="text-gray-400 uppercase font-bold tracking-widest">Nama Beasiswa</span>
-                            <span class="text-gray-800 font-bold">${formData.scholarship_name || '-'}</span>
-                        </div>
-                        <div class="flex justify-between text-xs">
-                            <span class="text-gray-400 uppercase font-bold tracking-widest">Mahasiswa</span>
-                            <span class="text-gray-800 font-bold">${formData.nim || '-'}</span>
-                        </div>
-                    </div>
-                </div>
-            `;
+            case 1: return renderStep1Biodata(formData);
+            case 2: return renderStep2Keluarga(formData);
+            case 3: return renderStep3Akademik(formData);
+            case 4: return renderStep4Submit(formData);
+            default: return '';
         }
     };
 
@@ -275,95 +109,100 @@ export const renderScholarshipForm = () => {
             }
         });
 
-        document.getElementById('btn-next')?.addEventListener('click', async () => {
-            if (currentStep < 4) {
-                const stepSaved = await saveCurrentStep();
-                if (stepSaved) {
-                    currentStep++;
-                    render();
+        document.getElementById('btn-next')?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const btn = e.currentTarget as HTMLButtonElement;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="animate-spin mr-2">⏳</span> Menyimpan...';
+            btn.disabled = true;
+
+            try {
+                if (currentStep < 4) {
+                    const stepSaved = await saveCurrentStep();
+                    if (stepSaved) {
+                        currentStep++;
+                        render();
+                    }
+                } else {
+                    submitFinal();
                 }
-            } else {
-                submitFinal();
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
             }
         });
 
-        // Auto-fill initial data
-        if (currentStep === 1 && !formData.nim) {
+        // Auto-fill initial data if not already filled
+        if (!formData.nim) {
             fetchDraft();
         }
 
-        // File upload preview
-        const fileInput = document.getElementById('ktm-upload') as HTMLInputElement;
-        fileInput?.addEventListener('change', () => {
-            if (fileInput.files && fileInput.files[0]) {
-                const preview = document.getElementById('ktm-preview-name');
-                if (preview) {
-                    preview.innerHTML = `
-                        <p class="text-sm font-bold text-teal-600">File Terpilih:</p>
-                        <p class="text-xs font-medium text-gray-700 mt-1">${fileInput.files[0].name}</p>
-                    `;
-                }
-            }
-        });
-    };
+        if (currentStep === 2) {
+            attachStep2Events();
+        }
 
-    const mapApplicationToFormData = (app: any) => {
-        const profile = app.mahasiswa_profile || {};
-        const keluarga = profile.keluarga || [];
-        const father = keluarga.find((k: any) => k.jenis_relasi === 'ayah') || {};
-        const mother = keluarga.find((k: any) => k.jenis_relasi === 'ibu') || {};
-        const guardian = keluarga.find((k: any) => k.jenis_relasi === 'wali') || {};
-        const siblings = keluarga.filter((k: any) => k.jenis_relasi === 'saudara').map((s: any) => ({
-            name: s.nama_lengkap,
-            job_or_school: s.pekerjaan,
-            marital_status: s.status_kawin,
-            relation: s.keterangan
-        }));
+        if (currentStep === 3) {
+            // File upload previews for Step 3
+            ['ktm-upload', 'transcript-upload', 'offer-letter-upload'].forEach(id => {
+                const input = document.getElementById(id) as HTMLInputElement;
+                input?.addEventListener('change', () => {
+                    if (input.files && input.files[0]) {
+                        const label = input.parentElement?.previousElementSibling as HTMLLabelElement;
+                        if (label) {
+                            label.innerHTML = `${label.innerText.split(' (')[0]} <span class="text-teal-600">(Terpilih: ${input.files[0].name.substring(0, 15)}...)</span>`;
+                        }
+                    }
+                });
+            });
 
-        return {
-            ...formData,
-            ...app,
-            nim: profile.nim,
-            faculty: profile.fakultas,
-            study_program: profile.program_studi,
-            pob: profile.tempat_lahir,
-            dob: profile.tanggal_lahir,
-            gender: profile.jenis_kelamin === 'L' ? 'Laki-laki' : (profile.jenis_kelamin === 'P' ? 'Perempuan' : ''),
-            origin_address: profile.alamat_asal,
-            jogja_address: profile.alamat_domisili,
-            father_name: father.nama_lengkap,
-            father_job: father.pekerjaan,
-            father_income: father.penghasilan,
-            father_status: father.status_hidup ? father.status_hidup.charAt(0).toUpperCase() + father.status_hidup.slice(1) : 'Hidup',
-            father_death_date: father.tanggal_meninggal,
-            mother_name: mother.nama_lengkap,
-            mother_job: mother.pekerjaan,
-            mother_income: mother.penghasilan,
-            mother_status: mother.status_hidup ? mother.status_hidup.charAt(0).toUpperCase() + mother.status_hidup.slice(1) : 'Hidup',
-            mother_death_date: mother.tanggal_meninggal,
-            guardian_name: guardian.nama_lengkap,
-            guardian_job: guardian.pekerjaan,
-            guardian_income: guardian.penghasilan,
-            guardian_status: guardian.status_hidup ? guardian.status_hidup.charAt(0).toUpperCase() + guardian.status_hidup.slice(1) : 'Hidup',
-            guardian_death_date: guardian.tanggal_meninggal,
-            siblings: siblings.length > 0 ? siblings : formData.siblings
-        };
+            attachStep3Events();
+        }
     };
 
     const fetchDraft = async () => {
         const token = localStorage.getItem('auth_token');
+        console.log("Fetching initial data...");
+        
         try {
-            const res = await fetch('/api/mahasiswa/scholarship/step1', {
+            // 1. Ambil data profil SSO (Utama)
+            const resOpt = await fetch('/api/profile', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (resOpt.ok) {
+                const data = await resOpt.json();
+                console.log("SSO Profile received:", data.profile);
+                if (data.profile) {
+                   const profileData = mapProfileToFormData(data.profile, data.user || {}, formData);
+                   Object.assign(formData, profileData);
+                   console.log("Mapped SSO data to formData:", formData);
+                }
+            }
+
+            // 2. Ambil data draf beasiswa
+            const res = await fetch('/api/mahasiswa/scholarship/step-1', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 const data = await res.json();
+                console.log("Scholarship Draft received:", data.application);
                 if (data.application) {
-                    formData = mapApplicationToFormData(data.application);
-                    render();
+                    const draftData = mapApplicationToFormData(data.application, formData);
+                    Object.keys(draftData).forEach(key => {
+                        const val = draftData[key];
+                        // Hanya timpa jika draf memiliki nilai nyata
+                        if (val !== null && val !== undefined && val !== '' && val !== 0 && val !== '0') {
+                            formData[key] = val;
+                        }
+                    });
+                    console.log("Final Merged formData:", formData);
                 }
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error("Fetch Error Details:", e);
+        } finally {
+            render();
+            console.log("Step rendered with current formData");
+        }
     };
 
     const saveCurrentStep = async () => {
@@ -373,18 +212,55 @@ export const renderScholarshipForm = () => {
         const data: any = {};
         currentFormData.forEach((value, key) => { data[key] = value; });
 
+        // Preproses untuk Step 2 (Send existing formData because fields are now read-only in UI)
+        if (currentStep === 2) {
+            data.pob = formData.pob;
+            data.dob = formData.dob;
+            data.gender = formData.gender;
+            data.origin_address = formData.origin_address;
+            data.jogja_address = formData.jogja_address;
+            data.phone = formData.phone;
+            data.father_name = formData.father_name;
+            data.father_job = formData.father_job;
+            data.father_income = formData.father_income;
+            data.father_status = formData.father_status;
+            data.father_death_date = formData.father_death_date;
+            data.mother_name = formData.mother_name;
+            data.mother_job = formData.mother_job;
+            data.mother_income = formData.mother_income;
+            data.mother_status = formData.mother_status;
+            data.mother_death_date = formData.mother_death_date;
+            data.guardian_name = formData.guardian_name;
+            data.guardian_job = formData.guardian_job;
+            data.guardian_income = formData.guardian_income;
+            data.guardian_status = formData.guardian_status;
+            data.guardian_death_date = formData.guardian_death_date;
+            data.siblings = formData.siblings || [];
+            
+            delete data['pas_foto'];
+        }
+
         let endpoint = `/api/mahasiswa/scholarship/step-${currentStep}`;
         let body: any = data;
 
         // Custom handling for Step 3 (File Upload)
         if (currentStep === 3) {
             const bodyFormData = new FormData();
-            Object.keys(data).forEach(key => bodyFormData.append(key, data[key]));
-            const fileInput = document.getElementById('ktm-upload') as HTMLInputElement;
-            if (fileInput.files && fileInput.files[0]) {
-                bodyFormData.append('ktm', fileInput.files[0]);
-            }
-            bodyFormData.append('has_scholarship_history', '0'); // Mocking simple version
+            Object.keys(data).forEach(key => {
+                // Jangan append file dummy ke JSON key
+                if (!['ktm', 'transcript', 'offer_letter'].includes(key)) {
+                    bodyFormData.append(key, data[key]);
+                }
+            });
+            
+            const ktmFile = (document.getElementById('ktm-upload') as HTMLInputElement).files?.[0];
+            const transcriptFile = (document.getElementById('transcript-upload') as HTMLInputElement).files?.[0];
+            const offerFile = (document.getElementById('offer-letter-upload') as HTMLInputElement).files?.[0];
+            
+            if (ktmFile) bodyFormData.append('ktm', ktmFile);
+            if (transcriptFile) bodyFormData.append('transcript', transcriptFile);
+            if (offerFile) bodyFormData.append('offer_letter', offerFile);
+            
             body = bodyFormData;
         } else {
             body = JSON.stringify(data);
@@ -402,19 +278,51 @@ export const renderScholarshipForm = () => {
 
             if (res.ok) {
                 const result = await res.json();
-                formData = mapApplicationToFormData(result.application);
+                const newDraftData = mapApplicationToFormData(result.application, formData);
+                Object.keys(newDraftData).forEach(key => {
+                    const val = newDraftData[key];
+                    // Only overwrite with meaningful values.
+                    if (val !== null && val !== undefined && val !== '' && val !== 0 && val !== '0') {
+                        formData[key] = val;
+                    }
+                });
                 return true;
             } else {
-                const err = await res.json();
+                let errorMsg = "Pastikan semua kolom terisi dengan benar.";
+                const contentType = res.headers.get("content-type");
+                
+                if (contentType && contentType.includes("application/json")) {
+                    try {
+                        const err = await res.json();
+                        if (err.errors) {
+                            const firstKey = Object.keys(err.errors)[0];
+                            errorMsg = err.errors[firstKey][0];
+                        } else if (err.message) {
+                            errorMsg = err.message;
+                        }
+                    } catch(e) {
+                        console.error("Error parsing JSON failure", e);
+                    }
+                } else {
+                    errorMsg = `Server Error (${res.status}): ${res.statusText}`;
+                }
+
+                // @ts-ignore
                 Toastify({
-                    text: "Gagal menyimpan: " + (err.message || "Pastikan semua kolom terisi"),
-                    duration: 3000,
+                    text: "Gagal menyimpan: " + errorMsg,
+                    duration: 5000,
                     style: { background: "#EF4444" }
                 }).showToast();
                 return false;
             }
-        } catch (e) {
-            console.error(e);
+        } catch (error) {
+            console.error(error);
+            // @ts-ignore
+            Toastify({
+                text: "Koneksi terputus atau server mati",
+                duration: 3000,
+                style: { background: "#EF4444" }
+            }).showToast();
             return false;
         }
     };
@@ -427,14 +335,33 @@ export const renderScholarshipForm = () => {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
+                const data = await res.json();
+                const assignedName = data.assigned_to || 'staf beasiswa';
+                
+                // @ts-ignore
                 Toastify({
-                    text: "Berhasil! Pengajuan telah dikirim.",
-                    duration: 2000,
+                    text: `Berhasil! Pengajuan telah dikirim dan ditugaskan kepada ${assignedName}.`,
+                    duration: 4000,
                     style: { background: "#10B981" }
                 }).showToast();
-                setTimeout(() => renderDokumenMahasiswa(), 1500);
+                setTimeout(() => renderDokumenMahasiswa(), 2000);
+            } else {
+                // @ts-ignore
+                Toastify({
+                    text: "Gagal mengirim pengajuan.",
+                    duration: 3000,
+                    style: { background: "#EF4444" }
+                }).showToast();
             }
-        } catch (e) { console.error(e); }
+        } catch (e) { 
+            console.error(e); 
+            // @ts-ignore
+            Toastify({
+                text: "Terjadi kesalahan sistem.",
+                duration: 3000,
+                style: { background: "#EF4444" }
+            }).showToast();
+        }
     };
 
     render();
