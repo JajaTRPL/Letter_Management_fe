@@ -280,13 +280,7 @@ export const initProfilMahasiswaLogic = () => {
             if (ayahStatus === 'meninggal' && ibuStatus === 'meninggal') {
                 sectionWali.classList.remove('hidden', 'opacity-50', 'pointer-events-none');
             } else {
-                sectionWali.classList.remove('hidden');
-                const waliNama = (document.getElementById('wali_nama') as HTMLInputElement).value;
-                if (!waliNama) {
-                    sectionWali.classList.add('opacity-50', 'pointer-events-none');
-                } else {
-                    sectionWali.classList.remove('opacity-50', 'pointer-events-none');
-                }
+                sectionWali.classList.add('hidden');
             }
         }
     };
@@ -427,10 +421,17 @@ export const initProfilMahasiswaLogic = () => {
                 loadProfile(); 
                 toggleEditMode(false);
             } else {
-                const err = await res.json();
+                let errorMsg = "Gagal memperbarui profil";
+                const contentType = res.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    try {
+                        const err = await res.json();
+                        errorMsg = err.message || errorMsg;
+                    } catch (e) { }
+                }
                 // @ts-ignore
                 Toastify({
-                    text: err.message || "Gagal memperbarui profil",
+                    text: errorMsg,
                     duration: 3000,
                     style: { background: "#EF4444" }
                 }).showToast();

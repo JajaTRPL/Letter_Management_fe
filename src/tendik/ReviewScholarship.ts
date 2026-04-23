@@ -30,7 +30,7 @@ export const renderReviewScholarship = async (appId: number) => {
         
         if (!response.ok) throw new Error(data.message || 'Gagal mengambil data');
 
-        const { student, docx_url } = data;
+        const { student, docx_url, application } = data;
 
         const content = `
             <div class="w-full max-w-6xl mx-auto pb-20 animate-fade-in">
@@ -85,19 +85,63 @@ export const renderReviewScholarship = async (appId: number) => {
                         <div class="bg-gray-50 rounded-2xl border border-gray-200 p-6">
                             <p class="text-xs font-bold text-gray-600 mb-4">DOKUMEN YANG DIUNGGAH:</p>
                             <div class="space-y-3">
-                                <div class="flex items-center gap-3 p-3 bg-white rounded-xl border-2 border-teal-600/20 shadow-sm cursor-pointer">
-                                    <div class="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center text-teal-700">
+                                <div onclick="window.open('${docx_url}', '_blank')" class="flex items-center gap-3 p-3 bg-white rounded-xl border-2 border-teal-600/20 shadow-sm cursor-pointer hover:bg-teal-50/50 transition-all group">
+                                    <div class="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center text-teal-700 group-hover:bg-teal-100 transition-colors">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                                     </div>
                                     <div class="flex-1 min-w-0">
                                         <p class="text-xs font-bold text-gray-800 truncate">Formulir Pengajuan</p>
                                         <p class="text-[10px] text-gray-400 uppercase font-medium">OTOMATIS GENERATED</p>
                                     </div>
-                                    <a href="${docx_url}" target="_blank" class="text-teal-600 hover:text-teal-800">
+                                    <div class="text-teal-600 group-hover:scale-110 transition-transform">
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                    </a>
+                                    </div>
                                 </div>
-                                <!-- Support for KTM/KHS files can be added here -->
+                                
+                                ${application?.transkrip_nilai_path ? `
+                                <div onclick="window.open('/api/storage/${application.transkrip_nilai_path.replace('/storage/', '')}', '_blank')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-200 shadow-sm cursor-pointer hover:bg-gray-50 transition-all group">
+                                    <div class="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center text-red-600 group-hover:bg-red-100 transition-colors">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-xs font-bold text-gray-800 truncate">Transkrip Nilai</p>
+                                        <p class="text-[10px] text-gray-400 uppercase font-medium">UNGGAHAN MAHASISWA</p>
+                                    </div>
+                                    <div class="text-teal-600 group-hover:scale-110 transition-transform">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    </div>
+                                </div>
+                                ` : ''}
+
+                                ${application?.slip_gaji_ayah_path ? `
+                                <div onclick="window.open('/api/storage/${application.slip_gaji_ayah_path.replace('/storage/', '')}', '_blank')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-200 shadow-sm cursor-pointer hover:bg-gray-50 transition-all group">
+                                    <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 group-hover:bg-blue-100 transition-colors">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-xs font-bold text-gray-800 truncate">Slip Gaji Ayah</p>
+                                        <p class="text-[10px] text-gray-400 uppercase font-medium">UNGGAHAN MAHASISWA</p>
+                                    </div>
+                                    <div class="text-teal-600 group-hover:scale-110 transition-transform">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    </div>
+                                </div>
+                                ` : ''}
+
+                                ${application?.slip_gaji_ibu_path ? `
+                                <div onclick="window.open('/api/storage/${application.slip_gaji_ibu_path.replace('/storage/', '')}', '_blank')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-200 shadow-sm cursor-pointer hover:bg-gray-50 transition-all group">
+                                    <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 group-hover:bg-blue-100 transition-colors">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-xs font-bold text-gray-800 truncate">Slip Gaji Ibu</p>
+                                        <p class="text-[10px] text-gray-400 uppercase font-medium">UNGGAHAN MAHASISWA</p>
+                                    </div>
+                                    <div class="text-teal-600 group-hover:scale-110 transition-transform">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    </div>
+                                </div>
+                                ` : ''}
                             </div>
                         </div>
                     </div>
@@ -109,19 +153,19 @@ export const renderReviewScholarship = async (appId: number) => {
                                 <h2 class="text-base font-bold text-gray-800">Preview Formulir Pengajuan</h2>
                                 <span class="bg-teal-50 text-teal-700 text-[10px] font-bold px-3 py-1.5 rounded-full uppercase border border-teal-100">Format .docx</span>
                             </div>
-                            <div class="flex-1 bg-gray-50 flex items-center justify-center p-4 relative">
-                                <div class="bg-white w-full max-w-[500px] h-full shadow-lg rounded-xl p-10 flex flex-col items-center justify-center text-center">
-                                    <div class="w-24 h-24 bg-gradient-to-br from-teal-50 to-teal-100 rounded-2xl flex items-center justify-center text-teal-700 mb-8 shadow-sm">
+                            <div class="flex-1 bg-gray-50 flex items-center justify-center p-4 relative capitalize">
+                                <div onclick="window.open('${docx_url}', '_blank')" class="bg-white w-full max-w-[500px] h-full shadow-lg rounded-xl p-10 flex flex-col items-center justify-center text-center cursor-pointer hover:shadow-2xl hover:scale-[1.02] transition-all group">
+                                    <div class="w-24 h-24 bg-gradient-to-br from-teal-50 to-teal-100 rounded-2xl flex items-center justify-center text-teal-700 mb-8 shadow-sm group-hover:from-teal-100 group-hover:to-teal-200 transition-colors">
                                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M16 13H8"></path><path d="M16 17H8"></path><path d="M10 9H8"></path></svg>
                                     </div>
                                     <h3 class="text-xl font-bold text-gray-800 mb-2">Formulir Pengajuan Beasiswa</h3>
                                     <p class="text-sm text-gray-500 mb-2 max-w-sm">Dokumen formulir pengajuan telah di-generate secara otomatis oleh sistem dalam format Microsoft Word (.docx)</p>
-                                    <p class="text-xs text-gray-400 mb-8">Silakan download dan buka di Microsoft Word untuk meninjau isinya</p>
-                                    <a href="${docx_url}" target="_blank" class="px-8 py-3.5 bg-teal-800 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-teal-900 transition-all flex items-center gap-3 hover:shadow-xl">
+                                    <p class="text-xs text-gray-400 mb-8">Klik area ini atau tombol di bawah untuk mendownload</p>
+                                    <div class="px-8 py-3.5 bg-teal-800 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-teal-900 transition-all flex items-center gap-3 group-hover:bg-teal-900">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                                         Download & Tinjau Dokumen
-                                    </a>
-                                    <p class="mt-8 text-[10px] text-gray-400 italic">Pastikan data mahasiswa di dokumen sudah lengkap (Foto & Tanda Tangan)</p>
+                                    </div>
+                                    <p class="mt-8 text-[10px] text-gray-400 italic font-medium">Klik untuk mendownload & buka di Microsoft Word</p>
                                 </div>
                             </div>
                         </div>

@@ -250,18 +250,18 @@ export const renderScholarshipForm = () => {
             const bodyFormData = new FormData();
             Object.keys(data).forEach(key => {
                 // Jangan append file dummy ke JSON key
-                if (!['ktm', 'transcript', 'offer_letter'].includes(key)) {
+                if (!['transkrip-nilai', 'slip-ayah', 'slip-ibu'].includes(key)) {
                     bodyFormData.append(key, data[key]);
                 }
             });
 
-            const ktmFile = (document.getElementById('ktm-upload') as HTMLInputElement).files?.[0];
-            const transcriptFile = (document.getElementById('transcript-upload') as HTMLInputElement).files?.[0];
-            const offerFile = (document.getElementById('offer-letter-upload') as HTMLInputElement).files?.[0];
+            const transkripFile = (document.getElementById('transkrip-nilai-upload') as HTMLInputElement)?.files?.[0];
+            const slipAyahFile = (document.getElementById('slip-gaji-ayah-upload') as HTMLInputElement)?.files?.[0];
+            const slipIbuFile = (document.getElementById('slip-gaji-ibu-upload') as HTMLInputElement)?.files?.[0];
 
-            if (ktmFile) bodyFormData.append('ktm', ktmFile);
-            if (transcriptFile) bodyFormData.append('transcript', transcriptFile);
-            if (offerFile) bodyFormData.append('offer_letter', offerFile);
+            if (transkripFile) bodyFormData.append('transkrip_nilai', transkripFile);
+            if (slipAyahFile) bodyFormData.append('slip_gaji_ayah', slipAyahFile);
+            if (slipIbuFile) bodyFormData.append('slip_gaji_ibu', slipIbuFile);
 
             body = bodyFormData;
         } else {

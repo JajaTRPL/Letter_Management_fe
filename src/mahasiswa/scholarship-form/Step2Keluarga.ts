@@ -132,7 +132,7 @@ export const renderStep2Keluarga = (formData: any) => `
         </div>
 
         <!-- Data Wali (opsional) -->
-        <div class="space-y-6 pt-4 ${(formData.guardian_name) ? '' : 'hidden'}" id="wali_container_read">
+        <div class="space-y-6 pt-4 ${(formData.father_status?.toLowerCase() === 'meninggal' && formData.mother_status?.toLowerCase() === 'meninggal') ? '' : 'hidden'}" id="wali_container_read">
             <div class="border-b border-gray-300 pb-2">
                 <h3 class="text-lg font-bold text-gray-800">Data Wali</h3>
             </div>

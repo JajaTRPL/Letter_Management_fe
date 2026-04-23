@@ -137,24 +137,24 @@ export const renderStep3Akademik = (formData: any) => `
             
             <div class="space-y-4">
                 <div class="grid grid-cols-[200px_1fr] items-start gap-4">
-                    <label class="text-sm font-bold text-gray-800 pt-2">Transkrip Nilai</label>
+                    <label class="text-sm font-bold text-gray-800 pt-2">Transkrip Nilai <span class="text-red-500">*</span></label>
                     <div class="space-y-1">
-                        <input type="file" id="transkrip-nilai-upload" name="transkrip-nilai" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
-                        <p class="text-[10px] text-gray-400">Format: JPG, PNG, PDF (MAX 2MB)</p>
+                        <input type="file" id="transkrip-nilai-upload" name="transkrip-nilai" accept=".pdf" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
+                        <p class="text-[10px] text-gray-400">Format: PDF (MAX 2MB)</p>
                     </div>
                 </div>
                 <div class="grid grid-cols-[200px_1fr] items-start gap-4">
                     <label class="text-sm font-bold text-gray-800 pt-2">Slip Gaji Ayah</label>
                     <div class="space-y-1">
-                        <input type="file" id="slip-gaji-ayah-upload" name="slip-ayah" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
-                        <p class="text-[10px] text-gray-400">Format: PDF (MAX 2MB)</p>
+                        <input type="file" id="slip-gaji-ayah-upload" name="slip-ayah" accept=".png,.pdf" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
+                        <p class="text-[10px] text-gray-400">Format: PNG, PDF (MAX 2MB)</p>
                     </div>
                 </div>
                 <div class="grid grid-cols-[200px_1fr] items-start gap-4">
                     <label class="text-sm font-bold text-gray-800 pt-2">Slip Gaji Ibu</label>
                     <div class="space-y-1">
-                        <input type="file" id="slip-gaji-ibu-upload" name="slip-ibu" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
-                        <p class="text-[10px] text-gray-400">Format: PDF (MAX 2MB)</p>
+                        <input type="file" id="slip-gaji-ibu-upload" name="slip-ibu" accept=".png,.pdf" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
+                        <p class="text-[10px] text-gray-400">Format: PNG, PDF (MAX 2MB)</p>
                     </div>
                 </div>
             </div>
