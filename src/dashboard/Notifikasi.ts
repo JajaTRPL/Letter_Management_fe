@@ -5,6 +5,66 @@ import { getGreetingName } from '../utils/nameHelper';
 
 let activeTab: 'semua' | 'belum_dibaca' = 'semua';
 
+interface NotifItem {
+    title: string;
+    description: string;
+    date: string;
+    isUnread: boolean;
+}
+
+const getNotificationsByRole = (role: string): NotifItem[] => {
+    if (['kadep', 'kaprodi', 'sekdep', 'sekprodi', 'akademik'].includes(role)) {
+        return [
+            {
+                title: 'Dokumen Menunggu Paraf',
+                description: 'Dokumen pengajuan surat dari mahasiswa telah diverifikasi dan menunggu persetujuan serta paraf Anda',
+                date: 'Kamis, 5 Maret 2026 13:00',
+                isUnread: true,
+            },
+            {
+                title: 'Pengajuan Surat Disetujui',
+                description: 'Pengajuan surat telah berhasil disetujui dan diproses lebih lanjut oleh sistem',
+                date: 'Rabu, 4 Maret 2026 13:00',
+                isUnread: true,
+            },
+            {
+                title: 'Pengajuan Surat Ditolak',
+                description: 'Pengajuan surat telah berhasil ditolak dan dikembalikan kepada tenaga pendidik untuk ditindaklanjuti',
+                date: 'Selasa, 3 Maret 2026 11:00',
+                isUnread: false,
+            },
+        ];
+    }
+
+    // Default Tendik notifications
+    return [
+        {
+            title: 'Pengajuan Surat Baru',
+            description: 'Pengajuan surat baru dari mahasiswa telah masuk dan menunggu verifikasi Anda',
+            date: 'Kamis, 5 Maret 2026 13:00',
+            isUnread: true,
+        },
+        {
+            title: 'Permintaan Revisi Dikirim',
+            description: 'Permintaan perbaikan dokumen telah berhasil dikirim kepada mahasiswa',
+            date: 'Rabu, 4 Maret 2026 13:00',
+            isUnread: true,
+        },
+        {
+            title: 'Pengajuan Ditolak',
+            description: 'Pengajuan surat telah berhasil ditolak dan dikembalikan kepada mahasiswa',
+            date: 'Selasa, 3 Maret 2026 11:00',
+            isUnread: false,
+        },
+        {
+            title: 'Pengajuan Diteruskan ke Ketua Program Studi TRPL',
+            description: 'Pengajuan surat telah berhasil diverifikasi dan diteruskan ke Ketua Program Studi',
+            date: 'Selasa, 3 Maret 2026 11:00',
+            isUnread: false,
+        },
+    ];
+};
+
 export const renderNotifikasi = (role: string) => {
     // Hide standard layout header
     const styleBlock = `
@@ -13,93 +73,59 @@ export const renderNotifikasi = (role: string) => {
         </style>
     `;
 
-    const userName = getGreetingName(localStorage.getItem('auth_name')) || 'Fajar';
+    const fullName = localStorage.getItem('auth_name') || 'Dr. Umar Taufiq S.Kom., M.Cs.';
+    const userName = getGreetingName(fullName);
+
+    const allNotifications = getNotificationsByRole(role);
 
     const renderTabs = () => {
+        const semuaActive = activeTab === 'semua';
+        const belumActive = activeTab === 'belum_dibaca';
+
         const activeClass = "px-6 py-2.5 text-sm font-bold bg-[#0D4A46] text-white outline-none transition-colors";
         const inactiveClass = "px-6 py-2.5 text-sm font-bold bg-white text-gray-600 hover:bg-gray-50 outline-none transition-colors";
-        
+
         return `
             <div class="flex items-center gap-0 mb-6 bg-white rounded-xl overflow-hidden border border-gray-200 w-fit">
-                <button id="tab-semua" class="${activeTab === 'semua' ? activeClass : inactiveClass} ${activeTab === 'semua' ? '' : 'border-r border-gray-200'}">Semua</button>
-                <button id="tab-belum-dibaca" class="${activeTab === 'belum_dibaca' ? activeClass : inactiveClass}">Belum Dibaca</button>
+                <button id="tab-semua" class="${semuaActive ? activeClass : inactiveClass} ${semuaActive ? '' : 'border-r border-gray-200'}"">Semua</button>
+                <button id="tab-belum-dibaca" class="${belumActive ? activeClass : inactiveClass}">Belum Dibaca</button>
+            </div>
+        `;
+    };
+
+    const renderNotificationCard = (item: NotifItem) => {
+        const cardBg = item.isUnread ? 'bg-[#F4F9F9]' : 'bg-white';
+        const cardBorder = item.isUnread ? 'border-2 border-[#1B4332]' : 'border border-gray-200';
+        const titleColor = item.isUnread ? 'text-gray-900' : 'text-gray-800';
+        const descColor = item.isUnread ? 'text-gray-800 font-medium' : 'text-gray-600';
+
+        const greenDot = item.isUnread
+            ? `<div class="w-3.5 h-3.5 bg-[#10B981] rounded-full shrink-0 mt-0.5"></div>`
+            : '';
+
+        return `
+            <div class="${cardBg} ${cardBorder} rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-default mb-4">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex items-center gap-2">
+                        ${greenDot}
+                        <h3 class="text-base font-bold ${titleColor} ${!item.isUnread ? 'ml-5.5' : ''}">${item.title}</h3>
+                    </div>
+                    <span class="text-[11px] font-semibold text-gray-400 mt-1 whitespace-nowrap ml-4">${item.date}</span>
+                </div>
+                <p class="text-sm ${descColor} ml-5.5 mb-3">${item.description}</p>
+                <div class="flex justify-end mt-2">
+                    <a href="#" class="text-xs font-bold text-[#0EA5E9] hover:text-blue-700 hover:underline transition-colors">Lihat Detail</a>
+                </div>
             </div>
         `;
     };
 
     const renderNotifications = () => {
-        let html = '';
-        
-        // Unread 1
-        html += `
-            <div class="bg-[#F4F9F9] border-2 border-[#1B4332] rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-default mb-4">
-                <div class="flex justify-between items-start mb-2">
-                    <div class="flex items-center gap-2">
-                        <div class="w-3.5 h-3.5 bg-[#10B981] rounded-full mt-0.5"></div>
-                        <h3 class="text-base font-bold text-gray-900">Pengajuan Surat Baru</h3>
-                    </div>
-                    <span class="text-[11px] font-semibold text-gray-400 mt-1">Kamis, 5 Maret 2026 13:00</span>
-                </div>
-                <p class="text-sm text-gray-800 ml-5.5 font-medium mb-3">Pengajuan surat baru dari mahasiswa telah masuk dan menunggu verifikasi Anda</p>
-                <div class="flex justify-end mt-2">
-                    <a href="#" class="text-xs font-bold text-[#0EA5E9] hover:text-blue-700 hover:underline transition-colors">Lihat Detail</a>
-                </div>
-            </div>
-        `;
+        const filtered = activeTab === 'belum_dibaca'
+            ? allNotifications.filter(n => n.isUnread)
+            : allNotifications;
 
-        // Unread 2
-        html += `
-            <div class="bg-[#F4F9F9] border-2 border-[#1B4332] rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-default mb-4">
-                <div class="flex justify-between items-start mb-2">
-                    <div class="flex items-center gap-2">
-                        <div class="w-3.5 h-3.5 bg-[#10B981] rounded-full mt-0.5"></div>
-                        <h3 class="text-base font-bold text-gray-900">Permintaan Revisi Dikirim</h3>
-                    </div>
-                    <span class="text-[11px] font-semibold text-gray-400 mt-1">Rabu, 4 Maret 2026 13:00</span>
-                </div>
-                <p class="text-sm text-gray-800 ml-5.5 font-medium mb-3">Permintaan perbaikan dokumen telah berhasil dikirim kepada mahasiswa</p>
-                <div class="flex justify-end mt-2">
-                    <a href="#" class="text-xs font-bold text-[#0EA5E9] hover:text-blue-700 hover:underline transition-colors">Lihat Detail</a>
-                </div>
-            </div>
-        `;
-
-        // Read items only show if activeTab is 'semua'
-        if (activeTab === 'semua') {
-            // Read 1
-            html += `
-                <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-default mb-4">
-                    <div class="flex justify-between items-start mb-2">
-                        <div class="flex items-center gap-2">
-                            <h3 class="text-base font-bold text-gray-800 ml-5.5">Pengajuan Ditolak</h3>
-                        </div>
-                        <span class="text-[11px] font-semibold text-gray-400 mt-1">Selasa, 3 Maret 2026 11:00</span>
-                    </div>
-                    <p class="text-sm text-gray-600 ml-5.5 mb-3">Pengajuan surat telah berhasil ditolak dan dikembalikan kepada mahasiswa</p>
-                    <div class="flex justify-end mt-2">
-                        <a href="#" class="text-xs font-bold text-[#0EA5E9] hover:text-blue-700 hover:underline transition-colors">Lihat Detail</a>
-                    </div>
-                </div>
-            `;
-
-            // Read 2
-            html += `
-                <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-default mb-4">
-                    <div class="flex justify-between items-start mb-2">
-                        <div class="flex items-center gap-2">
-                            <h3 class="text-base font-bold text-gray-800 ml-5.5">Pengajuan Diteruskan ke Ketua Program Studi TRPL</h3>
-                        </div>
-                        <span class="text-[11px] font-semibold text-gray-400 mt-1">Selasa, 3 Maret 2026 11:00</span>
-                    </div>
-                    <p class="text-sm text-gray-600 ml-5.5 mb-3">Pengajuan surat telah berhasil diverifikasi dan diteruskan ke Ketua Program Studi</p>
-                    <div class="flex justify-end mt-2">
-                        <a href="#" class="text-xs font-bold text-[#0EA5E9] hover:text-blue-700 hover:underline transition-colors">Lihat Detail</a>
-                    </div>
-                </div>
-            `;
-        }
-
-        return html;
+        return filtered.map(item => renderNotificationCard(item)).join('');
     };
 
     const updateView = () => {
@@ -107,7 +133,7 @@ export const renderNotifikasi = (role: string) => {
         if (tabsContainer) {
             tabsContainer.innerHTML = renderTabs();
         }
-        
+
         const listContainer = document.getElementById('notif-list-container');
         if (listContainer) {
             listContainer.innerHTML = renderNotifications();
@@ -143,7 +169,7 @@ export const renderNotifikasi = (role: string) => {
                     <div class="w-10 h-10 rounded-full border border-gray-200 bg-white flex items-center justify-center text-gray-600 overflow-hidden shadow-sm">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
                     </div>
-                    <span class="text-sm font-semibold text-gray-700 pr-1">${userName}</span>
+                    <span class="text-sm font-semibold text-gray-700 pr-1">${fullName}</span>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-500"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     
                     <!-- Dropdown on Hover -->
