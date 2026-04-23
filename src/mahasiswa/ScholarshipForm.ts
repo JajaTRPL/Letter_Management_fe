@@ -10,6 +10,7 @@ import { renderStep4Submit } from './scholarship-form/Step4Submit';
 
 export const renderScholarshipForm = () => {
     let currentStep = 1;
+    let hasFetchedDraft = false;
     let formData: any = {
         siblings: [],
         scholarship_histories: []
@@ -83,7 +84,7 @@ export const renderScholarshipForm = () => {
             </div>
         `;
 
-        renderDashboardLayout('Permohonan Beasiswa', content, 'mahasiswa');
+        renderDashboardLayout('Permohonan Beasiswa', content, 'mahasiswa', 'pengajuan');
         attachEvents();
     };
 
@@ -132,8 +133,9 @@ export const renderScholarshipForm = () => {
             }
         });
 
-        // Auto-fill initial data if not already filled
-        if (!formData.nim) {
+        // Auto-fill initial data if not already filled (only once)
+        if (!formData.nim && !hasFetchedDraft) {
+            hasFetchedDraft = true;
             fetchDraft();
         }
 

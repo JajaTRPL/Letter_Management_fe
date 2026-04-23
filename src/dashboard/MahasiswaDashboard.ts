@@ -239,7 +239,7 @@ export const renderMahasiswaDashboard = () => {
             </div>
         </div>
     `;
-    renderDashboardLayout('Dashboard', content, 'mahasiswa');
+    renderDashboardLayout('Dashboard', content, 'mahasiswa', 'dashboard');
 
     setTimeout(() => {
         const btnLengkapi = document.getElementById('btn-lengkapi-profil');

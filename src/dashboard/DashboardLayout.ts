@@ -20,7 +20,7 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                         </h1>
                         
                         <div class="flex items-center gap-6">
-                            <button class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                            <button id="notif-btn" class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
                                     <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>

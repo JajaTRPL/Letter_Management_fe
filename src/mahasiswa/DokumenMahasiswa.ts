@@ -142,7 +142,7 @@ export const renderDokumenMahasiswa = () => {
         </div>
     `;
 
-    renderDashboardLayout('Ajukan Surat', content, 'mahasiswa');
+    renderDashboardLayout('Ajukan Surat', content, 'mahasiswa', 'pengajuan');
 
     setTimeout(() => {
         document.getElementById('btn-back-dashboard-dokumen')?.addEventListener('click', () => {
