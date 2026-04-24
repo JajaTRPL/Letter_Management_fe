@@ -363,7 +363,7 @@ export const initProfilMahasiswaLogic = () => {
             }
 
             if (tbody) {
-                Array.from(tbody.children).forEach((tr, index) => {
+                Array.from(tbody.children).forEach((tr) => {
                     const inputs = tr.querySelectorAll('input[type="text"]');
                     const select = tr.querySelector('select');
                     const radio = tr.querySelector(`input[type="radio"]:checked`) as HTMLInputElement;

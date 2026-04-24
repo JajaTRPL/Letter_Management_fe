@@ -1,7 +1,6 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { renderLogin } from '../login/Login';
 import Toastify from 'toastify-js';
-import { getGreetingName } from '../utils/nameHelper';
 
 let activeTab: 'semua' | 'belum_dibaca' = 'semua';
 
@@ -74,7 +73,6 @@ export const renderNotifikasi = (role: string) => {
     `;
 
     const fullName = localStorage.getItem('auth_name') || 'Dr. Umar Taufiq S.Kom., M.Cs.';
-    const userName = getGreetingName(fullName);
 
     const allNotifications = getNotificationsByRole(role);
 

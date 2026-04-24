@@ -10,9 +10,5 @@
  */
 export const getGreetingName = (fullName: string | null | undefined): string => {
     if (!fullName) return 'User';
-    const words = fullName.trim().split(/\s+/);
-    if (words.length === 0) return 'User';
-
-    const middleIndex = Math.floor((words.length - 1) / 2);
-    return words[middleIndex];
+    return fullName.trim();
 };

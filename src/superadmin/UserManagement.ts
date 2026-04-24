@@ -70,7 +70,7 @@ function renderContent() {
                             <option value="Inactive">Nonaktif</option>
                             <option value="Blocked">Suspended</option>
                         </select>
-                        <button id="add-user-btn" class="flex items-center gap-2 px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold rounded-xl transition-all shadow-sm">
+                        <button type="button" id="add-user-btn" class="flex items-center gap-2 px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold rounded-xl transition-all shadow-sm">
                             Tambah Akun
                         </button>
                     </div>
