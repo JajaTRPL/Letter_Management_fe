@@ -208,7 +208,12 @@ export const renderLogin = () => {
       if (response.ok) {
         localStorage.setItem('auth_token', data.token)
         localStorage.setItem('auth_name', data.user.name)
-        handleRedirection(data.user.role)
+        if (data.user.sub_role) {
+            localStorage.setItem('auth_sub_role', data.user.sub_role)
+        } else {
+            localStorage.removeItem('auth_sub_role')
+        }
+        handleRedirection(data.user.sub_role && ['kaprodi', 'kadep', 'sekdep', 'sekprodi'].includes(data.user.sub_role) ? data.user.sub_role : data.user.role)
       } else {
         if (response.status === 404) {
           showLoginError('Endpoint API tidak ditemukan (404). Pastikan backend Laravel sudah jalan di port 8000.')

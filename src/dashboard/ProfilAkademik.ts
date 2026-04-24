@@ -18,13 +18,13 @@ export const renderProfilAkademik = (role: string) => {
 
     // Map role to display label
     const roleLabels: Record<string, string> = {
-        'kaprodi': 'Ketua Program Studi TRPL',
-        'kadep': 'Kepala Departemen Teknik Elektro dan Informatika',
-        'sekdep': 'Sekretaris Departemen',
-        'sekprodi': 'Sekretaris Program Studi',
+        'kaprodi': 'Kaprodi',
+        'sekprodi': 'Sekprodi',
+        'kadep': 'Kadept',
+        'sekdep': 'Sekdept',
         'akademik': 'Pejabat Akademik',
     };
-    const roleLabel = roleLabels[role] || 'Pejabat Akademik';
+    const roleLabel = roleLabels[role] || roleLabels[localStorage.getItem('auth_sub_role') || ''] || 'Pejabat Akademik';
 
     // ── Notification Banner ──
     const showNotification = (type: 'success' | 'error') => {

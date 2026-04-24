@@ -241,8 +241,8 @@ export const renderUserModal = (user: any = null, onRefresh: () => void) => {
         }
 
         if (!user && data.role === 'mahasiswa') {
-            const nim = (data.nim as string).replace(/[^a-zA-Z0-9]/g, '');
-            const dobParts = (data.tanggal_lahir as string).split('-');
+            const nim = (data.nim as string || '').replace(/[^a-zA-Z0-9]/g, '');
+            const dobParts = (data.tanggal_lahir as string || '').split('-');
             const dobFormatted = dobParts.length === 3 ? `${dobParts[2]}${dobParts[1]}${dobParts[0]}` : '';
             data.password = `${nim}${dobFormatted}`;
         }
