@@ -19,9 +19,18 @@ export const renderAdminDashboard = async () => {
     };
 
     // Initial loading state
-    renderDashboardLayout('Dashboard', '<div class="flex items-center justify-center h-64"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div></div>', 'super_admin');
+    renderDashboardLayout('Dashboard', '<div id="admin-dashboard-wrapper"><div class="flex items-center justify-center h-64"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div></div></div>', 'super_admin');
 
     const updateDashboardData = async (isInitial = false) => {
+        // Self-cleanup: stop interval and abort if user navigated away
+        if (!isInitial && !document.getElementById('admin-dashboard-wrapper')) {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+            return;
+        }
+
         try {
             const response = await fetch('/api/super-admin/dashboard/stats', {
                 headers: {
@@ -158,7 +167,7 @@ export const renderAdminDashboard = async () => {
                 </div>
             `;
 
-            const container = document.getElementById('dashboard-content');
+            const container = document.getElementById('admin-dashboard-wrapper');
             if (container) {
                 container.innerHTML = content;
 
