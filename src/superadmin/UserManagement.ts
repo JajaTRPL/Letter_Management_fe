@@ -1,10 +1,14 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
-import { state, tabConfig } from './users/types';
+import { state, tabConfig, tabManager, type TabType } from './users/types';
 import { setupListeners } from './users/listeners';
 import { refreshUsers } from './users/api';
 import { renderFilteredRows } from './users/ui-utils';
 
 export const renderUserManagement = async () => {
+    // CRITICAL: Reset tab to default ('super_admin') on every page entry.
+    // This ensures no stale state from previous navigation persists.
+    tabManager.reset();
+
     // Show loading state
     renderDashboardLayout(
         'Manajemen Akun',
@@ -17,7 +21,8 @@ export const renderUserManagement = async () => {
 };
 
 function renderContent() {
-    const cfg = tabConfig[state.activeTab];
+    const activeTab = tabManager.getActive();
+    const cfg = tabConfig[activeTab];
     const content = `
         <div class="space-y-5 animate-fade-in pb-12">
             <!-- Tab Bar + Export -->
@@ -27,7 +32,7 @@ function renderContent() {
                         <button
                             id="tab-${key}"
                             data-tab="${key}"
-                            class="tab-btn px-5 py-3 text-sm font-semibold transition-all border-b-2 ${state.activeTab === key
+                            class="tab-btn px-5 py-3 text-sm font-semibold transition-all border-b-2 ${tabManager.isActive(key as TabType)
             ? 'border-teal-700 text-teal-700'
             : 'border-transparent text-gray-500 hover:text-gray-700'
         }"
@@ -67,8 +72,8 @@ function renderContent() {
                         <select id="status-filter" class="pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none cursor-pointer bg-white text-gray-600">
                             <option value="">Semua Status</option>
                             <option value="Active">Aktif</option>
-                            <option value="Inactive">Nonaktif</option>
-                            <option value="Blocked">Suspended</option>
+                            <option value="Suspended">Suspended</option>
+                            <option value="Pending_Profile">Menunggu Profil</option>
                         </select>
                         <button type="button" id="add-user-btn" class="flex items-center gap-2 px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold rounded-xl transition-all shadow-sm">
                             Tambah Akun
@@ -91,14 +96,23 @@ function renderContent() {
                                 <th class="px-6 py-3 w-10">
                                     <input type="checkbox" id="select-all" class="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer">
                                 </th>
-                                <th class="px-4 py-3 text-xs font-semibold text-gray-500">Nama</th>
-                                <th class="px-4 py-3 text-xs font-semibold text-gray-500">Email</th>
-                                <th class="px-4 py-3 text-xs font-semibold text-gray-500">Peran</th>
-                                <th class="px-4 py-3 text-xs font-semibold text-gray-500">Status</th>
-                                <th class="px-4 py-3 text-right">Aksi</th>
+                                ${activeTab === 'mahasiswa' ? `
+                                    <th class="px-4 py-3 text-xs font-semibold text-gray-500">Nama</th>
+                                    <th class="px-4 py-3 text-xs font-semibold text-gray-500">NIM</th>
+                                    <th class="px-4 py-3 text-xs font-semibold text-gray-500">Prodi</th>
+                                    <th class="px-4 py-3 text-xs font-semibold text-gray-500">Angkatan</th>
+                                    <th class="px-4 py-3 text-xs font-semibold text-gray-500">Status</th>
+                                    <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 sticky right-0 bg-white shadow-[-4px_0_12px_rgba(0,0,0,0.03)] z-10">Aksi</th>
+                                ` : `
+                                    <th class="px-4 py-3 text-xs font-semibold text-gray-500">Nama</th>
+                                    <th class="px-4 py-3 text-xs font-semibold text-gray-500">Email</th>
+                                    <th class="px-4 py-3 text-xs font-semibold text-gray-500">${activeTab === 'super_admin' ? 'Role Level' : 'Peran'}</th>
+                                    <th class="px-4 py-3 text-xs font-semibold text-gray-500">Status</th>
+                                    <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 sticky right-0 bg-white shadow-[-4px_0_12px_rgba(0,0,0,0.03)] z-10">Aksi</th>
+                                `}
                             </tr>
                         </thead>
-                        <tbody id="user-table-body" class="divide-y divide-gray-50">
+                        <tbody id="user-table-body" class="divide-y divide-gray-50 relative">
                             ${renderFilteredRows(state.allUsers, cfg.roles)}
                         </tbody>
                     </table>

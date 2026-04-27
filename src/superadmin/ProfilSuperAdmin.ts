@@ -96,10 +96,7 @@ export const renderProfilSuperAdmin = () => {
             modal.remove();
         });
 
-        // Click overlay - close modal
-        document.getElementById('modal-overlay')?.addEventListener('click', () => {
-            modal.remove();
-        });
+        // Overlay click-to-dismiss removed to prevent accidental closure
 
         // Confirm logout
         document.getElementById('modal-confirm-btn')?.addEventListener('click', async () => {
@@ -111,7 +108,7 @@ export const renderProfilSuperAdmin = () => {
                         method: 'POST',
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
-                } catch (e) {}
+                } catch (e) { }
             }
             localStorage.clear();
             modal.remove();

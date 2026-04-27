@@ -134,10 +134,12 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
 
     document.getElementById('sidebar-users-link')?.addEventListener('click', (e) => {
         e.preventDefault();
-        (window as any).clearDashboardInterval?.();
-        import('../superadmin/UserManagement').then(({ renderUserManagement }) => {
-            renderUserManagement();
-        });
+        if (role === 'super_admin') {
+            (window as any).clearDashboardInterval?.();
+            import('../superadmin/UserManagement').then(({ renderUserManagement }) => {
+                renderUserManagement();
+            });
+        }
     });
 
     document.getElementById('sidebar-monitoring-link')?.addEventListener('click', (e) => {
@@ -172,11 +174,19 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         });
     });
 
-    document.getElementById('sidebar-dokumen-link')?.addEventListener('click', (e) => {
+    document.getElementById('sidebar-administrasi-link')?.addEventListener('click', (e) => {
         e.preventDefault();
         (window as any).clearDashboardInterval?.();
-        import('../mahasiswa/DokumenMahasiswa').then(({ renderDokumenMahasiswa }) => {
-            renderDokumenMahasiswa();
+        import('../mahasiswa/AdministrasiSurat').then(({ renderAdministrasiSurat }) => {
+            renderAdministrasiSurat();
+        });
+    });
+
+    document.getElementById('sidebar-peminjaman-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        (window as any).clearDashboardInterval?.();
+        import('../mahasiswa/PeminjamanRuangan').then(({ renderPeminjamanRuangan }) => {
+            renderPeminjamanRuangan();
         });
     });
 
@@ -217,6 +227,10 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         localStorage.removeItem('auth_role');
         localStorage.removeItem('auth_name');
         localStorage.removeItem('auth_photo');
+        localStorage.removeItem('auth_sub_role');
+        localStorage.removeItem('auth_assigned_tasks');
+        localStorage.removeItem('auth_role_level');
+        localStorage.removeItem('auth_user_id');
 
         Toastify({
             text: "Berhasil keluar!",

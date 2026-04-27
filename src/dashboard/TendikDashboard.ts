@@ -34,9 +34,15 @@ export const renderTendikDashboard = async (role: string) => {
                     <h2 class="text-[28px] font-bold text-gray-800 leading-tight">Halo, ${userName}!</h2>
                     <p class="text-xs text-gray-600 mt-1 mb-3">Jenis surat yang menjadi tanggung jawab Anda</p>
                     <div class="flex flex-wrap gap-2">
-                        <span class="bg-[#FFD700] text-gray-900 border border-yellow-400/50 text-[10px] font-bold px-3 py-1.5 rounded-md shadow-sm">Task: Surat Beasiswa</span>
-                        <span class="bg-[#FFD700] text-gray-900 border border-yellow-400/50 text-[10px] font-bold px-3 py-1.5 rounded-md shadow-sm">Task: Surat Magang</span>
-                        <span class="bg-[#FFD700] text-gray-900 border border-yellow-400/50 text-[10px] font-bold px-3 py-1.5 rounded-md shadow-sm">Task: Surat Keaktifan</span>
+                        ${(() => {
+                            try {
+                                const tasks = JSON.parse(localStorage.getItem('auth_assigned_tasks') || '[]');
+                                if (tasks.length > 0) {
+                                    return tasks.map((t: string) => `<span class="bg-[#FFD700] text-gray-900 border border-yellow-400/50 text-[10px] font-bold px-3 py-1.5 rounded-md shadow-sm">Task: ${t}</span>`).join('');
+                                }
+                                return '<span class="bg-gray-100 text-gray-500 text-[10px] font-bold px-3 py-1.5 rounded-md">Belum ada tugas</span>';
+                            } catch { return ''; }
+                        })()}
                     </div>
                 </div>
 

@@ -4,10 +4,8 @@ const typeColors: Record<string, { bg: string; text: string }> = {
     'Surat Beasiswa': { bg: 'bg-emerald-50', text: 'text-emerald-700' },
     'Surat Magang': { bg: 'bg-blue-50', text: 'text-blue-700' },
     'Surat Keaktifan': { bg: 'bg-amber-50', text: 'text-amber-700' },
-    'Surat Keuangan': { bg: 'bg-rose-50', text: 'text-rose-700' },
     'Surat Fasilitas': { bg: 'bg-purple-50', text: 'text-purple-700' },
     'Surat Luar Negeri': { bg: 'bg-cyan-50', text: 'text-cyan-700' },
-    'Surat Akademik': { bg: 'bg-indigo-50', text: 'text-indigo-700' },
 };
 
 const getTypeBadge = (type: string) => {
@@ -38,10 +36,8 @@ export const renderTemplateDokumen = () => {
         { updated_at: currentDate, name: 'Formulir Beasiswa (Lokal)', type: 'Surat Beasiswa', pdfUrl: '/files/Formulir-Permohonan-Beasiswa.pdf' },
         { updated_at: currentDate, name: 'Surat Rekomendasi Magang', type: 'Surat Magang' },
         { updated_at: currentDate, name: 'Surat Keaktifan Mahasiswa', type: 'Surat Keaktifan' },
-        { updated_at: currentDate, name: 'Surat Penundaan Pembayaran UKT', type: 'Surat Keuangan' },
         { updated_at: currentDate, name: 'Surat Peminjaman Ruang', type: 'Surat Fasilitas' },
         { updated_at: currentDate, name: 'Surat Proses Luar Negeri (Student Exchange)', type: 'Surat Luar Negeri' },
-        { updated_at: currentDate, name: 'Surat Transkrip Nilai', type: 'Surat Akademik' },
     ];
 
     const content = `

@@ -1,45 +1,27 @@
-import Toastify from 'toastify-js';
 import { state } from './types';
+import { apiFetch } from '../../shared/api-client';
+import { showSuccess, showError } from '../../shared/toast';
 
 export const refreshUsers = async (onSuccess: () => void) => {
     try {
-        const response = await fetch('/api/super-admin/users', {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-                'Accept': 'application/json'
-            }
-        });
+        const response = await apiFetch('/api/super-admin/users');
         const result = await response.json();
         state.allUsers = result.data;
         onSuccess();
     } catch (err) {
         console.error(err);
-        Toastify({
-            text: "Gagal memuat data terbaru",
-            duration: 3000,
-            gravity: "top",
-            position: "right",
-            style: { background: "#EF4444" }
-        }).showToast();
+        showError('Gagal memuat data terbaru');
     }
 };
 
 export const deleteUser = async (userId: number, onSuccess: () => void) => {
     try {
-        const response = await fetch(`/api/super-admin/users/${userId}`, {
+        const response = await apiFetch(`/api/super-admin/users/${userId}`, {
             method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-                'Accept': 'application/json'
-            }
         });
 
         if (response.ok) {
-            Toastify({
-                text: "User berhasil dihapus",
-                duration: 3000,
-                style: { background: "#10B981" }
-            }).showToast();
+            showSuccess('User berhasil dihapus');
             onSuccess();
         }
     } catch (err) {
@@ -49,22 +31,13 @@ export const deleteUser = async (userId: number, onSuccess: () => void) => {
 
 export const bulkDeleteUsers = async (userIds: number[], onSuccess: () => void) => {
     try {
-        const response = await fetch('/api/super-admin/users/bulk-delete', {
+        const response = await apiFetch('/api/super-admin/users/bulk-delete', {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
             body: JSON.stringify({ ids: userIds })
         });
 
         if (response.ok) {
-            Toastify({
-                text: `${userIds.length} user berhasil dihapus`,
-                duration: 3000,
-                style: { background: "#10B981" }
-            }).showToast();
+            showSuccess(`${userIds.length} user berhasil dihapus`);
             onSuccess();
         }
     } catch (err) {

@@ -1,8 +1,12 @@
-import Toastify from 'toastify-js';
-import { state, tabConfig, type TabType } from './types';
+import { apiFetch } from '../../shared/api-client';
+import { showSuccess, showError } from '../../shared/toast';
+import { isSuspended } from '../../shared/user-status';
+import { state, tabConfig, tabManager, type TabType } from './types';
 import { refreshUsers } from './api';
-import { renderFilteredRows } from './ui-utils';
-import { renderUserModal, renderExportDrawer, renderImportDrawer } from './modals';
+import { renderFilteredRows, renderMahasiswaDetailModal } from './ui-utils';
+import { renderUserModal } from './modals';
+import { renderExportDrawer } from './export-drawer';
+import { renderImportDrawer } from './import-drawer';
 
 export const setupListeners = (renderContent: () => void) => {
     // --- Helper: update toolbar berdasarkan jumlah yang dipilih ---
@@ -28,7 +32,7 @@ export const setupListeners = (renderContent: () => void) => {
     // --- Tab switching ---
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            state.activeTab = (btn as HTMLElement).dataset.tab as TabType;
+            tabManager.setActive((btn as HTMLElement).dataset.tab as TabType);
             renderContent();
         });
     });
@@ -39,7 +43,7 @@ export const setupListeners = (renderContent: () => void) => {
     const tableBody = document.getElementById('user-table-body');
 
     const applyFilters = () => {
-        const roles = tabConfig[state.activeTab].roles;
+        const roles = tabConfig[tabManager.getActive()].roles;
         if (tableBody) {
             tableBody.innerHTML = renderFilteredRows(state.allUsers, roles, searchInput?.value || '', statusFilter?.value || '');
         }
@@ -111,19 +115,15 @@ export const setupListeners = (renderContent: () => void) => {
 
         try {
             await Promise.all(selectedIds.map(id =>
-                fetch(`/api/super-admin/users/${id}`, {
+                apiFetch(`/api/super-admin/users/${id}`, {
                     method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-                        'Accept': 'application/json'
-                    }
                 })
             ));
-            Toastify({ text: `${selectedIds.length} akun berhasil dihapus`, duration: 2500, style: { background: '#10B981' } }).showToast();
+            showSuccess(`${selectedIds.length} akun berhasil dihapus`);
             await refreshUsers(renderContent);
         } catch (err) {
             console.error(err);
-            Toastify({ text: 'Gagal menghapus beberapa akun', duration: 2000, style: { background: '#EF4444' } }).showToast();
+            showError('Gagal menghapus beberapa akun');
         }
     });
 
@@ -143,13 +143,54 @@ export const attachActionListeners = (renderContent: () => void, onSelectionChan
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const id = (btn as HTMLElement).dataset.id;
+            
+            // Close other menus
             document.querySelectorAll('.kebab-menu').forEach(m => {
                 if ((m as HTMLElement).dataset.id !== id) m.classList.add('hidden');
             });
-            const menu = document.querySelector(`.kebab-menu[data-id="${id}"]`);
-            menu?.classList.toggle('hidden');
+            
+            const menu = document.querySelector(`.kebab-menu[data-id="${id}"]`) as HTMLElement;
+            if (menu) {
+                const isHidden = menu.classList.contains('hidden');
+                menu.classList.toggle('hidden');
+                
+                if (isHidden) {
+                    // Smart fixed repositioning to avoid table overflow clipping
+                    const rect = btn.getBoundingClientRect();
+                    const menuHeight = 150; // approximate height
+                    const spaceBelow = window.innerHeight - rect.bottom;
+                    
+                    menu.style.position = 'fixed';
+                    menu.style.right = (window.innerWidth - rect.right) + 'px';
+                    
+                    if (spaceBelow < menuHeight && rect.top > menuHeight) {
+                        // Show above
+                        menu.style.top = 'auto';
+                        menu.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+                    } else {
+                        // Show below
+                        menu.style.bottom = 'auto';
+                        menu.style.top = (rect.bottom + 8) + 'px';
+                    }
+                }
+            }
         });
     });
+
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (!target.closest('.kebab-btn') && !target.closest('.kebab-menu')) {
+            document.querySelectorAll('.kebab-menu').forEach(m => m.classList.add('hidden'));
+        }
+    });
+
+    // Close menu on scroll to prevent floating fixed menus from staying in place
+    const closeAllMenus = () => {
+        document.querySelectorAll('.kebab-menu').forEach(m => m.classList.add('hidden'));
+    };
+    window.addEventListener('scroll', closeAllMenus, { passive: true });
+    document.querySelector('.overflow-x-auto')?.addEventListener('scroll', closeAllMenus, { passive: true });
 
     // Edit
     document.querySelectorAll('.edit-user-btn').forEach(btn => {
@@ -168,19 +209,15 @@ export const attachActionListeners = (renderContent: () => void, onSelectionChan
         btn.addEventListener('click', async () => {
             const id = (btn as HTMLElement).dataset.id;
             const status = (btn as HTMLElement).dataset.status;
-            const endpoint = status === 'Blocked'
+            const endpoint = isSuspended(status ?? '')
                 ? `/api/super-admin/users/${id}/unblock`
                 : `/api/super-admin/users/${id}/block`;
             try {
-                const response = await fetch(endpoint, {
+                const response = await apiFetch(endpoint, {
                     method: 'PATCH',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-                        'Accept': 'application/json'
-                    }
                 });
                 const result = await response.json();
-                Toastify({ text: result.message, duration: 2000, style: { background: '#10B981' } }).showToast();
+                showSuccess(result.message);
                 await refreshUsers(renderContent);
             } catch (err) { console.error(err); }
         });
@@ -192,19 +229,78 @@ export const attachActionListeners = (renderContent: () => void, onSelectionChan
             if (!confirm('Apakah Anda yakin ingin menghapus akun ini secara permanen?')) return;
             const id = (btn as HTMLElement).dataset.id;
             try {
-                const response = await fetch(`/api/super-admin/users/${id}`, {
+                const response = await apiFetch(`/api/super-admin/users/${id}`, {
                     method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-                        'Accept': 'application/json'
-                    }
                 });
                 if (response.ok) {
                     const result = await response.json();
-                    Toastify({ text: result.message || 'Akun berhasil dihapus', duration: 2000, style: { background: '#10B981' } }).showToast();
+                    showSuccess(result.message || 'Akun berhasil dihapus');
                     await refreshUsers(renderContent);
                 }
             } catch (err) { console.error(err); }
         });
+    });
+
+    // Mahasiswa row click → open detail modal
+    document.querySelectorAll('.mhs-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement;
+            if (target.closest('.no-row-click')) return;
+            const id = (row as HTMLElement).dataset.id;
+            const user = state.allUsers.find(u => String(u.id) === String(id));
+            if (user) {
+                renderMahasiswaDetailModal(user);
+                attachDetailModalListeners(renderContent);
+            }
+        });
+    });
+};
+
+const attachDetailModalListeners = (renderContent: () => void) => {
+    // Edit from detail modal
+    document.querySelector('.mhs-detail-edit-btn')?.addEventListener('click', () => {
+        const id = (document.querySelector('.mhs-detail-edit-btn') as HTMLElement)?.dataset.id;
+        const user = state.allUsers.find(u => String(u.id) === String(id));
+        const modalContainer = document.getElementById('modal-container')!;
+        modalContainer.innerHTML = '';
+        if (user) renderUserModal(user, () => refreshUsers(renderContent));
+    });
+
+    // Block/Unblock from detail modal
+    document.querySelector('.mhs-detail-block-btn')?.addEventListener('click', async () => {
+        const btn = document.querySelector('.mhs-detail-block-btn') as HTMLElement;
+        const id = btn?.dataset.id;
+        const status = btn?.dataset.status;
+        const endpoint = isSuspended(status ?? '')
+            ? `/api/super-admin/users/${id}/unblock`
+            : `/api/super-admin/users/${id}/block`;
+        try {
+            const response = await apiFetch(endpoint, {
+                method: 'PATCH',
+            });
+            const result = await response.json();
+            const modalContainer = document.getElementById('modal-container')!;
+            modalContainer.innerHTML = '';
+            showSuccess(result.message);
+            await refreshUsers(renderContent);
+        } catch (err) { console.error(err); }
+    });
+
+    // Delete from detail modal
+    document.querySelector('.mhs-detail-delete-btn')?.addEventListener('click', async () => {
+        if (!confirm('Apakah Anda yakin ingin menghapus akun ini secara permanen?')) return;
+        const id = (document.querySelector('.mhs-detail-delete-btn') as HTMLElement)?.dataset.id;
+        try {
+            const response = await apiFetch(`/api/super-admin/users/${id}`, {
+                method: 'DELETE',
+            });
+            if (response.ok) {
+                const result = await response.json();
+                const modalContainer = document.getElementById('modal-container')!;
+                modalContainer.innerHTML = '';
+                showSuccess(result.message || 'Akun berhasil dihapus');
+                await refreshUsers(renderContent);
+            }
+        } catch (err) { console.error(err); }
     });
 };

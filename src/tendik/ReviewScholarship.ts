@@ -365,6 +365,16 @@ export const renderReviewScholarship = async (appId: number) => {
             document.getElementById('approval-modal')?.classList.add('hidden');
         });
 
+        // Overlay click-to-dismiss removed to prevent accidental closure
+
+        // ESC key to close approval modal
+        document.addEventListener('keydown', function approvalEsc(e) {
+            const modal = document.getElementById('approval-modal');
+            if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+                modal.classList.add('hidden');
+            }
+        });
+
         document.getElementById('confirm-approve')?.addEventListener('click', async () => {
             let bodyData = {};
             if (!isAcademic) {

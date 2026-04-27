@@ -28,33 +28,38 @@ const startCountdown = (button: HTMLElement, seconds: number) => {
 export const renderForgotPassword = () => {
   const app = document.querySelector<HTMLDivElement>('#app')!
   app.innerHTML = `
-    <div class="min-h-screen w-full flex items-center justify-center bg-cover bg-center bg-no-repeat relative overflow-hidden font-['Inter']" style="background-image: url('/bc-login.png');">
-      <div class="absolute inset-0 bg-[#002d2d]/40 pointer-events-none"></div>
+    <div class="min-h-screen w-full flex items-center justify-center relative overflow-hidden font-['Inter'] bg-cover bg-center bg-no-repeat" style="background-image: url('/bc-login.png');">
+      <!-- Dark Overlay Gradient -->
+      <div class="absolute inset-0" style="background: linear-gradient(135deg, rgba(2,44,34,0.9), rgba(6,78,59,0.85)); pointer-events: none;"></div>
 
-      <div class="container mx-auto px-6 py-8 relative z-10">
-        <div class="flex flex-col lg:flex-row items-center justify-around gap-12 w-full rounded-3xl p-8 lg:p-14" style="background: rgba(255,255,255,0.08); border: 1.5px solid #BFBFBF; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);">
+      <div class="container mx-auto px-6 py-8 relative z-10 flex justify-center">
+        <!-- BIG GLASS PANEL -->
+        <div class="flex flex-col lg:flex-row items-center justify-around gap-12 w-full max-w-6xl rounded-[2.5rem] p-10 lg:p-14 relative" 
+             style="background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 20px 60px rgba(0,0,0,0.4), inset 0 1px rgba(255,255,255,0.1);">
+        
         <div class="flex flex-col items-center text-center lg:items-center lg:text-center max-w-xl text-white">
-          <div class="mb-6 animate-fade-in ">
-            <img src="/ugm-logo.png" alt="University Logo" class="w-32 h-32 object-contain drop-shadow-2xl">
+          <div class="mb-6 animate-fade-in">
+            <img src="/ugm-logo.png" alt="University Logo" class="w-32 h-32 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]">
           </div>
-          <h1 class="text-3xl md:text-5xl font-bold leading-tight drop-shadow-lg text-center">
+          <h1 class="text-3xl md:text-5xl font-bold leading-tight tracking-tight drop-shadow-lg text-center text-transparent bg-clip-text bg-gradient-to-b from-white to-white/70">
             Sistem Persuratan<br>
-            <span class="text-secondary-teal">Departemen Teknik Elektro dan Informatika</span>
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-emerald-300">Departemen Teknik Elektro dan Informatika</span>
           </h1>
         </div>
 
         <div class="flex flex-col items-center w-full max-w-md">
-          <div class="text-center mb-8 text-white">
-            <h2 class="text-3xl font-semibold mb-2">Lupa Kata Sandi?</h2>
-            <p class="text-sm opacity-90 px-4">Masukkan email Anda untuk menerima token reset.</p>
-          </div>
+          <div class="w-full p-8 md:p-10 rounded-[2rem] relative shadow-2xl animate-slide-up" style="background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.2);">
+            
+            <div class="text-center mb-8 text-white">
+              <h2 class="text-3xl font-bold mb-2 tracking-tight">Lupa Kata Sandi?</h2>
+              <p class="text-sm text-white/70">Masukkan email Anda untuk menerima kode verifikasi</p>
+            </div>
 
-          <div class="bg-white w-full p-8 md:p-10 rounded-2xl shadow-2xl backdrop-blur-sm bg-white/95 animate-slide-up">
-            <form id="forgot-password-form" class="space-y-6">
+            <form id="forgot-password-form" class="space-y-5">
               <div class="space-y-2">
-                <label for="email" class="block text-sm font-semibold text-gray-700">Email</label>
+                <label for="email" class="block text-sm font-medium text-white/80 ml-1">Email</label>
                 <div class="relative group">
-                  <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-secondary-teal transition-colors">
+                  <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/40 group-focus-within:text-teal-300 transition-colors">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
                       <polyline points="22,6 12,13 2,6"></polyline>
@@ -65,22 +70,22 @@ export const renderForgotPassword = () => {
                     id="email" 
                     placeholder="Masukkan email" 
                     required
-                    class="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-secondary-teal/20 focus:border-secondary-teal outline-none transition-all placeholder-gray-400 text-gray-700"
+                    class="block w-full pl-11 pr-4 py-3.5 bg-black/20 border border-white/10 rounded-xl outline-none transition-all text-white placeholder-white/30 shadow-inner focus:bg-black/30 focus:border-teal-400/50 focus:ring-4 focus:ring-teal-400/10"
                   >
                 </div>
               </div>
 
-              <div class="flex justify-end">
-                <button type="button" id="back-to-login" class="text-xs font-medium text-gray-400 hover:text-secondary-teal transition-colors focus:outline-none">Kembali ke Login</button>
+              <div class="flex justify-end pt-1">
+                <button type="button" id="back-to-login" class="text-xs font-medium text-teal-300 hover:text-teal-200 hover:drop-shadow-[0_0_8px_rgba(94,234,212,0.5)] transition-all focus:outline-none">Kembali ke Login</button>
               </div>
 
               <button 
                 type="submit"
                 id="generate-token-btn"
-                class="w-full flex justify-center py-3.5 px-4 border-0 rounded-xl shadow-sm text-base font-bold text-white transition-all transform active:scale-[0.98] focus:outline-none"
-                style="background-color: #8E8E93; cursor: not-allowed;"
+                disabled
+                class="w-full flex justify-center py-3.5 px-4 rounded-xl text-base font-bold text-white transition-all transform active:scale-[0.97] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-[#008080] to-teal-500 hover:from-teal-400 hover:to-[#008080] shadow-[0_4px_15px_rgba(0,128,128,0.4)] hover:shadow-[0_8px_25px_rgba(0,128,128,0.6)] border border-white/20 mt-4"
               >
-                Generate Token
+                Kirim Kode
               </button>
             </form>
           </div>
@@ -95,13 +100,7 @@ export const renderForgotPassword = () => {
 
   const updateGenerateBtn = () => {
     const filled = fpEmailInput.value.trim() !== ''
-    generateTokenBtn.style.backgroundColor = filled ? '' : '#8E8E93'
-    generateTokenBtn.style.cursor = filled ? 'pointer' : 'not-allowed'
-    if (filled) {
-      generateTokenBtn.classList.add('bg-secondary-teal', 'hover:bg-secondary-teal/90')
-    } else {
-      generateTokenBtn.classList.remove('bg-secondary-teal', 'hover:bg-secondary-teal/90')
-    }
+    generateTokenBtn.disabled = !filled
   }
 
   fpEmailInput.addEventListener('input', updateGenerateBtn)
@@ -180,49 +179,53 @@ export const renderForgotPassword = () => {
 export const renderVerifyToken = () => {
   const app = document.querySelector<HTMLDivElement>('#app')!
   app.innerHTML = `
-    <div class="min-h-screen w-full flex items-center justify-center bg-cover bg-center bg-no-repeat relative overflow-hidden font-['Inter']" style="background-image: url('/bc-login.png');">
-      <div class="absolute inset-0 bg-[#002d2d]/40 pointer-events-none"></div>
+    <div class="min-h-screen w-full flex items-center justify-center relative overflow-hidden font-['Inter'] bg-cover bg-center bg-no-repeat" style="background-image: url('/bc-login.png');">
+      <!-- Dark Overlay Gradient -->
+      <div class="absolute inset-0" style="background: linear-gradient(135deg, rgba(2,44,34,0.9), rgba(6,78,59,0.85)); pointer-events: none;"></div>
 
-      <div class="container mx-auto px-6 py-8 relative z-10">
-        <div class="flex flex-col lg:flex-row items-center justify-around gap-12 w-full rounded-3xl p-10 lg:p-14" style="background: rgba(255,255,255,0.08); border: 1.5px solid #BFBFBF; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);">
+      <div class="container mx-auto px-6 py-8 relative z-10 flex justify-center">
+        <!-- BIG GLASS PANEL -->
+        <div class="flex flex-col lg:flex-row items-center justify-around gap-12 w-full max-w-6xl rounded-[2.5rem] p-10 lg:p-14 relative" 
+             style="background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 20px 60px rgba(0,0,0,0.4), inset 0 1px rgba(255,255,255,0.1);">
+        
         <div class="flex flex-col items-center text-center lg:items-center lg:text-center max-w-xl text-white">
-          <div class="mb-6 animate-fade-in ">
-            <img src="/ugm-logo.png" alt="University Logo" class="w-32 h-32 object-contain drop-shadow-2xl">
+          <div class="mb-6 animate-fade-in">
+            <img src="/ugm-logo.png" alt="University Logo" class="w-32 h-32 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]">
           </div>
-          <h1 class="text-3xl md:text-5xl font-bold leading-tight drop-shadow-lg text-center">
+          <h1 class="text-3xl md:text-5xl font-bold leading-tight tracking-tight drop-shadow-lg text-center text-transparent bg-clip-text bg-gradient-to-b from-white to-white/70">
             Sistem Persuratan<br>
-            <span class="text-secondary-teal">Departemen Teknik Elektro dan Informatika</span>
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-emerald-300">Departemen Teknik Elektro dan Informatika</span>
           </h1>
         </div>
 
-        <div class="flex flex-col items-center w-full max-w-md text-white">
-          <div class="text-center mb-8">
-            <h2 class="text-3xl font-semibold mb-2">Verifikasi Token</h2>
-            <p class="text-sm opacity-90 px-4">Kami telah mengirimkan kode verifikasi ke email Anda.</p>
-          </div>
+        <div class="flex flex-col items-center w-full max-w-md">
+          <div class="w-full p-8 md:p-10 rounded-[2rem] relative shadow-2xl animate-slide-up" style="background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.2);">
+            
+            <div class="text-center mb-8 text-white">
+              <h2 class="text-3xl font-bold mb-2 tracking-tight">Verifikasi Kode</h2>
+              <p class="text-sm text-white/70">Kami telah mengirimkan kode verifikasi ke email Anda</p>
+            </div>
 
-          <div class="bg-white w-full p-8 md:p-10 rounded-2xl shadow-2xl backdrop-blur-sm bg-white/95 animate-slide-up">
-            <form id="verify-token-form" class="space-y-6">
-              <div class="space-y-4">
-                <label class="block text-sm font-semibold text-gray-700 text-center">Token Verifikasi (6 Digit)</label>
-                <div class="flex justify-between gap-2" id="otp-inputs">
-                  <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl focus:border-secondary-teal focus:ring-2 focus:ring-secondary-teal/20 outline-none transition-all text-gray-700" required>
-                  <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl focus:border-secondary-teal focus:ring-2 focus:ring-secondary-teal/20 outline-none transition-all text-gray-700" required>
-                  <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl focus:border-secondary-teal focus:ring-2 focus:ring-secondary-teal/20 outline-none transition-all text-gray-700" required>
-                  <div class="flex items-center text-gray-300 font-bold">-</div>
-                  <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl focus:border-secondary-teal focus:ring-2 focus:ring-secondary-teal/20 outline-none transition-all text-gray-700" required>
-                  <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl focus:border-secondary-teal focus:ring-2 focus:ring-secondary-teal/20 outline-none transition-all text-gray-700" required>
-                  <input type="text" maxlength="1" class="otp-input w-12 h-14 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl focus:border-secondary-teal focus:ring-2 focus:ring-secondary-teal/20 outline-none transition-all text-gray-700" required>
+            <form id="verify-token-form" class="space-y-5">
+              <div class="space-y-3">
+                <label class="block text-sm font-medium text-white/80 text-center">Kode Verifikasi (6 Digit)</label>
+                <div class="flex justify-center gap-3" id="otp-inputs">
+                  <input type="text" maxlength="1" inputmode="numeric" class="otp-input w-12 h-14 text-center text-2xl font-bold bg-black/20 border border-white/10 rounded-xl focus:border-teal-400/50 focus:bg-black/30 focus:ring-4 focus:ring-teal-400/10 outline-none transition-all text-white placeholder-white/30 shadow-inner" required>
+                  <input type="text" maxlength="1" inputmode="numeric" class="otp-input w-12 h-14 text-center text-2xl font-bold bg-black/20 border border-white/10 rounded-xl focus:border-teal-400/50 focus:bg-black/30 focus:ring-4 focus:ring-teal-400/10 outline-none transition-all text-white placeholder-white/30 shadow-inner" required>
+                  <input type="text" maxlength="1" inputmode="numeric" class="otp-input w-12 h-14 text-center text-2xl font-bold bg-black/20 border border-white/10 rounded-xl focus:border-teal-400/50 focus:bg-black/30 focus:ring-4 focus:ring-teal-400/10 outline-none transition-all text-white placeholder-white/30 shadow-inner" required>
+                  <input type="text" maxlength="1" inputmode="numeric" class="otp-input w-12 h-14 text-center text-2xl font-bold bg-black/20 border border-white/10 rounded-xl focus:border-teal-400/50 focus:bg-black/30 focus:ring-4 focus:ring-teal-400/10 outline-none transition-all text-white placeholder-white/30 shadow-inner" required>
+                  <input type="text" maxlength="1" inputmode="numeric" class="otp-input w-12 h-14 text-center text-2xl font-bold bg-black/20 border border-white/10 rounded-xl focus:border-teal-400/50 focus:bg-black/30 focus:ring-4 focus:ring-teal-400/10 outline-none transition-all text-white placeholder-white/30 shadow-inner" required>
+                  <input type="text" maxlength="1" inputmode="numeric" class="otp-input w-12 h-14 text-center text-2xl font-bold bg-black/20 border border-white/10 rounded-xl focus:border-teal-400/50 focus:bg-black/30 focus:ring-4 focus:ring-teal-400/10 outline-none transition-all text-white placeholder-white/30 shadow-inner" required>
                 </div>
               </div>
 
-              <div class="flex justify-end">
-                <button type="button" id="back-to-forgot" class="text-xs font-medium text-gray-400 hover:text-secondary-teal transition-colors focus:outline-none">Kirim ulang token</button>
+              <div class="flex justify-end pt-2">
+                <button type="button" id="back-to-forgot" class="text-xs font-medium text-teal-300 hover:text-teal-200 hover:drop-shadow-[0_0_8px_rgba(94,234,212,0.5)] transition-all focus:outline-none">Kirim ulang kode</button>
               </div>
 
               <button 
                 type="submit" 
-                class="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-sm text-base font-bold text-white bg-secondary-teal hover:bg-secondary-teal/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary-teal transition-all transform active:scale-[0.98]"
+                class="w-full flex justify-center py-3.5 px-4 rounded-xl text-base font-bold text-white transition-all transform active:scale-[0.97] focus:outline-none bg-gradient-to-r from-[#008080] to-teal-500 hover:from-teal-400 hover:to-[#008080] shadow-[0_4px_15px_rgba(0,128,128,0.4)] hover:shadow-[0_8px_25px_rgba(0,128,128,0.6)] border border-white/20 mt-4"
               >
                 Verifikasi
               </button>
@@ -385,33 +388,38 @@ export const renderVerifyToken = () => {
 export const renderResetPassword = () => {
   const app = document.querySelector<HTMLDivElement>('#app')!
   app.innerHTML = `
-    <div class="min-h-screen w-full flex items-center justify-center bg-cover bg-center bg-no-repeat relative overflow-hidden font-['Inter']" style="background-image: url('/bc-login.png');">
-      <div class="absolute inset-0 bg-[#002d2d]/40 pointer-events-none"></div>
+    <div class="min-h-screen w-full flex items-center justify-center relative overflow-hidden font-['Inter'] bg-cover bg-center bg-no-repeat" style="background-image: url('/bc-login.png');">
+      <!-- Dark Overlay Gradient -->
+      <div class="absolute inset-0" style="background: linear-gradient(135deg, rgba(2,44,34,0.9), rgba(6,78,59,0.85)); pointer-events: none;"></div>
 
-      <div class="container mx-auto px-6 py-8 relative z-10">
-        <div class="flex flex-col lg:flex-row items-center justify-around gap-12 w-full rounded-3xl p-10 lg:p-14" style="background: rgba(255,255,255,0.08); border: 1.5px solid #BFBFBF; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);">
+      <div class="container mx-auto px-6 py-8 relative z-10 flex justify-center">
+        <!-- BIG GLASS PANEL -->
+        <div class="flex flex-col lg:flex-row items-center justify-around gap-12 w-full max-w-6xl rounded-[2.5rem] p-10 lg:p-14 relative" 
+             style="background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 20px 60px rgba(0,0,0,0.4), inset 0 1px rgba(255,255,255,0.1);">
+        
         <div class="flex flex-col items-center text-center lg:items-center lg:text-center max-w-xl text-white">
-          <div class="mb-6 animate-fade-in ">
-            <img src="/ugm-logo.png" alt="University Logo" class="w-32 h-32 object-contain drop-shadow-2xl">
+          <div class="mb-6 animate-fade-in">
+            <img src="/ugm-logo.png" alt="University Logo" class="w-32 h-32 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]">
           </div>
-          <h1 class="text-3xl md:text-5xl font-bold leading-tight drop-shadow-lg text-center">
+          <h1 class="text-3xl md:text-5xl font-bold leading-tight tracking-tight drop-shadow-lg text-center text-transparent bg-clip-text bg-gradient-to-b from-white to-white/70">
             Sistem Persuratan<br>
-            <span class="text-secondary-teal">Departemen Teknik Elektro dan Informatika</span>
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-emerald-300">Departemen Teknik Elektro dan Informatika</span>
           </h1>
         </div>
 
-        <div class="flex flex-col items-center w-full max-w-md text-white">
-          <div class="text-center mb-8">
-            <h2 class="text-3xl font-semibold mb-2">Atur Ulang Kata Sandi</h2>
-            <p class="text-sm opacity-90 px-4">Kata sandi baru Anda harus aman.</p>
-          </div>
+        <div class="flex flex-col items-center w-full max-w-md">
+          <div class="w-full p-8 md:p-10 rounded-[2rem] relative shadow-2xl animate-slide-up" style="background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.2);">
+            
+            <div class="text-center mb-8 text-white">
+              <h2 class="text-3xl font-bold mb-2 tracking-tight">Atur Ulang Kata Sandi</h2>
+              <p class="text-sm text-white/70">Kata sandi baru Anda harus aman.</p>
+            </div>
 
-          <div class="bg-white w-full p-8 md:p-10 rounded-2xl shadow-2xl backdrop-blur-sm bg-white/95 animate-slide-up">
-            <form id="reset-password-form" class="space-y-6">
+            <form id="reset-password-form" class="space-y-5">
               <div class="space-y-2">
-                <label for="new-password" class="block text-sm font-semibold text-gray-700">Kata Sandi Baru</label>
-                <div class="relative group text-gray-700">
-                  <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-secondary-teal transition-colors">
+                <label for="new-password" class="block text-sm font-medium text-white/80 ml-1">Kata Sandi Baru</label>
+                <div class="relative group">
+                  <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/40 group-focus-within:text-teal-300 transition-colors">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                       <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
@@ -422,9 +430,9 @@ export const renderResetPassword = () => {
                     id="new-password" 
                     placeholder="Masukkan kata sandi baru" 
                     required
-                    class="block w-full pl-10 pr-12 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-secondary-teal/20 focus:border-secondary-teal outline-none transition-all placeholder-gray-400"
+                    class="block w-full pl-11 pr-12 py-3.5 bg-black/20 border border-white/10 rounded-xl outline-none transition-all text-white placeholder-white/30 shadow-inner focus:bg-black/30 focus:border-teal-400/50 focus:ring-4 focus:ring-teal-400/10"
                   >
-                  <button type="button" id="toggle-new-password" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors focus:outline-none">
+                  <button type="button" id="toggle-new-password" class="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/80 transition-colors focus:outline-none">
                     <svg id="eye-icon-new" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                       <circle cx="12" cy="12" r="3"></circle>
@@ -433,10 +441,10 @@ export const renderResetPassword = () => {
                 </div>
               </div>
 
-              <div class="space-y-2 text-gray-700">
-                <label for="confirm-password" class="block text-sm font-semibold text-gray-700">Konfirmasi Kata Sandi</label>
+              <div class="space-y-2">
+                <label for="confirm-password" class="block text-sm font-medium text-white/80 ml-1">Konfirmasi Kata Sandi</label>
                 <div class="relative group">
-                  <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-secondary-teal transition-colors">
+                  <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/40 group-focus-within:text-teal-300 transition-colors">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                     </svg>
@@ -446,9 +454,9 @@ export const renderResetPassword = () => {
                     id="confirm-password" 
                     placeholder="Ulangi kata sandi baru" 
                     required
-                    class="block w-full pl-10 pr-12 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-secondary-teal/20 focus:border-secondary-teal outline-none transition-all placeholder-gray-400"
+                    class="block w-full pl-11 pr-12 py-3.5 bg-black/20 border border-white/10 rounded-xl outline-none transition-all text-white placeholder-white/30 shadow-inner focus:bg-black/30 focus:border-teal-400/50 focus:ring-4 focus:ring-teal-400/10"
                   >
-                  <button type="button" id="toggle-confirm-password" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors focus:outline-none">
+                  <button type="button" id="toggle-confirm-password" class="absolute inset-y-0 right-0 pr-4 flex items-center text-white/40 hover:text-white/80 transition-colors focus:outline-none">
                     <svg id="eye-icon-confirm" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                       <circle cx="12" cy="12" r="3"></circle>
@@ -459,7 +467,7 @@ export const renderResetPassword = () => {
 
               <button 
                 type="submit" 
-                class="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-sm text-base font-bold text-white bg-secondary-teal hover:bg-secondary-teal/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary-teal transition-all transform active:scale-[0.98]"
+                class="w-full flex justify-center py-3.5 px-4 rounded-xl text-base font-bold text-white transition-all transform active:scale-[0.97] focus:outline-none bg-gradient-to-r from-[#008080] to-teal-500 hover:from-teal-400 hover:to-[#008080] shadow-[0_4px_15px_rgba(0,128,128,0.4)] hover:shadow-[0_8px_25px_rgba(0,128,128,0.6)] border border-white/20 mt-4"
               >
                 Simpan Kata Sandi
               </button>

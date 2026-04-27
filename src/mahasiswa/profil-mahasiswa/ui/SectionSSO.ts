@@ -11,19 +11,23 @@ export const renderSectionSSO = () => `
             </div>
             <div class="space-y-2">
                 <label class="block text-sm font-semibold text-gray-700">NIM</label>
-                <input type="text" id="sso_nim" readonly class="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-600 cursor-not-allowed font-medium">
+                <input type="text" id="sso_nim" readonly class="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-600 cursor-not-allowed font-medium uppercase">
+            </div>
+            <div class="space-y-2">
+                <label class="block text-sm font-semibold text-gray-700">Program Studi</label>
+                <input type="text" id="sso_program_studi" readonly class="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-600 cursor-not-allowed font-medium">
+            </div>
+            <div class="space-y-2">
+                <label class="block text-sm font-semibold text-gray-700">Departemen</label>
+                <input type="text" id="sso_departemen" readonly class="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-600 cursor-not-allowed font-medium">
             </div>
             <div class="space-y-2">
                 <label class="block text-sm font-semibold text-gray-700">Fakultas</label>
                 <input type="text" id="sso_fakultas" readonly class="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-600 cursor-not-allowed font-medium">
             </div>
             <div class="space-y-2">
-                <label class="block text-sm font-semibold text-gray-700">Program Studi</label>
-                <input type="text" id="sso_program_studi" readonly class="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-600 cursor-not-allowed font-medium">
-            </div>
-            <div class="space-y-2 md:col-span-2">
                 <label class="block text-sm font-semibold text-gray-700">Email UGM</label>
-                <input type="text" id="sso_email" readonly class="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-600 cursor-not-allowed font-medium">
+                <input type="text" id="sso_email" readonly class="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-gray-600 cursor-not-allowed font-medium truncate">
             </div>
         </div>
     </div>

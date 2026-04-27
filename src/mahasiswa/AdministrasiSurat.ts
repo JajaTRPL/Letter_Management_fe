@@ -3,13 +3,13 @@ import { renderMahasiswaDashboard } from '../dashboard/MahasiswaDashboard';
 import { renderScholarshipForm } from './ScholarshipForm';
 import Toastify from 'toastify-js';
 
-export const renderDokumenMahasiswa = () => {
+export const renderAdministrasiSurat = () => {
     const content = `
-        <div class="max-w-5xl mx-auto space-y-6 animate-fade-in pb-12">
+        <div class="max-w-6xl mx-auto space-y-8 animate-fade-in pb-12">
 
             <div class="flex justify-between items-end">
                 <div>
-                    <h2 class="text-3xl font-bold text-gray-800 tracking-tight">Ajukan Surat</h2>
+                    <h2 class="text-3xl font-bold text-gray-800 tracking-tight">Administrasi Surat</h2>
                     <p class="text-gray-500 mt-2">Pilih jenis surat yang ingin Anda ajukan.</p>
                 </div>
                 <button id="btn-back-dashboard-dokumen" class="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 hover:text-teal-600 hover:border-teal-200 transition-all shadow-sm text-sm">
@@ -19,7 +19,7 @@ export const renderDokumenMahasiswa = () => {
             </div>
 
             <!-- Jenis Surat Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                 <!-- Surat Keterangan Aktif -->
                 <div class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
@@ -33,9 +33,9 @@ export const renderDokumenMahasiswa = () => {
                     </div>
                     <h3 class="text-base font-bold text-gray-800 mb-1">Surat Keterangan Aktif</h3>
                     <p class="text-sm text-gray-500 mb-4">Surat yang menerangkan bahwa Anda adalah mahasiswa aktif.</p>
-                    <span class="inline-flex items-center gap-1 text-xs font-bold text-teal-600 bg-teal-50 px-3 py-1 rounded-full">
+                    <span id="duration-aktif" class="inline-flex items-center gap-1 text-xs font-bold text-teal-600 bg-teal-50 px-3 py-1 rounded-full">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        1-3 Hari Kerja
+                        1–3 Hari Kerja
                     </span>
                 </div>
 
@@ -49,9 +49,9 @@ export const renderDokumenMahasiswa = () => {
                     </div>
                     <h3 class="text-base font-bold text-gray-800 mb-1">Surat Pengantar Magang</h3>
                     <p class="text-sm text-gray-500 mb-4">Surat pengantar untuk keperluan kerja praktik atau magang.</p>
-                    <span class="inline-flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+                    <span id="duration-magang" class="inline-flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        2-5 Hari Kerja
+                        2–5 Hari Kerja
                     </span>
                 </div>
 
@@ -65,40 +65,9 @@ export const renderDokumenMahasiswa = () => {
                     </div>
                     <h3 class="text-base font-bold text-gray-800 mb-1">Surat Permohonan Beasiswa</h3>
                     <p class="text-sm text-gray-500 mb-4">Surat permohonan dari departemen untuk pengajuan beasiswa.</p>
-                    <span class="inline-flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
+                    <span id="duration-beasiswa" class="inline-flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        3-7 Hari Kerja
-                    </span>
-                </div>
-
-                <!-- Surat Permohonan Penundaan Pembayaran UKT -->
-                <div class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
-                    <div class="w-12 h-12 bg-rose-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-rose-100 transition-colors">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-                        </svg>
-                    </div>
-                    <h3 class="text-base font-bold text-gray-800 mb-1">Penundaan Bayar UKT</h3>
-                    <p class="text-sm text-gray-500 mb-4">Permohonan penundaan pembayaran UKT per semester.</p>
-                    <span class="inline-flex items-center gap-1 text-xs font-bold text-rose-600 bg-rose-50 px-3 py-1 rounded-full">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        3-5 Hari Kerja
-                    </span>
-                </div>
-
-                <!-- Surat Peminjaman Ruangan -->
-                <div class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
-                    <div class="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-indigo-100 transition-colors">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                        </svg>
-                    </div>
-                    <h3 class="text-base font-bold text-gray-800 mb-1">Peminjaman Ruangan</h3>
-                    <p class="text-sm text-gray-500 mb-4">Surat izin peminjaman ruangan di lingkungan kampus.</p>
-                    <span class="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        1-2 Hari Kerja
+                        3–7 Hari Kerja
                     </span>
                 </div>
 
@@ -113,28 +82,9 @@ export const renderDokumenMahasiswa = () => {
                     </div>
                     <h3 class="text-base font-bold text-gray-800 mb-1">Proses Luar Negeri</h3>
                     <p class="text-sm text-gray-500 mb-4">Surat pengantar untuk keperluan visa atau studi ke luar negeri.</p>
-                    <span class="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+                    <span id="duration-luar_negeri" class="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        2-4 Hari Kerja
-                    </span>
-                </div>
-
-                <!-- Surat Transkrip Nilai -->
-                <div class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
-                    <div class="w-12 h-12 bg-cyan-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-cyan-100 transition-colors">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0891b2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                            <line x1="16" y1="13" x2="8" y2="13"></line>
-                            <line x1="16" y1="17" x2="8" y2="17"></line>
-                            <polyline points="10 9 9 9 8 9"></polyline>
-                        </svg>
-                    </div>
-                    <h3 class="text-base font-bold text-gray-800 mb-1">Transkrip Nilai</h3>
-                    <p class="text-sm text-gray-500 mb-4">Permohonan transkrip nilai akademik sementara.</p>
-                    <span class="inline-flex items-center gap-1 text-xs font-bold text-cyan-600 bg-cyan-50 px-3 py-1 rounded-full">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        1-3 Hari Kerja
+                        2–4 Hari Kerja
                     </span>
                 </div>
 
@@ -142,12 +92,15 @@ export const renderDokumenMahasiswa = () => {
         </div>
     `;
 
-    renderDashboardLayout('Ajukan Surat', content, 'mahasiswa', 'pengajuan');
+    renderDashboardLayout('Administrasi Surat', content, 'mahasiswa', 'administrasi');
 
     setTimeout(() => {
         document.getElementById('btn-back-dashboard-dokumen')?.addEventListener('click', () => {
             renderMahasiswaDashboard();
         });
+
+        // Fetch dynamic duration estimates
+        fetchDurationEstimates();
 
         const handleCardClick = async (callback?: () => void) => {
             const token = localStorage.getItem('auth_token');
@@ -198,4 +151,41 @@ export const renderDokumenMahasiswa = () => {
             });
         });
     }, 100);
+};
+
+/**
+ * Fetch average duration data from API and update card badges.
+ * On failure, static fallback labels remain in place (no-op).
+ */
+const fetchDurationEstimates = async () => {
+    const token = localStorage.getItem('auth_token');
+    try {
+        const res = await fetch('/api/surat/average-duration', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) return;
+
+        const data: Record<string, { value: number | null; source: string; label: string | null }> = await res.json();
+
+        // Clock icon SVG (reused in each badge)
+        const clockSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+
+        for (const [type, info] of Object.entries(data)) {
+            const el = document.getElementById(`duration-${type}`);
+            if (!el) continue;
+
+            if (info.source === 'dynamic' && info.value !== null && info.value > 0) {
+                // Round to nearest integer for clean display
+                const rounded = Math.round(info.value);
+                const display = rounded < 1 ? '<1' : `~${rounded}`;
+                el.innerHTML = `${clockSvg} ${display} Hari Kerja`;
+            } else if (info.source === 'fallback' && info.label) {
+                el.innerHTML = `${clockSvg} ${info.label}`;
+            }
+            // else: keep existing static text (safe no-op)
+        }
+    } catch (e) {
+        // Silently fail — static fallback labels remain
+        console.error('Duration fetch failed (using fallback):', e);
+    }
 };

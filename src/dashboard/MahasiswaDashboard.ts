@@ -2,7 +2,167 @@ import { renderDashboardLayout } from './DashboardLayout';
 import { renderProfilMahasiswa } from '../mahasiswa/ProfilMahasiswa';
 import { getGreetingName } from '../utils/nameHelper';
 
-export const renderMahasiswaDashboard = () => {
+export const renderMahasiswaDashboard = async () => {
+    // Show a loading state or fetch before rendering
+    const token = localStorage.getItem('auth_token');
+    let applications: any[] = [];
+    
+    try {
+        const res = await fetch('/api/mahasiswa/scholarship/applications', {
+            headers: { 'Authorization': 'Bearer ' + token },
+            cache: 'no-store'
+        });
+        if (res.ok) {
+            const data = await res.json();
+            applications = data.applications || [];
+        }
+    } catch (e) {
+        console.error("Failed to fetch applications", e);
+    }
+
+    const diproses = applications.filter((app: any) => !['Completed', 'Rejected', 'Revision'].includes(app.status)).length;
+    const direvisi = applications.filter((app: any) => app.status === 'Revision').length;
+    const selesai = applications.filter((app: any) => app.status === 'Completed').length;
+
+    // Build History Rows
+    const recentApps = applications.slice(0, 4);
+    let historyHtml = '';
+    if (recentApps.length === 0) {
+        historyHtml = `<tr><td colspan="4" class="px-8 py-5 text-center text-sm text-gray-500">Belum ada riwayat pengajuan.</td></tr>`;
+    } else {
+        historyHtml = recentApps.map((app: any) => {
+            const dateStr = new Date(app.created_at).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+            let statusText = app.status;
+            let statusClass = '';
+            
+            if (app.status === 'Completed') {
+                statusText = 'Selesai';
+                statusClass = 'bg-teal-50 text-teal-600';
+            } else if (app.status === 'Rejected') {
+                statusText = 'Ditolak';
+                statusClass = 'bg-[#FEE2E2] text-red-900';
+            } else if (app.status === 'Revision') {
+                statusText = 'Revisi';
+                statusClass = 'bg-amber-50 text-amber-600';
+            } else {
+                statusText = 'Diproses';
+                statusClass = 'bg-[#E0F2FE] text-[#0369A1]';
+            }
+
+            return `
+                <tr class="hover:bg-gray-50/50 transition-colors group">
+                    <td class="px-8 py-5 text-sm text-gray-400 font-['Inter'] font-normal text-center">${dateStr}</td>
+                    <td class="px-8 py-5 text-sm text-gray-900 font-['Inter'] font-normal text-center">${app.scholarship_name || 'Surat Permohonan Beasiswa'}</td>
+                    <td class="px-8 py-5 text-sm text-center">
+                        <span class="${statusClass} px-4 py-1.5 rounded-full font-bold text-[11px] uppercase tracking-wider border">
+                            ${statusText}
+                        </span>
+                    </td>
+                    <td class="px-8 py-5">
+                        <div class="flex items-center justify-center gap-3 group-hover:opacity-100 transition-opacity">
+                            ${app.generated_docx_path ? `
+                            <a href="/api/storage/${app.generated_docx_path.replace('/storage/', '')}" target="_blank" class="p-2 text-gray-400 hover:text-primary-teal transition-colors" title="Download">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            </a>
+                            ` : '-'}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // Build Active Tracking Section
+    const activeApps = applications.filter((app: any) => !['Completed', 'Rejected'].includes(app.status));
+    let trackingHtml = '';
+    if (activeApps.length === 0) {
+        trackingHtml = `<div class="col-span-full text-center text-gray-500 py-8 bg-white rounded-2xl border border-gray-100">Tidak ada pengajuan aktif yang sedang diproses.</div>`;
+    } else {
+        trackingHtml = activeApps.slice(0, 2).map((app: any) => {
+            const isTendikDone = ['Approved_Tendik', 'Approved_Kaprodi', 'Approved_Kadep'].includes(app.status);
+            const isKaprodiDone = ['Approved_Kaprodi', 'Approved_Kadep'].includes(app.status);
+            const isRevision = app.status === 'Revision';
+            
+            return `
+                <div class="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+                    <div class="bg-primary-teal px-6 py-4 text-white">
+                        <h4 class="font-['Inter'] font-normal text-white text-xl">${app.scholarship_name || 'Pengajuan Beasiswa'}</h4>
+                    </div>
+                    <div class="p-8 flex-1">
+                        <div class="relative flex justify-between items-start mb-8 px-2">
+                            <div class="absolute top-[18px] left-[10%] right-[10%] h-0.5 border-t-2 border-dashed border-gray-200 -z-0"></div>
+                            
+                            <div class="relative z-10 flex flex-col items-center gap-3">
+                                <div class="w-9 h-9 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                </div>
+                                <span class="text-[10px] font-bold text-gray-600 text-center leading-tight">Diajukan</span>
+                            </div>
+                            
+                            <div class="relative z-10 flex flex-col items-center gap-3">
+                                ${isRevision ? `
+                                    <div class="w-9 h-9 bg-red-500 text-white rounded-full flex items-center justify-center border-4 border-white shadow-md">
+                                        <div class="w-3 h-3 bg-white rounded-full"></div>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-red-600 text-center leading-tight">Revisi</span>
+                                ` : isTendikDone ? `
+                                    <div class="w-9 h-9 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-gray-600 text-center leading-tight">Verifikasi<br>Tendik</span>
+                                ` : `
+                                    <div class="w-9 h-9 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm animate-pulse">
+                                        <div class="w-3 h-3 bg-amber-500 rounded-full"></div>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-amber-600 text-center leading-tight">Verifikasi<br>Tendik</span>
+                                `}
+                            </div>
+                            
+                            <div class="relative z-10 flex flex-col items-center gap-3 ${isTendikDone && !isRevision ? '' : 'opacity-30'}">
+                                ${isTendikDone && !isRevision ? (isKaprodiDone ? `
+                                    <div class="w-9 h-9 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    </div>
+                                ` : `
+                                    <div class="w-9 h-9 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm animate-pulse">
+                                        <div class="w-3 h-3 bg-amber-500 rounded-full"></div>
+                                    </div>
+                                `) : `
+                                    <div class="w-9 h-9 bg-gray-100 text-gray-400 rounded-full flex items-center justify-center border-4 border-white"></div>
+                                `}
+                                <span class="text-[10px] font-bold text-gray-400 text-center leading-tight">Persetujuan<br>Fakultas</span>
+                            </div>
+                            
+                            <div class="relative z-10 flex flex-col items-center gap-3 opacity-30">
+                                <div class="w-9 h-9 bg-gray-100 text-gray-400 rounded-full flex items-center justify-center border-4 border-white"></div>
+                                <span class="text-[10px] font-bold text-gray-400 text-center leading-tight">Selesai</span>
+                            </div>
+                        </div>
+                        
+                        ${isRevision ? `
+                        <div class="bg-amber-50 rounded-xl p-4 mb-6 flex items-start gap-3 border border-amber-100">
+                            <svg class="text-amber-500 mt-1 shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                <line x1="12" y1="9" x2="12" y2="13"></line>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                            <p class="text-xs font-semibold text-amber-800">Perhatian: <span class="font-medium text-amber-700">Terdapat catatan revisi pada pengajuan Anda.</span></p>
+                        </div>
+                        <button class="w-full py-3 bg-[#E53935] text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm flex items-center justify-center gap-2">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                            LIHAT CATATAN & PERBAIKI
+                        </button>
+                        ` : `
+                        <button class="w-full py-3 bg-gray-50 text-gray-700 rounded-xl font-bold border border-gray-200">
+                            Status Terkini: ${app.status}
+                        </button>
+                        `}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
     const content = `
         <div class="space-y-8">
             <!-- Greeting Banner -->
@@ -40,7 +200,7 @@ export const renderMahasiswaDashboard = () => {
                         <img src="proses-logo.png" class="w-14 h-14" />
                     </div>
                     <div>
-                        <p class="text-3xl font-black text-green-800 leading-tight">2</p>
+                        <p class="text-3xl font-black text-green-800 leading-tight">${diproses}</p>
                         <p class="text-sm font-['Inter'] text-gray-500 font-normal">Sedang Diproses</p>
                     </div>
                 </div>
@@ -51,7 +211,7 @@ export const renderMahasiswaDashboard = () => {
                         <img src="revisi-logo.png" class="w-14 h-14" />
                     </div>
                     <div>
-                        <p class="text-3xl font-black text-[#F59E0B] leading-tight">1</p>
+                        <p class="text-3xl font-black text-[#F59E0B] leading-tight">${direvisi}</p>
                         <p class="text-sm font-['Inter'] text-gray-500 font-normal">Surat Butuh Revisi</p>
                     </div>
                 </div>
@@ -62,7 +222,7 @@ export const renderMahasiswaDashboard = () => {
                         <img src="selesai-logo.png" class="w-14 h-14" />
                     </div>
                     <div>
-                        <p class="text-3xl font-black text-[#10B981] leading-tight">5</p>
+                        <p class="text-3xl font-black text-[#10B981] leading-tight">${selesai}</p>
                         <p class="text-sm font-['Inter'] text-gray-500 font-normal">Surat Selesai</p>
                     </div>
                 </div>
@@ -83,116 +243,7 @@ export const renderMahasiswaDashboard = () => {
                     Pelacakan Pengajuan Aktif
                 </h3>
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                    <!-- Tracking Card 1 -->
-                    <div class="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-                        <div class="bg-primary-teal px-6 py-4">
-                            <h4 class="font-['Inter'] font-normal text-white text-xl">Surat Rekomendasi - Beasiswa Djarum</h4>
-                        </div>
-                        <div class="p-8 flex-1">
-                            <div class="relative flex justify-between items-start mb-12 px-2">
-                                <!-- Connection Lines -->
-                                <div class="absolute top-[18px] left-[10%] right-[10%] h-0.5 border-t-2 border-dashed border-gray-200 -z-0"></div>
-                                <div class="absolute top-[18px] left-[10%] w-[35%] h-0.5 bg-emerald-500 -z-0"></div>
-                                
-                                <!-- Step 1 -->
-                                <div class="relative z-10 flex flex-col items-center gap-3">
-                                    <div class="w-9 h-9 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                    </div>
-                                    <span class="text-[10px] font-bold text-gray-600 text-center leading-tight">Diajukan</span>
-                                </div>
-                                
-                                <!-- Step 2 -->
-                                <div class="relative z-10 flex flex-col items-center gap-3">
-                                    <div class="w-9 h-9 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                    </div>
-                                    <span class="text-[10px] font-bold text-gray-600 text-center leading-tight">Verifikasi<br>Tendik</span>
-                                </div>
-                                
-                                <!-- Step 3 -->
-                                <div class="relative z-10 flex flex-col items-center gap-3">
-                                    <div class="w-9 h-9 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm animate-pulse">
-                                        <div class="w-3 h-3 bg-amber-500 rounded-full"></div>
-                                    </div>
-                                    <span class="text-[10px] font-bold text-amber-600 text-center leading-tight">Menunggu<br>TTD Kaprodi</span>
-                                </div>
-                                
-                                <!-- Step 4 -->
-                                <div class="relative z-10 flex flex-col items-center gap-3 opacity-30">
-                                    <div class="w-9 h-9 bg-gray-100 text-gray-400 rounded-full flex items-center justify-center border-4 border-white"></div>
-                                    <span class="text-[10px] font-bold text-gray-400 text-center leading-tight">TTD Kadep</span>
-                                </div>
-                                
-                                <!-- Step 5 -->
-                                <div class="relative z-10 flex flex-col items-center gap-3 opacity-30">
-                                    <div class="w-9 h-9 bg-gray-100 text-gray-400 rounded-full flex items-center justify-center border-4 border-white"></div>
-                                    <span class="text-[10px] font-bold text-gray-400 text-center leading-tight">Selesai</span>
-                                </div>
-                            </div>
-                            <button class="w-full py-3 bg-gray-500 text-white rounded-xl font-bold hover:bg-gray-600 transition-colors shadow-sm">
-                                Lihat Detail
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Tracking Card 2 -->
-                    <div class="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-                        <div class="bg-primary-teal px-6 py-4 text-white">
-                            <h4 class="font-['Inter'] font-normal text-white text-xl">Surat Rekomendasi Magang - Shopee</h4>
-                        </div>
-                        <div class="p-8 flex-1">
-                            <div class="relative flex justify-between items-start mb-8 px-2">
-                                <!-- Connection Line -->
-                                <div class="absolute top-[18px] left-[10%] right-[10%] h-0.5 border-t-2 border-dashed border-gray-200 -z-0"></div>
-                                <div class="absolute top-[18px] left-[10%] w-[35%] h-0.5 bg-red-500 -z-0"></div>
-
-                                <!-- Step 1 -->
-                                <div class="relative z-10 flex flex-col items-center gap-3">
-                                    <div class="w-9 h-9 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                    </div>
-                                    <span class="text-[10px] font-bold text-gray-600 text-center leading-tight">Diajukan</span>
-                                </div>
-
-                                <!-- Step 2 (Error) -->
-                                <div class="relative z-10 flex flex-col items-center gap-3">
-                                    <div class="w-9 h-9 bg-red-500 text-white rounded-full flex items-center justify-center border-4 border-white shadow-md">
-                                        <div class="w-3 h-3 bg-white rounded-full"></div>
-                                    </div>
-                                    <span class="text-[10px] font-bold text-red-600 text-center leading-tight">Ditolak<br>Tendik</span>
-                                </div>
-
-                                <!-- Others -->
-                                <div class="relative z-10 flex flex-col items-center gap-3 opacity-20">
-                                    <div class="w-9 h-9 bg-gray-100 rounded-full border-4 border-white"></div>
-                                    <span class="text-[10px] font-bold text-gray-400">TTD Kaprodi</span>
-                                </div>
-                                <div class="relative z-10 flex flex-col items-center gap-3 opacity-20">
-                                    <div class="w-9 h-9 bg-gray-100 rounded-full border-4 border-white"></div>
-                                    <span class="text-[10px] font-bold text-gray-400">TTD Kadep</span>
-                                </div>
-                                <div class="relative z-10 flex flex-col items-center gap-3 opacity-20">
-                                    <div class="w-9 h-9 bg-gray-100 rounded-full border-4 border-white"></div>
-                                    <span class="text-[10px] font-bold text-gray-400">Selesai</span>
-                                </div>
-                            </div>
-                            
-                            <div class="bg-amber-50 rounded-xl p-4 mb-6 flex items-start gap-3 border border-amber-100">
-                                <svg class="text-amber-500 mt-1 shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                    <line x1="12" y1="9" x2="12" y2="13"></line>
-                                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                </svg>
-                                <p class="text-xs font-semibold text-amber-800">Perhatian: <span class="font-medium text-amber-700">Ada dokumen tidak sesuai.</span></p>
-                            </div>
-
-                            <button class="w-full py-3 bg-[#E53935] text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm flex items-center justify-center gap-2">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                                LIHAT CATATAN REVISI & PERBAIKI
-                            </button>
-                        </div>
-                    </div>
+                    ${trackingHtml}
                 </div>
             </div>
 
@@ -211,27 +262,7 @@ export const renderMahasiswaDashboard = () => {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-50">
-                                ${Array.from({ length: 4 }).map((_, i) => `
-                                    <tr class="hover:bg-gray-50/50 transition-colors group">
-                                        <td class="px-8 py-5 text-sm text-gray-400 font-['Inter'] font-normal text-center">Selasa, 24 Feb 2024</td>
-                                        <td class="px-8 py-5 text-sm text-gray-900 font-['Inter'] font-normal text-center">Surat Rekomendasi Magang - Shopee</td>
-                                        <td class="px-8 py-5 text-sm text-center">
-                                            <span class="${i === 0 ? 'bg-teal-50 text-teal-600' : i === 1 ? 'bg-[#E0F2FE] text-[#0369A1]' : 'bg-[#FEE2E2] text-red-900'} px-4 py-1.5 rounded-full font-bold text-[11px] uppercase tracking-wider">
-                                                ${i === 0 ? 'Selesai' : i === 1 ? 'Diproses' : 'Ditolak'}
-                                            </span>
-                                        </td>
-                                        <td class="px-8 py-5">
-                                            <div class="flex items-center justify-center gap-3 group-hover:opacity-100 transition-opacity">
-                                                <button class="p-2 text-gray-400 hover:text-primary-teal transition-colors" title="Download">
-                                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                                </button>
-                                                <button class="p-2 text-gray-400 hover:text-primary-teal transition-colors" title="Detail">
-                                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `).join('')}
+                                ${historyHtml}
                             </tbody>
                         </table>
                     </div>
@@ -252,8 +283,8 @@ export const renderMahasiswaDashboard = () => {
         const btnAjukan = document.getElementById('btn-ajukan-surat');
         if (btnAjukan) {
             btnAjukan.addEventListener('click', () => {
-                import('../mahasiswa/DokumenMahasiswa').then(({ renderDokumenMahasiswa }) => {
-                    renderDokumenMahasiswa();
+                import('../mahasiswa/AdministrasiSurat').then(({ renderAdministrasiSurat }) => {
+                    renderAdministrasiSurat();
                 });
             });
         }

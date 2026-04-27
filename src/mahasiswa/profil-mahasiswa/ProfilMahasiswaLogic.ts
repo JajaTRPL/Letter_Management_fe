@@ -1,4 +1,5 @@
-import Toastify from 'toastify-js';
+import { apiFetch } from '../../shared/api-client';
+import { showSuccess, showError } from '../../shared/toast';
 
 export const initProfilMahasiswaLogic = () => {
     const form = document.getElementById('form-update-profil');
@@ -137,11 +138,8 @@ export const initProfilMahasiswaLogic = () => {
     }
 
     async function loadProfile() {
-        const token = localStorage.getItem('auth_token');
-        if (!token) return;
         try {
-            const res = await fetch('/api/profile', {
-                headers: { 'Authorization': 'Bearer ' + token },
+            const res = await apiFetch('/api/profile', {
                 cache: 'no-store'
             });
             if (res.ok) {
@@ -156,8 +154,12 @@ export const initProfilMahasiswaLogic = () => {
 
                 if (profile) {
                     if (document.getElementById('sso_nim')) (document.getElementById('sso_nim') as HTMLInputElement).value = profile.nim || '';
-                    if (document.getElementById('sso_fakultas')) (document.getElementById('sso_fakultas') as HTMLInputElement).value = profile.fakultas || '';
-                    if (document.getElementById('sso_program_studi')) (document.getElementById('sso_program_studi') as HTMLInputElement).value = profile.program_studi || '';
+
+                    // Use relational chain from user (not legacy string fields)
+                    const sp = user?.study_program;
+                    if (document.getElementById('sso_program_studi')) (document.getElementById('sso_program_studi') as HTMLInputElement).value = sp ? `${sp.code} — ${sp.name}` : '';
+                    if (document.getElementById('sso_departemen')) (document.getElementById('sso_departemen') as HTMLInputElement).value = sp?.department ? `${sp.department.code} — ${sp.department.name}` : '';
+                    if (document.getElementById('sso_fakultas')) (document.getElementById('sso_fakultas') as HTMLInputElement).value = sp?.department?.faculty?.name || '';
 
                     if (document.getElementById('tempat_lahir')) (document.getElementById('tempat_lahir') as HTMLInputElement).value = profile.tempat_lahir || '';
                     if (document.getElementById('tanggal_lahir')) (document.getElementById('tanggal_lahir') as HTMLInputElement).value = profile.tanggal_lahir?.split('T')[0] || '';
@@ -405,19 +407,14 @@ export const initProfilMahasiswaLogic = () => {
             if (fileFoto) formData.append('pas_foto', fileFoto);
             if (fileTtd) formData.append('tanda_tangan', fileTtd);
 
-            const res = await fetch('/api/profile', {
+            const res = await apiFetch('/api/profile', {
                 method: 'POST',
-                headers: { 'Authorization': 'Bearer ' + token },
-                body: formData
+                body: formData,
+                isFormData: true,
             });
 
             if (res.ok) {
-                // @ts-ignore
-                Toastify({
-                    text: "Profil berhasil diperbarui",
-                    duration: 3000,
-                    style: { background: "#10B981" }
-                }).showToast();
+                showSuccess('Profil berhasil diperbarui');
                 loadProfile(); 
                 toggleEditMode(false);
             } else {
@@ -429,21 +426,11 @@ export const initProfilMahasiswaLogic = () => {
                         errorMsg = err.message || errorMsg;
                     } catch (e) { }
                 }
-                // @ts-ignore
-                Toastify({
-                    text: errorMsg,
-                    duration: 3000,
-                    style: { background: "#EF4444" }
-                }).showToast();
+                showError(errorMsg);
             }
         } catch (e) {
             console.error(e);
-            // @ts-ignore
-            Toastify({
-                text: "Terjadi kesalahan sistem",
-                duration: 3000,
-                style: { background: "#EF4444" }
-            }).showToast();
+            showError('Terjadi kesalahan sistem');
         } finally {
             btnSimpanProfil.innerHTML = originalText;
             btnSimpanProfil.disabled = false;

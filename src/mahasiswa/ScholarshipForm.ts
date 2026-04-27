@@ -1,4 +1,4 @@
-import { renderDokumenMahasiswa } from './DokumenMahasiswa';
+import { renderAdministrasiSurat } from './AdministrasiSurat';
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import Toastify from 'toastify-js';
 
@@ -84,7 +84,7 @@ export const renderScholarshipForm = () => {
             </div>
         `;
 
-        renderDashboardLayout('Permohonan Beasiswa', content, 'mahasiswa', 'pengajuan');
+        renderDashboardLayout('Permohonan Beasiswa', content, 'mahasiswa', 'administrasi');
         attachEvents();
     };
 
@@ -100,7 +100,7 @@ export const renderScholarshipForm = () => {
 
     const attachEvents = () => {
         document.getElementById('btn-back-to-docs')?.addEventListener('click', () => {
-            renderDokumenMahasiswa();
+            renderAdministrasiSurat();
         });
 
         document.getElementById('btn-prev')?.addEventListener('click', () => {
@@ -346,7 +346,7 @@ export const renderScholarshipForm = () => {
                     duration: 4000,
                     style: { background: "#10B981" }
                 }).showToast();
-                setTimeout(() => renderDokumenMahasiswa(), 2000);
+                setTimeout(() => renderAdministrasiSurat(), 2000);
             } else {
                 // @ts-ignore
                 Toastify({

@@ -1,27 +1,70 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 
-export const renderRiwayatPengajuan = () => {
-    const data = [
-        { tgl: 'Selasa, 24 Feb 2026', nama: 'Surat Permohonan Beasiswa - Djarum', status: 'Diproses' },
-        { tgl: 'Senin, 23 Feb 2026', nama: 'Surat Rekomendasi Magang - Shopee', status: 'Ditolak' },
-        { tgl: 'Minggu, 22 Feb 2026', nama: 'Surat Rekomendasi Magang - ParagonCorp', status: 'Ditolak' },
-        { tgl: 'Sabtu, 21 Feb 2026', nama: 'Surat Keaktifan Mahasiswa', status: 'Selesai' },
-        { tgl: 'Jumat, 20 Feb 2026', nama: 'Surat Permohonan Beasiswa - TELADAN', status: 'Selesai' },
-        { tgl: 'Kamis, 19 Feb 2026', nama: 'Surat Permohonan Beasiswa - TELADAN', status: 'Ditolak' },
-        { tgl: 'Rabu, 18 Feb 2026', nama: 'Surat Permohonan Beasiswa - Bakti BCA', status: 'Selesai' },
-        { tgl: 'Selasa, 17 Feb 2026', nama: 'Surat Permohonan Beasiswa - Sampoerna', status: 'Selesai' },
-        { tgl: 'Senin, 16 Feb 2026', nama: 'Surat Permohonan Beasiswa - Astra', status: 'Selesai' },
-        { tgl: 'Minggu, 15 Feb 2026', nama: 'Surat Permohonan Beasiswa - XL', status: 'Selesai' },
-    ];
+export const renderRiwayatPengajuan = async () => {
+    // Show loading state or fetch before rendering
+    const token = localStorage.getItem('auth_token');
+    let applications: any[] = [];
+    
+    try {
+        const res = await fetch('/api/mahasiswa/scholarship/applications', {
+            headers: { 'Authorization': 'Bearer ' + token },
+            cache: 'no-store'
+        });
+        if (res.ok) {
+            const data = await res.json();
+            applications = data.applications || [];
+        }
+    } catch (e) {
+        console.error("Failed to fetch applications", e);
+    }
 
     const getStatusClass = (status: string) => {
         switch (status) {
             case 'Diproses': return 'bg-blue-50 text-blue-600 border-blue-100';
+            case 'Revisi': return 'bg-amber-50 text-amber-600 border-amber-100';
             case 'Ditolak': return 'bg-red-50 text-red-600 border-red-100';
             case 'Selesai': return 'bg-teal-50 text-teal-600 border-teal-100';
             default: return 'bg-gray-50 text-gray-600 border-gray-100';
         }
     };
+
+    let tableHtml = '';
+    if (applications.length === 0) {
+        tableHtml = `<tr><td colspan="4" class="px-8 py-8 text-center text-gray-500 font-medium">Belum ada riwayat pengajuan surat.</td></tr>`;
+    } else {
+        tableHtml = applications.map((app: any) => {
+            const dateStr = new Date(app.created_at).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+            let statusText = app.status;
+            
+            if (app.status === 'Completed') {
+                statusText = 'Selesai';
+            } else if (app.status === 'Rejected') {
+                statusText = 'Ditolak';
+            } else if (app.status === 'Revision') {
+                statusText = 'Revisi';
+            } else {
+                statusText = 'Diproses';
+            }
+
+            return `
+                <tr class="hover:bg-gray-50/50 transition-colors group">
+                    <td class="px-8 py-5 text-sm text-gray-500 font-medium">${dateStr}</td>
+                    <td class="px-8 py-5 text-sm font-bold text-gray-800">${app.scholarship_name || 'Surat Permohonan Beasiswa'}</td>
+                    <td class="px-8 py-5">
+                        <span class="${getStatusClass(statusText)} px-4 py-1.5 rounded-full font-bold text-[11px] uppercase tracking-wider border">
+                            ${statusText}
+                        </span>
+                    </td>
+                    <td class="px-8 py-5 text-right">
+                        ${app.generated_docx_path ? 
+                            `<a href="/api/storage/${app.generated_docx_path.replace('/storage/', '')}" target="_blank" class="text-primary-teal font-bold text-sm hover:underline">Download Dokumen</a>` 
+                            : `<span class="text-gray-400 text-sm">Menunggu</span>`
+                        }
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
 
     const content = `
         <div class="space-y-6">
@@ -37,20 +80,7 @@ export const renderRiwayatPengajuan = () => {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-50">
-                            ${data.map(item => `
-                                <tr class="hover:bg-gray-50/50 transition-colors group">
-                                    <td class="px-8 py-5 text-sm text-gray-500 font-medium">${item.tgl}</td>
-                                    <td class="px-8 py-5 text-sm font-bold text-gray-800">${item.nama}</td>
-                                    <td class="px-8 py-5">
-                                        <span class="${getStatusClass(item.status)} px-4 py-1.5 rounded-full font-bold text-[11px] uppercase tracking-wider border">
-                                            ${item.status}
-                                        </span>
-                                    </td>
-                                    <td class="px-8 py-5 text-right">
-                                        <a href="#" class="text-primary-teal font-bold text-sm hover:underline">Lihat Detail</a>
-                                    </td>
-                                </tr>
-                            `).join('')}
+                            ${tableHtml}
                         </tbody>
                     </table>
                 </div>
@@ -58,17 +88,7 @@ export const renderRiwayatPengajuan = () => {
 
             <!-- Pagination -->
             <div class="flex items-center justify-between px-2">
-                <p class="text-sm font-bold text-gray-700">Showing <span class="text-black">1 to 10</span> of <span class="text-black">12</span> results</p>
-                <div class="flex items-center gap-2">
-                    <button class="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 text-gray-400 hover:bg-gray-50 transition-colors">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                    </button>
-                    <button class="w-10 h-10 flex items-center justify-center rounded-xl bg-gray-200 text-gray-900 font-bold border border-gray-200">1</button>
-                    <button class="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 text-gray-600 font-bold hover:bg-gray-50 transition-colors">2</button>
-                    <button class="w-10 h-10 flex items-center justify-center rounded-xl border border-gray-200 text-gray-400 hover:bg-gray-50 transition-colors">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                    </button>
-                </div>
+                <p class="text-sm font-bold text-gray-700">Showing <span class="text-black">${applications.length > 0 ? 1 : 0} to ${applications.length}</span> of <span class="text-black">${applications.length}</span> results</p>
             </div>
         </div>
     `;

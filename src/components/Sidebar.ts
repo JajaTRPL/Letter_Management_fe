@@ -13,9 +13,13 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
                 <img src="panduan-logo.png" class="w-5 h-5 object-contain" />
                 <span class="font-medium text-sm">Panduan</span>
             </a>
-            <a href="#" id="sidebar-dokumen-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'pengajuan' ? activeClass : inactiveClass}">
+            <a href="#" id="sidebar-administrasi-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'administrasi' ? activeClass : inactiveClass}">
                 <img src="pengajuan-logo.png" class="w-5 h-5 object-contain" />
-                <span class="font-medium text-sm">Pengajuan Surat</span>
+                <span class="font-medium text-sm">Administrasi Surat</span>
+            </a>
+            <a href="#" id="sidebar-peminjaman-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'peminjaman' ? activeClass : inactiveClass}">
+                <img src="pengajuan-logo.png" class="w-5 h-5 object-contain" />
+                <span class="font-medium text-sm">Peminjaman Ruangan</span>
             </a>
             <a href="#" id="sidebar-history-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'history' ? activeClass : inactiveClass}">
                 <img src="history.png" class="w-5 h-5 object-contain" />
