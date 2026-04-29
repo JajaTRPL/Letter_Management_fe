@@ -18,3 +18,74 @@
     @apply antialiased text-gray-900;
   }
 }
+
+@layer components {
+  .btn-primary-outline {
+    @apply px-5 py-2.5 bg-white border border-gray-200 text-teal-600 text-sm font-medium rounded-xl shadow-sm inline-flex items-center justify-center gap-2 transition-all duration-200;
+    @apply hover:bg-teal-50 hover:border-teal-200;
+    @apply active:scale-[0.98] active:bg-teal-100;
+    @apply disabled:opacity-50 disabled:pointer-events-none disabled:bg-gray-50 disabled:text-gray-400 disabled:border-gray-200;
+  }
+
+  .profile-section-header {
+    @apply w-full flex items-center justify-between gap-4 text-left rounded-2xl transition-colors duration-200;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2;
+    @apply disabled:pointer-events-none disabled:opacity-60;
+  }
+
+  .profile-section-body-wrapper {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition: grid-template-rows 180ms ease, opacity 160ms ease;
+  }
+
+  .profile-section-body {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .profile-section.is-open .profile-section-body-wrapper {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+
+  .profile-section-chevron {
+    @apply shrink-0 text-gray-700 transition-transform duration-200;
+  }
+
+  .profile-section.is-open .profile-section-chevron {
+    transform: rotate(180deg);
+  }
+
+  .profile-section.is-saving {
+    @apply border-teal-200;
+  }
+
+  .section-status {
+    @apply rounded-xl px-4 py-3 text-sm font-medium border;
+  }
+
+  .section-status[data-status="success"] {
+    @apply bg-emerald-50 text-emerald-700 border-emerald-200;
+  }
+
+  .section-status[data-status="error"] {
+    @apply bg-red-50 text-red-700 border-red-200;
+  }
+
+  .profile-input-error {
+    @apply border-red-400 focus:border-red-500 focus:ring-red-100;
+  }
+
+  .profile-field-error {
+    @apply mt-1 text-xs font-medium text-red-600;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .profile-section-body-wrapper,
+    .profile-section-chevron {
+      transition: none;
+    }
+  }
+}
