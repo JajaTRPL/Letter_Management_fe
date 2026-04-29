@@ -360,14 +360,14 @@ export const renderMahasiswaDetailModal = (user: any) => {
                     <!-- Akun Info -->
                     <div>
                         <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Informasi Akun</h4>
-                        <div class="grid grid-cols-2 gap-x-6 gap-y-3">
+                        <div class="space-y-3">
                             <div>
                                 <p class="text-[10px] text-gray-400 uppercase">Email</p>
-                                <p class="text-sm text-gray-700 break-all">${user.email}</p>
+                                <p class="text-sm text-gray-700 break-words leading-relaxed">${user.email}</p>
                             </div>
-                            <div>
-                                <p class="text-[10px] text-gray-400 uppercase">Terdaftar</p>
-                                <p class="text-sm text-gray-700">${createdAt}</p>
+                            <div class="pt-3 border-t border-gray-100">
+                                <p class="text-[10px] text-gray-400 uppercase">Tanggal Terdaftar</p>
+                                <p class="text-xs text-gray-500">${createdAt}</p>
                             </div>
                         </div>
                     </div>
