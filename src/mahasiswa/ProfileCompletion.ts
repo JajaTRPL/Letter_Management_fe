@@ -74,8 +74,14 @@ export const renderProfileCompletion = () => {
                   </button>
 
                   <!-- Custom Select Dropdown (Open State Solid Contrast) -->
-                  <div id="custom-select-dropdown" class="absolute left-0 right-0 top-full mt-2 z-50 origin-top scale-95 opacity-0 invisible transition-all duration-200 ease-out bg-[#F8FAFC] rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.4)] border border-gray-200 overflow-hidden" style="backdrop-filter: none;">
-                    <ul id="custom-select-list" class="max-h-64 overflow-y-auto py-2">
+                  <div id="custom-select-dropdown" class="absolute left-0 right-0 bottom-full mb-2 z-50 origin-bottom scale-95 opacity-0 invisible transition-all duration-200 ease-out bg-[#F8FAFC] rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.4)] border border-gray-200 overflow-hidden flex flex-col" style="backdrop-filter: none;">
+                    <div class="p-2 border-b border-gray-200/60 bg-[#F8FAFC]">
+                      <div class="relative">
+                        <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <input type="text" id="custom-select-search" class="w-full pl-9 pr-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400 transition-shadow" placeholder="Cari program studi..." autocomplete="off">
+                      </div>
+                    </div>
+                    <ul id="custom-select-list" class="max-h-72 overflow-y-auto py-2">
                     </ul>
                   </div>
                 </div>
@@ -121,16 +127,27 @@ export const renderProfileCompletion = () => {
 
       const toggleDropdown = () => {
         isOpen = !isOpen
+        const searchInput = document.getElementById('custom-select-search') as HTMLInputElement | null
+        
         if (isOpen) {
           dropdown.classList.remove('scale-95', 'opacity-0', 'invisible')
           dropdown.classList.add('scale-100', 'opacity-100', 'visible')
           arrow.classList.add('rotate-180')
           trigger.classList.add('border-teal-400/50', 'ring-4', 'ring-teal-400/10')
+          
+          if (searchInput) {
+            setTimeout(() => searchInput.focus(), 100)
+          }
         } else {
           dropdown.classList.add('scale-95', 'opacity-0', 'invisible')
           dropdown.classList.remove('scale-100', 'opacity-100', 'visible')
           arrow.classList.remove('rotate-180')
           trigger.classList.remove('border-teal-400/50', 'ring-4', 'ring-teal-400/10')
+          
+          if (searchInput && searchInput.value) {
+            searchInput.value = ''
+            searchInput.dispatchEvent(new Event('input'))
+          }
         }
       }
 
@@ -145,43 +162,79 @@ export const renderProfileCompletion = () => {
       textSpan.textContent = 'Pilih Program Studi...'
       list.innerHTML = ''
 
-      Array.from(select.children).forEach(child => {
+      Array.from(select.children).forEach((child, groupIdx) => {
         if (child.tagName === 'OPTGROUP') {
           const optgroup = child as HTMLOptGroupElement
           const groupHeader = document.createElement('li')
-          groupHeader.className = 'px-4 py-2 mt-1 text-[11px] font-bold text-teal-700 uppercase tracking-wider bg-teal-50/80 border-y border-teal-100/50 flex items-center'
+          groupHeader.className = 'sticky top-0 z-10 px-4 py-2 text-[11px] font-bold text-teal-700 uppercase tracking-wider bg-teal-50/95 backdrop-blur-md border-b border-teal-100/50 flex items-center transition-all duration-200'
           groupHeader.innerHTML = `<svg class="w-3.5 h-3.5 mr-1.5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>` + optgroup.label
+          groupHeader.dataset.groupId = groupIdx.toString()
           list.appendChild(groupHeader)
 
           Array.from(optgroup.children).forEach(optionChild => {
             const option = optionChild as HTMLOptionElement
             if (option.value) {
               const liOpt = document.createElement('li')
-              liOpt.className = 'px-4 py-2.5 text-sm font-medium text-gray-700 cursor-pointer hover:bg-teal-50 hover:text-teal-900 transition-colors pl-6 border-b border-gray-50 last:border-b-0'
+              liOpt.className = 'px-4 py-2.5 text-sm font-medium text-gray-700 cursor-pointer hover:bg-teal-50 hover:text-teal-900 transition-all duration-200 pl-6 border-b border-gray-50 last:border-b-0'
               liOpt.textContent = option.textContent
               liOpt.dataset.value = option.value
-
-              liOpt.addEventListener('click', () => {
-                select.value = option.value
-                textSpan.textContent = option.textContent
-                textSpan.classList.remove('text-white/70')
-                textSpan.classList.add('text-white')
-                
-                // Update selected styling
-                Array.from(list.children).forEach(c => {
-                  c.classList.remove('bg-teal-100', 'text-teal-900')
-                  if (!c.classList.contains('uppercase')) c.classList.add('text-gray-700')
-                })
-                liOpt.classList.remove('text-gray-700')
-                liOpt.classList.add('bg-teal-100', 'text-teal-900')
-                
-                toggleDropdown()
-              })
+              liOpt.dataset.groupId = groupIdx.toString()
               list.appendChild(liOpt)
             }
           })
         }
       })
+
+      // Event Delegation for selection
+      list.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement
+        const liOpt = target.closest('li[data-value]') as HTMLLIElement | null
+        if (!liOpt) return
+
+        select.value = liOpt.dataset.value!
+        textSpan.textContent = liOpt.textContent
+        textSpan.classList.remove('text-white/70')
+        textSpan.classList.add('text-white')
+        
+        // Update selected styling
+        Array.from(list.querySelectorAll('li[data-value]')).forEach(c => {
+          c.classList.remove('bg-teal-100', 'text-teal-900')
+          c.classList.add('text-gray-700')
+        })
+        liOpt.classList.remove('text-gray-700')
+        liOpt.classList.add('bg-teal-100', 'text-teal-900')
+        
+        toggleDropdown()
+      })
+
+      // Search Filtering Logic
+      const searchInput = document.getElementById('custom-select-search') as HTMLInputElement | null
+      if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+          const term = (e.target as HTMLInputElement).value.toLowerCase()
+          const allOptions = Array.from(list.querySelectorAll('li[data-value]')) as HTMLLIElement[]
+          const activeGroups = new Set<string>()
+
+          allOptions.forEach(opt => {
+            const text = opt.textContent?.toLowerCase() || ''
+            if (text.includes(term)) {
+              opt.classList.remove('hidden')
+              activeGroups.add(opt.dataset.groupId!)
+            } else {
+              opt.classList.add('hidden')
+            }
+          })
+
+          const allHeaders = Array.from(list.querySelectorAll('li:not([data-value])')) as HTMLLIElement[]
+          allHeaders.forEach(header => {
+            if (activeGroups.has(header.dataset.groupId!)) {
+              header.classList.remove('hidden')
+            } else {
+              header.classList.add('hidden')
+            }
+          })
+        })
+      }
     })
   }
 
