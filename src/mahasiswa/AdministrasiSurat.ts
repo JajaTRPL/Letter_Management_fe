@@ -1,6 +1,7 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { renderMahasiswaDashboard } from '../dashboard/MahasiswaDashboard';
 import { renderScholarshipForm } from './ScholarshipForm';
+import { renderAktifForm } from './AktifForm';
 import Toastify from 'toastify-js';
 
 export const renderAdministrasiSurat = () => {
@@ -22,7 +23,7 @@ export const renderAdministrasiSurat = () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                 <!-- Surat Keterangan Aktif -->
-                <div class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
+                <div id="card-aktif" class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
                     <div class="w-12 h-12 bg-teal-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-teal-100 transition-colors">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0d9488" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -145,6 +146,8 @@ export const renderAdministrasiSurat = () => {
             card.addEventListener('click', () => {
                 if (card.id === 'card-beasiswa') {
                     handleCardClick(() => renderScholarshipForm());
+                } else if (card.id === 'card-aktif') {
+                    handleCardClick(() => renderAktifForm());
                 } else {
                     handleCardClick();
                 }
