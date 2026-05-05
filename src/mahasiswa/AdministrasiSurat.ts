@@ -1,7 +1,9 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { renderMahasiswaDashboard } from '../dashboard/MahasiswaDashboard';
 import { renderScholarshipForm } from './ScholarshipForm';
-import { renderAktifForm } from './AktifForm';
+import { renderSuratPengantarMagangForm } from './SuratPengantarMagangForm';
+import { renderSuratKeteranganAktifForm } from './SuratKeteranganAktifForm';
+import { renderProsesLuarNegeriForm } from './ProsesLuarNegeriForm';
 import Toastify from 'toastify-js';
 
 export const renderAdministrasiSurat = () => {
@@ -41,7 +43,7 @@ export const renderAdministrasiSurat = () => {
                 </div>
 
                 <!-- Surat Pengantar Magang -->
-                <div class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
+                <div id="card-magang" class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
                     <div class="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-100 transition-colors">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
@@ -73,7 +75,7 @@ export const renderAdministrasiSurat = () => {
                 </div>
 
                 <!-- Surat Proses Luar Negeri -->
-                <div class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
+                <div id="card-luar-negeri" class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
                     <div class="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-emerald-100 transition-colors">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="10"></circle>
@@ -146,8 +148,12 @@ export const renderAdministrasiSurat = () => {
             card.addEventListener('click', () => {
                 if (card.id === 'card-beasiswa') {
                     handleCardClick(() => renderScholarshipForm());
+                } else if (card.id === 'card-magang') {
+                    handleCardClick(() => renderSuratPengantarMagangForm());
                 } else if (card.id === 'card-aktif') {
-                    handleCardClick(() => renderAktifForm());
+                    handleCardClick(() => renderSuratKeteranganAktifForm());
+                } else if (card.id === 'card-luar-negeri') {
+                    handleCardClick(() => renderProsesLuarNegeriForm());
                 } else {
                     handleCardClick();
                 }

@@ -10,6 +10,22 @@ import { showSuccess, showError } from '../../shared/toast';
 let cachedLaboratories: any[] | null = null;
 let cachedSuratTypes: any[] | null = null;
 
+type SuratType = {
+    key: string;
+    label?: string;
+    name?: string;
+    category?: string;
+    legacy_keys?: string[];
+};
+
+const suratTypeLabel = (item: SuratType): string => item.label || item.name || item.key;
+
+const isSuratTypeAssigned = (item: SuratType, assignedTasks: string[]): boolean => {
+    const assigned = new Set(assignedTasks);
+
+    return assigned.has(item.key) || (item.legacy_keys || []).some((legacyKey) => assigned.has(legacyKey));
+};
+
 export const renderUserModal = (user: any = null, onRefresh: () => void) => {
     const defaultRole = user?.role || tabManager.getActive();
     const modalContainer = document.getElementById('modal-container')!;
@@ -355,16 +371,16 @@ export const renderUserModal = (user: any = null, onRefresh: () => void) => {
         const container = form.querySelector('#dynamic-tasks-container');
         if (!container) return;
 
-        const populate = (types: any[]) => {
-            const assigned = user?.assigned_tasks || [];
+        const populate = (types: SuratType[]) => {
+            const assigned = (user?.assigned_tasks || []).filter((task: unknown): task is string => typeof task === 'string');
             if (types.length === 0) {
                 container.innerHTML = '<p class="text-xs text-gray-400">Belum ada jenis surat aktif.</p>';
                 return;
             }
-            container.innerHTML = types.map((item: any) => `
+            container.innerHTML = types.map((item: SuratType) => `
                 <label class="flex items-center gap-3 cursor-pointer group">
-                    <input type="checkbox" name="assigned_tasks" value="${item.key}" ${assigned.includes(item.key) ? 'checked' : ''} class="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500">
-                    <span class="text-xs text-gray-600 group-hover:text-teal-700 transition-colors">${item.name}</span>
+                    <input type="checkbox" name="assigned_tasks" value="${item.key}" ${isSuratTypeAssigned(item, assigned) ? 'checked' : ''} class="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                    <span class="text-xs text-gray-600 group-hover:text-teal-700 transition-colors">${suratTypeLabel(item)}</span>
                 </label>
             `).join('');
         };
@@ -501,4 +517,4 @@ export const renderUserModal = (user: any = null, onRefresh: () => void) => {
             console.error(err);
         }
     });
-};
+};

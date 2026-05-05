@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { getLetterStatusLabel, getLetterStatusTone } from '../shared/letter-workflow';
 
 export const renderRiwayatTendik = async (role: string) => {
     const token = localStorage.getItem('auth_token');
@@ -24,18 +25,9 @@ export const renderRiwayatTendik = async (role: string) => {
         const tasks = data.tasks || [];
 
         const getStatusBadge = (status: string) => {
-            if (status === 'Menunggu Verifikasi') {
-                return '<span class="inline-flex items-center justify-center min-w-[70px] px-3 py-1.5 rounded-full text-[10px] font-bold bg-[#FEF08A]/60 text-yellow-800">Menunggu Verifikasi</span>';
-            } else if (status === 'Approved_Tendik') {
-                return '<span class="inline-flex items-center justify-center min-w-[70px] px-3 py-1.5 rounded-full text-[10px] font-bold bg-[#E0F2FE] text-[#0284C7]">Diteruskan</span>';
-            } else if (status === 'Rejected') {
-                return '<span class="inline-flex items-center justify-center min-w-[70px] px-3 py-1.5 rounded-full text-[10px] font-bold bg-[#FEE2E2] text-[#DC2626]">Ditolak</span>';
-            } else if (status === 'Revision') {
-                return '<span class="inline-flex items-center justify-center min-w-[70px] px-3 py-1.5 rounded-full text-[10px] font-bold bg-[#FEF08A] text-[#A16207]">Revisi</span>';
-            } else if (['Approved_Kaprodi', 'Approved_Kadep', 'Completed'].includes(status)) {
-                return '<span class="inline-flex items-center justify-center min-w-[70px] px-3 py-1.5 rounded-full text-[10px] font-bold bg-[#D1FAE5] text-[#059669]">Selesai</span>';
-            }
-            return `<span class="inline-flex items-center justify-center min-w-[70px] px-3 py-1.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-600">${status}</span>`;
+            const label = getLetterStatusLabel(status, 'tendik-history') || status;
+            const tone = getLetterStatusTone(status, 'tendik-history');
+            return `<span class="inline-flex items-center justify-center min-w-[70px] px-3 py-1.5 rounded-full text-[10px] font-bold ${tone}">${label}</span>`;
         };
 
         const generateRows = () => {

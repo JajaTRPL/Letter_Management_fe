@@ -113,7 +113,7 @@ export const buildUserPayload = (
             }
         }
         if (data.tendik_role === 'persuratan') {
-            data.assigned_tasks = assignedTasks;
+            data.assigned_tasks = Array.from(new Set(assignedTasks.filter(Boolean)));
         } else {
             delete data.assigned_tasks;
         }
