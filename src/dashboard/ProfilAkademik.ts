@@ -20,8 +20,8 @@ export const renderProfilAkademik = (role: string) => {
     const roleLabels: Record<string, string> = {
         'kaprodi': 'Kaprodi',
         'sekprodi': 'Sekprodi',
-        'kadep': 'Kadept',
-        'sekdep': 'Sekdept',
+        'kadep': 'Kadep',
+        'sekdep': 'Sekdep',
         'akademik': 'Pejabat Akademik',
     };
     const roleLabel = roleLabels[role] || roleLabels[localStorage.getItem('auth_sub_role') || ''] || 'Pejabat Akademik';

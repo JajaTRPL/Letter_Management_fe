@@ -7,6 +7,7 @@ import { renderStep1Biodata } from './scholarship-form/Step1Biodata';
 import { renderStep2Keluarga, attachStep2Events } from './scholarship-form/Step2Keluarga';
 import { renderStep3Akademik, attachStep3Events } from './scholarship-form/Step3Akademik';
 import { renderStep4Submit } from './scholarship-form/Step4Submit';
+import { LETTER_WORKFLOW_STATUS } from '../shared/letter-workflow';
 
 export const renderScholarshipForm = () => {
     let currentStep = 1;
@@ -17,6 +18,7 @@ export const renderScholarshipForm = () => {
     };
 
     const render = () => {
+        const isRevision = formData.status === LETTER_WORKFLOW_STATUS.REVISION;
         const content = `
             <div class="max-w-4xl mx-auto space-y-8 animate-fade-in pb-20">
                 <!-- Header & Back Button -->
@@ -33,9 +35,9 @@ export const renderScholarshipForm = () => {
                             <p class="text-xs text-gray-500">Lengkapi formulir pengajuan surat rekomendasi</p>
                         </div>
                     </div>
-                    <div class="hidden md:flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 rounded-xl text-xs font-bold border border-amber-100">
+                    <div class="hidden md:flex items-center gap-2 px-4 py-2 ${isRevision ? 'bg-red-50 text-red-700 border-red-100' : 'bg-amber-50 text-amber-700 border-amber-100'} rounded-xl text-xs font-bold border">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        Draft Autosaved
+                        ${isRevision ? 'Perlu Revisi' : 'Draft Autosaved'}
                     </div>
                 </div>
 
@@ -62,6 +64,8 @@ export const renderScholarshipForm = () => {
                     </div>
                 </div>
 
+                ${isRevision ? renderRevisionBanner(formData.revision_note) : ''}
+
                 <!-- Form Card -->
                 <div class="bg-white rounded-[32px] shadow-xl shadow-teal-900/5 border border-gray-100 overflow-hidden min-h-[400px]">
                     <div class="p-8 md:p-12">
@@ -74,7 +78,7 @@ export const renderScholarshipForm = () => {
                                     Sebelumnya
                                 </button>
                                 <button type="button" id="btn-next" class="px-10 py-3.5 bg-primary-teal text-white font-bold rounded-2xl hover:bg-teal-800 transition-all shadow-lg active:scale-95 flex items-center gap-2">
-                                    ${currentStep === 4 ? 'Kirim Pengajuan' : 'Lanjutkan'}
+                                    ${currentStep === 4 ? (isRevision ? 'Perbaiki & Kirim Ulang' : 'Kirim Pengajuan') : 'Lanjutkan'}
                                     ${currentStep < 4 ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>' : ''}
                                 </button>
                             </div>
@@ -331,6 +335,7 @@ export const renderScholarshipForm = () => {
 
     const submitFinal = async () => {
         const token = localStorage.getItem('auth_token');
+        const isRevision = formData.status === LETTER_WORKFLOW_STATUS.REVISION;
         try {
             const res = await fetch('/api/mahasiswa/scholarship/submit', {
                 method: 'POST',
@@ -342,7 +347,9 @@ export const renderScholarshipForm = () => {
 
                 // @ts-ignore
                 Toastify({
-                    text: `Berhasil! Pengajuan telah dikirim dan ditugaskan kepada ${assignedName}.`,
+                    text: isRevision
+                        ? `Berhasil! Revisi pengajuan telah dikirim ulang kepada ${assignedName}.`
+                        : `Berhasil! Pengajuan telah dikirim dan ditugaskan kepada ${assignedName}.`,
                     duration: 4000,
                     style: { background: "#10B981" }
                 }).showToast();
@@ -368,3 +375,30 @@ export const renderScholarshipForm = () => {
 
     render();
 };
+
+const escapeHtml = (value: unknown): string => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+const renderRevisionBanner = (note?: string | null) => `
+    <div class="bg-amber-50 border border-amber-200 rounded-[24px] p-6 shadow-sm">
+        <div class="flex items-start gap-4">
+            <div class="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+            </div>
+            <div>
+                <h3 class="text-sm font-black text-amber-900 uppercase tracking-wide">Catatan Revisi</h3>
+                <p class="mt-2 text-sm text-amber-900 leading-relaxed whitespace-pre-line">
+                    ${escapeHtml(note || 'Pengajuan Anda memerlukan perbaikan. Silakan periksa kembali data dan dokumen sebelum mengirim ulang.')}
+                </p>
+            </div>
+        </div>
+    </div>
+`;

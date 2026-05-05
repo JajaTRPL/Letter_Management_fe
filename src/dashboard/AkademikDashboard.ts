@@ -1,6 +1,10 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { getGreetingName } from '../utils/nameHelper';
 import { renderReviewScholarship } from '../tendik/ReviewScholarship';
+import { renderReviewProsesLuarNegeriAkademik } from '../akademik/ReviewProsesLuarNegeriAkademik';
+import { renderReviewSuratKeteranganAktifAkademik } from '../akademik/ReviewSuratKeteranganAktifAkademik';
+import { renderReviewSuratPengantarMagangAkademik } from '../akademik/ReviewSuratPengantarMagangAkademik';
+import { isAktifLetter, isLegacyBeasiswaFallback, isMagangLetter, isProsesLuarNegeriLetter } from '../shared/letter-workflow';
 
 export const renderAkademikDashboard = async (role: string) => {
     const fullName = localStorage.getItem('auth_name') || 'Pejabat';
@@ -11,8 +15,8 @@ export const renderAkademikDashboard = async (role: string) => {
     const roleLabels: Record<string, string> = {
         'kaprodi': 'Kaprodi',
         'sekprodi': 'Sekprodi',
-        'kadep': 'Kadept',
-        'sekdep': 'Sekdept',
+        'kadep': 'Kadep',
+        'sekdep': 'Sekdep',
         'akademik': 'Pejabat Akademik',
     };
     const roleLabel = roleLabels[role] || roleLabels[localStorage.getItem('auth_sub_role') || ''] || 'Pejabat Akademik';
@@ -137,7 +141,7 @@ export const renderAkademikDashboard = async (role: string) => {
                                             </span>
                                         </td>
                                         <td class="px-7 py-3 align-top text-right">
-                                            <button class="review-btn text-xs font-bold border-2 border-[#115E59] text-[#115E59] hover:bg-[#115E59] hover:text-white transition-colors rounded-xl px-4 py-2 w-full max-w-[140px] shadow-sm" data-id="${task.id}">
+                                            <button class="review-btn text-xs font-bold border-2 border-[#115E59] text-[#115E59] hover:bg-[#115E59] hover:text-white transition-colors rounded-xl px-4 py-2 w-full max-w-[140px] shadow-sm" data-id="${task.id}" data-letter-type="${task.letter_type || ''}">
                                                 Review Dokumen
                                             </button>
                                         </td>
@@ -173,8 +177,29 @@ export const renderAkademikDashboard = async (role: string) => {
         // Add Listeners to Review Buttons
         document.querySelectorAll('.review-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const id = parseInt((e.currentTarget as HTMLElement).getAttribute('data-id') || '0');
-                renderReviewScholarship(id);
+                const target = e.currentTarget as HTMLElement;
+                const id = parseInt(target.getAttribute('data-id') || '0');
+                const letterType = target.getAttribute('data-letter-type') || '';
+
+                if (isMagangLetter(letterType)) {
+                    renderReviewSuratPengantarMagangAkademik(id);
+                    return;
+                }
+
+                if (isAktifLetter(letterType)) {
+                    renderReviewSuratKeteranganAktifAkademik(id);
+                    return;
+                }
+
+                if (isProsesLuarNegeriLetter(letterType)) {
+                    renderReviewProsesLuarNegeriAkademik(id);
+                    return;
+                }
+
+                if (isLegacyBeasiswaFallback(letterType)) {
+                    renderReviewScholarship(id);
+                    return;
+                }
             });
         });
 

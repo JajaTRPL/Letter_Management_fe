@@ -1,6 +1,23 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { renderProfilMahasiswa } from '../mahasiswa/ProfilMahasiswa';
+import { renderScholarshipForm } from '../mahasiswa/ScholarshipForm';
 import { getGreetingName } from '../utils/nameHelper';
+import {
+    canCompleteSubmission,
+    canDownloadDocument,
+    getLetterStatusLabel,
+    getLetterStatusTone,
+    isStudentReviewStage,
+    LETTER_WORKFLOW_STATUS,
+} from '../shared/letter-workflow';
+import Toastify from 'toastify-js';
+
+const escapeHtml = (value: unknown): string => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 
 export const renderMahasiswaDashboard = async () => {
     // Show a loading state or fetch before rendering
@@ -20,9 +37,10 @@ export const renderMahasiswaDashboard = async () => {
         console.error("Failed to fetch applications", e);
     }
 
-    const diproses = applications.filter((app: any) => !['Completed', 'Rejected', 'Revision'].includes(app.status)).length;
-    const direvisi = applications.filter((app: any) => app.status === 'Revision').length;
-    const selesai = applications.filter((app: any) => app.status === 'Completed').length;
+    const { COMPLETED, REJECTED, REVISION, APPROVED_TENDIK, APPROVED_KAPRODI } = LETTER_WORKFLOW_STATUS;
+    const diproses = applications.filter((app: any) => ![COMPLETED, REJECTED, REVISION].includes(app.status)).length;
+    const direvisi = applications.filter((app: any) => app.status === REVISION).length;
+    const selesai = applications.filter((app: any) => app.status === COMPLETED).length;
 
     // Build History Rows
     const recentApps = applications.slice(0, 4);
@@ -32,22 +50,8 @@ export const renderMahasiswaDashboard = async () => {
     } else {
         historyHtml = recentApps.map((app: any) => {
             const dateStr = new Date(app.created_at).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
-            let statusText = app.status;
-            let statusClass = '';
-            
-            if (app.status === 'Completed') {
-                statusText = 'Selesai';
-                statusClass = 'bg-teal-50 text-teal-600';
-            } else if (app.status === 'Rejected') {
-                statusText = 'Ditolak';
-                statusClass = 'bg-[#FEE2E2] text-red-900';
-            } else if (app.status === 'Revision') {
-                statusText = 'Revisi';
-                statusClass = 'bg-amber-50 text-amber-600';
-            } else {
-                statusText = 'Diproses';
-                statusClass = 'bg-[#E0F2FE] text-[#0369A1]';
-            }
+            const statusText = getLetterStatusLabel(app.status, 'student-list');
+            const statusClass = getLetterStatusTone(app.status, 'student-dashboard');
 
             return `
                 <tr class="hover:bg-gray-50/50 transition-colors group">
@@ -60,10 +64,12 @@ export const renderMahasiswaDashboard = async () => {
                     </td>
                     <td class="px-8 py-5">
                         <div class="flex items-center justify-center gap-3 group-hover:opacity-100 transition-opacity">
-                            ${app.generated_docx_path ? `
-                            <a href="/api/storage/${app.generated_docx_path.replace('/storage/', '')}" target="_blank" class="p-2 text-gray-400 hover:text-primary-teal transition-colors" title="Download">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                            </a>
+                            ${isStudentReviewStage(app.status) ? `
+                                <button data-action="preview-scholarship-document" data-id="${app.id}" class="text-primary-teal font-bold text-xs hover:underline">Review Dokumen</button>
+                            ` : canDownloadDocument(app.status) ? `
+                                <button data-action="download-scholarship-document" data-id="${app.id}" class="p-2 text-gray-400 hover:text-primary-teal transition-colors" title="Download">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                </button>
                             ` : '-'}
                         </div>
                     </td>
@@ -73,15 +79,18 @@ export const renderMahasiswaDashboard = async () => {
     }
 
     // Build Active Tracking Section
-    const activeApps = applications.filter((app: any) => !['Completed', 'Rejected'].includes(app.status));
+    const activeApps = applications.filter((app: any) => ![COMPLETED, REJECTED].includes(app.status));
     let trackingHtml = '';
     if (activeApps.length === 0) {
         trackingHtml = `<div class="col-span-full text-center text-gray-500 py-8 bg-white rounded-2xl border border-gray-100">Tidak ada pengajuan aktif yang sedang diproses.</div>`;
     } else {
         trackingHtml = activeApps.slice(0, 2).map((app: any) => {
-            const isTendikDone = ['Approved_Tendik', 'Approved_Kaprodi', 'Approved_Kadep'].includes(app.status);
-            const isKaprodiDone = ['Approved_Kaprodi', 'Approved_Kadep'].includes(app.status);
-            const isRevision = app.status === 'Revision';
+            const isRevision = app.status === REVISION;
+            const isReadyForReview = isStudentReviewStage(app.status);
+            const isTendikDone = [APPROVED_TENDIK, APPROVED_KAPRODI].includes(app.status) || isReadyForReview;
+            const isKaprodiDone = isReadyForReview;
+            const isTendikComplete = isTendikDone;
+            const isKaprodiComplete = isKaprodiDone;
             
             return `
                 <div class="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
@@ -118,8 +127,8 @@ export const renderMahasiswaDashboard = async () => {
                                 `}
                             </div>
                             
-                            <div class="relative z-10 flex flex-col items-center gap-3 ${isTendikDone && !isRevision ? '' : 'opacity-30'}">
-                                ${isTendikDone && !isRevision ? (isKaprodiDone ? `
+                            <div class="relative z-10 flex flex-col items-center gap-3 ${isTendikComplete && !isRevision ? '' : 'opacity-30'}">
+                                ${isTendikComplete && !isRevision ? (isKaprodiComplete ? `
                                     <div class="w-9 h-9 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
                                     </div>
@@ -139,16 +148,32 @@ export const renderMahasiswaDashboard = async () => {
                             </div>
                         </div>
                         
-                        ${isRevision ? `
+                        ${canCompleteSubmission(app.status) ? `
+                        <div class="bg-teal-50 rounded-xl p-4 mb-6 flex items-start gap-3 border border-teal-100">
+                            <svg class="text-primary-teal mt-1 shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                            <p class="text-xs font-semibold text-teal-900">Dokumen siap direview. <span class="font-medium text-teal-700">Silakan review dokumen sebelum menyelesaikan pengajuan.</span></p>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button data-action="preview-scholarship-document" data-id="${app.id}" class="w-full py-3 bg-white text-primary-teal rounded-xl font-bold border border-primary-teal hover:bg-teal-50 transition-colors shadow-sm">
+                                Review Dokumen
+                            </button>
+                            <button data-action="complete-scholarship-review" data-id="${app.id}" class="w-full py-3 bg-primary-teal text-white rounded-xl font-bold hover:bg-teal-800 transition-colors shadow-sm">
+                                Selesaikan Pengajuan
+                            </button>
+                        </div>
+                        ` : isRevision ? `
                         <div class="bg-amber-50 rounded-xl p-4 mb-6 flex items-start gap-3 border border-amber-100">
                             <svg class="text-amber-500 mt-1 shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
                                 <line x1="12" y1="9" x2="12" y2="13"></line>
                                 <line x1="12" y1="17" x2="12.01" y2="17"></line>
                             </svg>
-                            <p class="text-xs font-semibold text-amber-800">Perhatian: <span class="font-medium text-amber-700">Terdapat catatan revisi pada pengajuan Anda.</span></p>
+                            <p class="text-xs font-semibold text-amber-800">Catatan Revisi: <span class="font-medium text-amber-700">${escapeHtml(app.revision_note || 'Terdapat catatan revisi pada pengajuan Anda.')}</span></p>
                         </div>
-                        <button class="w-full py-3 bg-[#E53935] text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm flex items-center justify-center gap-2">
+                        <button data-action="fix-scholarship-revision" class="w-full py-3 bg-[#E53935] text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm flex items-center justify-center gap-2">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                             LIHAT CATATAN & PERBAIKI
                         </button>
@@ -289,6 +314,33 @@ export const renderMahasiswaDashboard = async () => {
             });
         }
 
+        document.querySelectorAll('[data-action="fix-scholarship-revision"]').forEach((button) => {
+            button.addEventListener('click', () => {
+                renderScholarshipForm();
+            });
+        });
+
+        document.querySelectorAll('[data-action="preview-scholarship-document"]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const id = (button as HTMLElement).dataset.id;
+                if (id) previewScholarshipDocument(id);
+            });
+        });
+
+        document.querySelectorAll('[data-action="complete-scholarship-review"]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const id = (button as HTMLElement).dataset.id;
+                if (id) completeScholarshipReview(id);
+            });
+        });
+
+        document.querySelectorAll('[data-action="download-scholarship-document"]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const id = (button as HTMLElement).dataset.id;
+                if (id) downloadScholarshipDocument(id);
+            });
+        });
+
         async function fetchProfileProgress() {
             const token = localStorage.getItem('auth_token');
             if (!token) return;
@@ -351,4 +403,88 @@ export const renderMahasiswaDashboard = async () => {
         }
         fetchProfileProgress();
     }, 100);
+};
+
+const showToast = (text: string, success = true) => {
+    Toastify({
+        text,
+        duration: 3500,
+        style: { background: success ? '#10B981' : '#EF4444' }
+    }).showToast();
+};
+
+const fetchScholarshipDocument = async (applicationId: string): Promise<Blob> => {
+    const token = localStorage.getItem('auth_token');
+    const res = await fetch(`/api/mahasiswa/scholarship/${applicationId}/preview`, {
+        headers: { 'Authorization': 'Bearer ' + token },
+        cache: 'no-store'
+    });
+
+    if (!res.ok) {
+        let message = 'Dokumen belum dapat diakses.';
+        try {
+            const data = await res.json();
+            message = data.message || message;
+        } catch {}
+        throw new Error(message);
+    }
+
+    return res.blob();
+};
+
+const previewScholarshipDocument = async (applicationId: string) => {
+    const previewWindow = window.open('', '_blank');
+    try {
+        const blob = await fetchScholarshipDocument(applicationId);
+        const url = URL.createObjectURL(blob);
+        if (previewWindow) {
+            previewWindow.location.href = url;
+        } else {
+            window.open(url, '_blank');
+        }
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error: any) {
+        if (previewWindow) previewWindow.close();
+        showToast(error?.message || 'Gagal membuka dokumen.', false);
+    }
+};
+
+const downloadScholarshipDocument = async (applicationId: string) => {
+    try {
+        const blob = await fetchScholarshipDocument(applicationId);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Surat_Permohonan_Beasiswa_${applicationId}.docx`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error: any) {
+        showToast(error?.message || 'Gagal mengunduh dokumen.', false);
+    }
+};
+
+const completeScholarshipReview = async (applicationId: string) => {
+    const token = localStorage.getItem('auth_token');
+    try {
+        const res = await fetch(`/api/mahasiswa/scholarship/${applicationId}/complete`, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+
+        if (!res.ok) {
+            let message = 'Pengajuan belum dapat diselesaikan.';
+            try {
+                const data = await res.json();
+                message = data.message || message;
+            } catch {}
+            throw new Error(message);
+        }
+
+        showToast('Pengajuan berhasil diselesaikan.');
+        renderMahasiswaDashboard();
+    } catch (error: any) {
+        showToast(error?.message || 'Gagal menyelesaikan pengajuan.', false);
+    }
 };

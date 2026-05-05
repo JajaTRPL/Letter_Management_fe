@@ -1,5 +1,9 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { renderReviewScholarship } from './ReviewScholarship';
+import { renderReviewProsesLuarNegeri } from './ReviewProsesLuarNegeri';
+import { renderReviewSuratKeteranganAktif } from './ReviewSuratKeteranganAktif';
+import { renderReviewSuratPengantarMagang } from './ReviewSuratPengantarMagang';
+import { isAktifLetter, isLegacyBeasiswaFallback, isMagangLetter, isProsesLuarNegeriLetter } from '../shared/letter-workflow';
 
 export const renderDokumenTendik = async (role: string) => {
     const token = localStorage.getItem('auth_token');
@@ -71,7 +75,7 @@ export const renderDokumenTendik = async (role: string) => {
                         </span>
                     </td>
                     <td class="px-7 py-4 align-top text-right">
-                        <button class="review-btn text-[11px] font-bold text-[#0D4A46] border-2 border-[#0D4A46] rounded-full px-5 py-1.5 hover:bg-[#0D4A46] hover:text-white transition-colors duration-200" data-id="${item.id}">
+                        <button class="review-btn text-[11px] font-bold text-[#0D4A46] border-2 border-[#0D4A46] rounded-full px-5 py-1.5 hover:bg-[#0D4A46] hover:text-white transition-colors duration-200" data-id="${item.id}" data-letter-type="${item.letter_type || ''}">
                             Review Dokumen
                         </button>
                     </td>
@@ -132,8 +136,29 @@ export const renderDokumenTendik = async (role: string) => {
         // Add Listeners to Review Buttons
         document.querySelectorAll('.review-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const id = parseInt((e.currentTarget as HTMLElement).getAttribute('data-id') || '0');
-                renderReviewScholarship(id);
+                const target = e.currentTarget as HTMLElement;
+                const id = parseInt(target.getAttribute('data-id') || '0');
+                const letterType = target.getAttribute('data-letter-type');
+
+                if (isMagangLetter(letterType)) {
+                    renderReviewSuratPengantarMagang(id);
+                    return;
+                }
+
+                if (isAktifLetter(letterType)) {
+                    renderReviewSuratKeteranganAktif(id);
+                    return;
+                }
+
+                if (isProsesLuarNegeriLetter(letterType)) {
+                    renderReviewProsesLuarNegeri(id);
+                    return;
+                }
+
+                if (isLegacyBeasiswaFallback(letterType)) {
+                    renderReviewScholarship(id);
+                    return;
+                }
             });
         });
 
