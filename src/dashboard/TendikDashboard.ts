@@ -1,6 +1,10 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { getGreetingName } from '../utils/nameHelper';
 import { renderReviewScholarship } from '../tendik/ReviewScholarship';
+import { renderReviewProsesLuarNegeri } from '../tendik/ReviewProsesLuarNegeri';
+import { renderReviewSuratKeteranganAktif } from '../tendik/ReviewSuratKeteranganAktif';
+import { renderReviewSuratPengantarMagang } from '../tendik/ReviewSuratPengantarMagang';
+import { getAssignedTaskLabel, isAktifLetter, isBeasiswaLetter, isMagangLetter, isProsesLuarNegeriLetter } from '../shared/letter-workflow';
 
 export const renderTendikDashboard = async (role: string) => {
     const userName = getGreetingName(localStorage.getItem('auth_name')) || 'Fajar';
@@ -38,7 +42,7 @@ export const renderTendikDashboard = async (role: string) => {
                             try {
                                 const tasks = JSON.parse(localStorage.getItem('auth_assigned_tasks') || '[]');
                                 if (tasks.length > 0) {
-                                    return tasks.map((t: string) => `<span class="bg-[#FFD700] text-gray-900 border border-yellow-400/50 text-[10px] font-bold px-3 py-1.5 rounded-md shadow-sm">Task: ${t}</span>`).join('');
+                                    return tasks.map((t: string) => `<span class="bg-[#FFD700] text-gray-900 border border-yellow-400/50 text-[10px] font-bold px-3 py-1.5 rounded-md shadow-sm">${getAssignedTaskLabel(t)}</span>`).join('');
                                 }
                                 return '<span class="bg-gray-100 text-gray-500 text-[10px] font-bold px-3 py-1.5 rounded-md">Belum ada tugas</span>';
                             } catch { return ''; }
@@ -143,7 +147,7 @@ export const renderTendikDashboard = async (role: string) => {
                                                 </span>
                                             </td>
                                             <td class="px-7 py-3 align-top text-right">
-                                                <button class="review-btn inline-block text-center text-[10px] font-bold border-2 border-[#115E59] text-[#115E59] hover:bg-[#115E59] hover:text-white transition-colors rounded-xl px-4 py-2 w-full max-w-[140px] shadow-sm" data-id="${task.id}">
+                                                <button class="review-btn inline-block text-center text-[10px] font-bold border-2 border-[#115E59] text-[#115E59] hover:bg-[#115E59] hover:text-white transition-colors rounded-xl px-4 py-2 w-full max-w-[140px] shadow-sm" data-id="${task.id}" data-letter-type="${task.letter_type || ''}">
                                                     Review Dokumen
                                                 </button>
                                             </td>
@@ -161,7 +165,30 @@ export const renderTendikDashboard = async (role: string) => {
         // Add Listeners to Review Buttons
         document.querySelectorAll('.review-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const id = parseInt((e.currentTarget as HTMLElement).getAttribute('data-id') || '0');
+                const target = e.currentTarget as HTMLElement;
+                const id = parseInt(target.getAttribute('data-id') || '0');
+                const letterType = target.getAttribute('data-letter-type');
+
+                if (isMagangLetter(letterType)) {
+                    renderReviewSuratPengantarMagang(id);
+                    return;
+                }
+
+                if (isAktifLetter(letterType)) {
+                    renderReviewSuratKeteranganAktif(id);
+                    return;
+                }
+
+                if (isProsesLuarNegeriLetter(letterType)) {
+                    renderReviewProsesLuarNegeri(id);
+                    return;
+                }
+
+                if (isBeasiswaLetter(letterType)) {
+                    renderReviewScholarship(id);
+                    return;
+                }
+
                 renderReviewScholarship(id);
             });
         });

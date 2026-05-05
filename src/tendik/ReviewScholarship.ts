@@ -243,7 +243,7 @@ export const renderReviewScholarship = async (appId: number) => {
                                 <div class="absolute -left-[31px] bg-white border-2 border-yellow-400 w-5 h-5 rounded-full z-10 flex items-center justify-center">
                                      <div class="w-1.5 h-1.5 bg-yellow-400 rounded-full"></div>
                                 </div>
-                                <p class="text-sm font-medium text-gray-500 mt-1">Menunggu Tanda Tangan Kadept TEDI</p>
+                                <p class="text-sm font-medium text-gray-500 mt-1">Menunggu Tanda Tangan Kadep TEDI</p>
                             </div>
                             ` : `
                             <!-- Step 3 -->
@@ -290,7 +290,7 @@ export const renderReviewScholarship = async (appId: number) => {
                             </div>
                             <div class="text-xs space-y-1">
                                 <p class="font-bold">Dokumen telah diverifikasi</p>
-                                <p class="opacity-90 leading-relaxed text-[11px]">Anda akan meneruskan pengajuan surat ini ke <strong>${isAcademic ? 'Kadept' : 'Kaprodi'}</strong> untuk ditandatangani. Pastikan semua dokumen sudah benar dan lengkap.</p>
+                                <p class="opacity-90 leading-relaxed text-[11px]">Anda akan meneruskan pengajuan surat ini ke <strong>${isAcademic ? 'Kadep' : 'Kaprodi'}</strong> untuk ditandatangani. Pastikan semua dokumen sudah benar dan lengkap.</p>
                             </div>
                         </div>
 
@@ -335,7 +335,7 @@ export const renderReviewScholarship = async (appId: number) => {
                             Batal
                         </button>
                         <button id="confirm-approve" class="flex-[1.5] px-6 py-3.5 bg-[#115E59] text-white font-bold rounded-2xl hover:bg-[#0d4a46] transition-all shadow-lg active:scale-[0.98] text-sm">
-                            Ya, Teruskan ke ${isAcademic ? 'Kadept' : 'Kaprodi'}
+                            Ya, Teruskan ke ${isAcademic ? 'Kadep' : 'Kaprodi'}
                         </button>
                     </div>
                 </div>
