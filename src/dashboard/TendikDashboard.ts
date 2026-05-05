@@ -4,7 +4,7 @@ import { renderReviewScholarship } from '../tendik/ReviewScholarship';
 import { renderReviewProsesLuarNegeri } from '../tendik/ReviewProsesLuarNegeri';
 import { renderReviewSuratKeteranganAktif } from '../tendik/ReviewSuratKeteranganAktif';
 import { renderReviewSuratPengantarMagang } from '../tendik/ReviewSuratPengantarMagang';
-import { getAssignedTaskLabel, isAktifLetter, isBeasiswaLetter, isMagangLetter, isProsesLuarNegeriLetter } from '../shared/letter-workflow';
+import { getAssignedTaskLabel, isAktifLetter, isLegacyBeasiswaFallback, isMagangLetter, isProsesLuarNegeriLetter } from '../shared/letter-workflow';
 
 export const renderTendikDashboard = async (role: string) => {
     const userName = getGreetingName(localStorage.getItem('auth_name')) || 'Fajar';
@@ -184,12 +184,10 @@ export const renderTendikDashboard = async (role: string) => {
                     return;
                 }
 
-                if (isBeasiswaLetter(letterType)) {
+                if (isLegacyBeasiswaFallback(letterType)) {
                     renderReviewScholarship(id);
                     return;
                 }
-
-                renderReviewScholarship(id);
             });
         });
 

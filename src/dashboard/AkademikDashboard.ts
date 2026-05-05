@@ -4,7 +4,7 @@ import { renderReviewScholarship } from '../tendik/ReviewScholarship';
 import { renderReviewProsesLuarNegeriAkademik } from '../akademik/ReviewProsesLuarNegeriAkademik';
 import { renderReviewSuratKeteranganAktifAkademik } from '../akademik/ReviewSuratKeteranganAktifAkademik';
 import { renderReviewSuratPengantarMagangAkademik } from '../akademik/ReviewSuratPengantarMagangAkademik';
-import { isAktifLetter, isBeasiswaLetter, isMagangLetter, isProsesLuarNegeriLetter } from '../shared/letter-workflow';
+import { isAktifLetter, isLegacyBeasiswaFallback, isMagangLetter, isProsesLuarNegeriLetter } from '../shared/letter-workflow';
 
 export const renderAkademikDashboard = async (role: string) => {
     const fullName = localStorage.getItem('auth_name') || 'Pejabat';
@@ -196,12 +196,10 @@ export const renderAkademikDashboard = async (role: string) => {
                     return;
                 }
 
-                if (isBeasiswaLetter(letterType)) {
+                if (isLegacyBeasiswaFallback(letterType)) {
                     renderReviewScholarship(id);
                     return;
                 }
-
-                renderReviewScholarship(id);
             });
         });
 

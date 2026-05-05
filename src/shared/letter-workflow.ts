@@ -184,7 +184,8 @@ export const getLetterStatusTone = (
 
 export const getLetterLabel = (letterType?: string | null): string => {
     const key = normalizeKey(letterType);
-    return ASSIGNED_TASK_LABELS[key] || key || ASSIGNED_TASK_LABELS[LETTER_TYPES.SURAT_PERMOHONAN_BEASISWA];
+    if (!key) return 'Surat Administrasi';
+    return ASSIGNED_TASK_LABELS[key] || 'Surat Administrasi';
 };
 
 export const getAssignedTaskLabel = (task?: string | null): string => {
@@ -199,10 +200,14 @@ export const isMagangLetter = (letterType?: string | null): boolean => {
 
 export const isBeasiswaLetter = (letterType?: string | null): boolean => {
     const key = normalizeKey(letterType);
-    return !key
-        || key === LETTER_TYPES.SURAT_PERMOHONAN_BEASISWA
+    return key === LETTER_TYPES.SURAT_PERMOHONAN_BEASISWA
         || key === 'beasiswa'
         || key === 'scholarship';
+};
+
+export const isLegacyBeasiswaFallback = (letterType?: string | null): boolean => {
+    const key = normalizeKey(letterType);
+    return !key || isBeasiswaLetter(letterType);
 };
 
 export const isAktifLetter = (letterType?: string | null): boolean => {
