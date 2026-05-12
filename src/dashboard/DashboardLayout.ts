@@ -166,6 +166,14 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         });
     });
 
+    document.getElementById('sidebar-academic-periods-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        (window as any).clearDashboardInterval?.();
+        import('../superadmin/AcademicPeriodManagement').then(({ renderAcademicPeriodManagement }) => {
+            void renderAcademicPeriodManagement();
+        });
+    });
+
     document.getElementById('sidebar-history-link')?.addEventListener('click', (e) => {
         e.preventDefault();
         (window as any).clearDashboardInterval?.();
