@@ -1,9 +1,8 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { getLetterStatusLabel, getLetterStatusTone } from '../shared/letter-workflow';
+import { apiFetch } from '../shared/api-client';
 
 export const renderRiwayatTendik = async (role: string) => {
-    const token = localStorage.getItem('auth_token');
-
     // Show loading
     renderDashboardLayout('Riwayat', `
         <div class="flex items-center justify-center min-h-[400px]">
@@ -12,12 +11,7 @@ export const renderRiwayatTendik = async (role: string) => {
     `, role, 'riwayat');
 
     try {
-        const response = await fetch('/api/tendik/dashboard/tasks', {
-            headers: { 
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json'
-            }
-        });
+        const response = await apiFetch('/api/tendik/riwayat');
 
         if (!response.ok) throw new Error('Failed to fetch history');
         

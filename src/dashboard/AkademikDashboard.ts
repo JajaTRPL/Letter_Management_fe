@@ -1,5 +1,6 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { getGreetingName } from '../utils/nameHelper';
+import { apiFetch } from '../shared/api-client';
 import { renderReviewScholarship } from '../tendik/ReviewScholarship';
 import { renderReviewProsesLuarNegeriAkademik } from '../akademik/ReviewProsesLuarNegeriAkademik';
 import { renderReviewSuratKeteranganAktifAkademik } from '../akademik/ReviewSuratKeteranganAktifAkademik';
@@ -9,7 +10,6 @@ import { isAktifLetter, isLegacyBeasiswaFallback, isMagangLetter, isProsesLuarNe
 export const renderAkademikDashboard = async (role: string) => {
     const fullName = localStorage.getItem('auth_name') || 'Pejabat';
     const userName = getGreetingName(fullName);
-    const token = localStorage.getItem('auth_token');
 
     // Map role to display label
     const roleLabels: Record<string, string> = {
@@ -17,9 +17,9 @@ export const renderAkademikDashboard = async (role: string) => {
         'sekprodi': 'Sekprodi',
         'kadep': 'Kadep',
         'sekdep': 'Sekdep',
-        'akademik': 'Pejabat Akademik',
+        'akademik': 'Akademik',
     };
-    const roleLabel = roleLabels[role] || roleLabels[localStorage.getItem('auth_sub_role') || ''] || 'Pejabat Akademik';
+    const roleLabel = roleLabels[role] || roleLabels[localStorage.getItem('auth_sub_role') || ''] || 'Akademik';
 
     // Show loading state
     renderDashboardLayout('Dashboard', `
@@ -29,18 +29,24 @@ export const renderAkademikDashboard = async (role: string) => {
     `, role, 'dashboard');
 
     try {
-        const response = await fetch('/api/akademik/dashboard/tasks', {
-            headers: { 
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json'
-            }
-        });
+        const response = await apiFetch('/api/akademik/dashboard/tasks');
 
         if (!response.ok) throw new Error('Failed to fetch academic dashboard data');
         
         const data = await response.json();
         const stats = data.stats;
         const tasks = data.tasks;
+        const meta = data.meta as {
+            displayed_tasks: number;
+            total_matching_tasks: number;
+            is_limited: boolean;
+            limit: number;
+            per_type_limit?: number;
+            limit_scope?: 'per_letter_type';
+        } | undefined;
+        const limitedTaskNote = meta?.is_limited
+            ? `Menampilkan ${meta.displayed_tasks} dari ${meta.total_matching_tasks} total tugas. Daftar dibatasi per jenis surat.`
+            : '';
 
         const content = `
         <div class="space-y-6 animate-fade-in pb-12 w-full max-w-[1200px] mx-auto text-sm">
@@ -98,6 +104,7 @@ export const renderAkademikDashboard = async (role: string) => {
                         <div>
                             <h2 class="text-[17px] font-bold text-gray-800">Antrean Perlu Tindakan</h2>
                             <p class="text-[11px] text-gray-500 mt-1">Daftar pengajuan surat yang memerlukan persetujuan Anda</p>
+                            ${limitedTaskNote ? `<p class="text-[11px] font-medium text-amber-700 mt-2">${limitedTaskNote}</p>` : ''}
                         </div>
                     </div>
 
@@ -210,4 +217,3 @@ export const renderAkademikDashboard = async (role: string) => {
         `, role, 'dashboard');
     }
 };
-

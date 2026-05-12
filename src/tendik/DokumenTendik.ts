@@ -4,10 +4,9 @@ import { renderReviewProsesLuarNegeri } from './ReviewProsesLuarNegeri';
 import { renderReviewSuratKeteranganAktif } from './ReviewSuratKeteranganAktif';
 import { renderReviewSuratPengantarMagang } from './ReviewSuratPengantarMagang';
 import { isAktifLetter, isLegacyBeasiswaFallback, isMagangLetter, isProsesLuarNegeriLetter } from '../shared/letter-workflow';
+import { apiFetch } from '../shared/api-client';
 
 export const renderDokumenTendik = async (role: string) => {
-    const token = localStorage.getItem('auth_token');
-    
     // Initial content with loading state
     const initialContent = `
         <div class="w-full max-w-6xl mx-auto pb-12 animate-fade-in space-y-6">
@@ -20,12 +19,7 @@ export const renderDokumenTendik = async (role: string) => {
     renderDashboardLayout('Dokumen', initialContent, role, 'dokumen');
 
     try {
-        const response = await fetch('/api/tendik/dashboard/tasks', {
-            headers: { 
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json'
-            }
-        });
+        const response = await apiFetch('/api/tendik/dashboard/tasks');
         const result = await response.json();
         
         if (!response.ok) throw new Error(result.message || 'Gagal mengambil data');

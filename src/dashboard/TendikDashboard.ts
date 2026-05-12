@@ -1,5 +1,6 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { getGreetingName } from '../utils/nameHelper';
+import { apiFetch } from '../shared/api-client';
 import { renderReviewScholarship } from '../tendik/ReviewScholarship';
 import { renderReviewProsesLuarNegeri } from '../tendik/ReviewProsesLuarNegeri';
 import { renderReviewSuratKeteranganAktif } from '../tendik/ReviewSuratKeteranganAktif';
@@ -8,7 +9,6 @@ import { getAssignedTaskLabel, isAktifLetter, isLegacyBeasiswaFallback, isMagang
 
 export const renderTendikDashboard = async (role: string) => {
     const userName = getGreetingName(localStorage.getItem('auth_name')) || 'Fajar';
-    const token = localStorage.getItem('auth_token');
 
     // Initial skeleton/loading state
     renderDashboardLayout('Dashboard', `
@@ -18,12 +18,7 @@ export const renderTendikDashboard = async (role: string) => {
     `, role, 'dashboard');
 
     try {
-        const response = await fetch('/api/tendik/dashboard/tasks', {
-            headers: { 
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json'
-            }
-        });
+        const response = await apiFetch('/api/tendik/dashboard/tasks');
 
         if (!response.ok) throw new Error('Failed to fetch dashboard data');
         
