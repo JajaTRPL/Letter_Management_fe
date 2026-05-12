@@ -1,5 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
-import { apiFetch } from '../shared/api-client';
+import { apiFetch, openAuthFile } from '../shared/api-client';
 import { getLetterStatusLabel, getLetterStatusTone, LETTER_WORKFLOW_STATUS } from '../shared/letter-workflow';
 import { showError, showSuccess, showWarning } from '../shared/toast';
 
@@ -125,7 +125,7 @@ export const renderReviewSuratPengantarMagang = async (applicationId: number) =>
                     </div>
                     <div class="p-6 md:p-8">
                         ${proposalUrl ? `
-                            <a href="${proposalUrl}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-3 p-4 bg-[#115E59] text-white rounded-xl shadow-sm border border-[#115E59] hover:bg-[#0d4a46] transition-colors min-w-[260px] text-left">
+                            <button onclick="window.__openAuthFile('${proposalUrl}')" class="inline-flex items-center gap-3 p-4 bg-[#115E59] text-white rounded-xl shadow-sm border border-[#115E59] hover:bg-[#0d4a46] transition-colors min-w-[260px] text-left">
                                 <span class="w-8 h-8 rounded border border-white/20 flex items-center justify-center shrink-0">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                                 </span>
@@ -133,7 +133,7 @@ export const renderReviewSuratPengantarMagang = async (applicationId: number) =>
                                     <span class="block text-xs font-bold leading-tight">Proposal Kegiatan Magang</span>
                                     <span class="block text-[10px] opacity-80 mt-0.5">${escapeHtml(fileNameFromPath(app.proposal_kegiatan_magang_path))}</span>
                                 </span>
-                            </a>
+                            </button>
                         ` : `
                             <p class="text-sm font-semibold text-gray-400">Proposal kegiatan magang belum tersedia.</p>
                         `}
@@ -180,6 +180,7 @@ export const renderReviewSuratPengantarMagang = async (applicationId: number) =>
         `;
 
         renderDashboardLayout('Review Dokumen', content, role, 'dokumen');
+        (window as any).__openAuthFile = openAuthFile;
         document.getElementById('back-to-document-list')?.addEventListener('click', () => {
             import('./DokumenTendik').then(({ renderDokumenTendik }) => {
                 renderDokumenTendik(role);

@@ -26,6 +26,27 @@ interface ApiFetchOptions extends RequestInit {
     isFormData?: boolean;
 }
 
+export async function openAuthFile(url: string): Promise<void> {
+    const response = await apiFetch(url, {
+        cache: 'no-store',
+        headers: { Accept: '*/*' },
+    });
+
+    if (!response.ok) {
+        console.error('Failed to open file:', response.status);
+        return;
+    }
+
+    const blobUrl = URL.createObjectURL(await response.blob());
+    const popup = window.open(blobUrl, '_blank');
+
+    if (popup) {
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } else {
+        URL.revokeObjectURL(blobUrl);
+    }
+}
+
 export async function apiFetch(url: string, options: ApiFetchOptions = {}): Promise<Response> {
     const token = localStorage.getItem('auth_token');
     const { isFormData, headers: customHeaders, ...rest } = options;

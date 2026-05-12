@@ -1,5 +1,6 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import Toastify from 'toastify-js';
+import { apiFetch, openAuthFile } from '../shared/api-client';
 
 export const renderReviewScholarship = async (appId: number) => {
     const role = localStorage.getItem('auth_role') || 'tendik';
@@ -118,7 +119,7 @@ export const renderReviewScholarship = async (appId: number) => {
                         </button>
                         
                         ${application?.transkrip_nilai_path ? `
-                        <button onclick="window.open('/api/storage/${application.transkrip_nilai_path.replace('/storage/', '')}', '_blank')" class="flex items-center gap-3 p-3 bg-white text-gray-700 rounded-xl shadow-sm border border-gray-200 hover:bg-gray-50 transition-colors min-w-[220px] flex-shrink-0 text-left">
+                        <button onclick="window.__openAuthFile('/api/storage/${application.transkrip_nilai_path.replace('/storage/', '')}')" class="flex items-center gap-3 p-3 bg-white text-gray-700 rounded-xl shadow-sm border border-gray-200 hover:bg-gray-50 transition-colors min-w-[220px] flex-shrink-0 text-left">
                             <div class="w-8 h-8 rounded border border-gray-200 flex flex-col items-center justify-center shrink-0">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                             </div>
@@ -130,7 +131,7 @@ export const renderReviewScholarship = async (appId: number) => {
                         ` : ''}
 
                         ${application?.slip_gaji_ayah_path || application?.slip_gaji_ibu_path ? `
-                        <button onclick="window.open('/api/storage/${(application.slip_gaji_ayah_path || application.slip_gaji_ibu_path).replace('/storage/', '')}', '_blank')" class="flex items-center gap-3 p-3 bg-white text-gray-700 rounded-xl shadow-sm border border-gray-200 hover:bg-gray-50 transition-colors min-w-[220px] flex-shrink-0 text-left">
+                        <button onclick="window.__openAuthFile('/api/storage/${(application.slip_gaji_ayah_path || application.slip_gaji_ibu_path).replace('/storage/', '')}')" class="flex items-center gap-3 p-3 bg-white text-gray-700 rounded-xl shadow-sm border border-gray-200 hover:bg-gray-50 transition-colors min-w-[220px] flex-shrink-0 text-left">
                             <div class="w-8 h-8 rounded border border-gray-200 flex flex-col items-center justify-center shrink-0">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                             </div>
@@ -271,6 +272,22 @@ export const renderReviewScholarship = async (appId: number) => {
 
 
         renderDashboardLayout('Review Dokumen', content, role, 'dokumen');
+
+        (window as any).__openAuthFile = openAuthFile;
+
+        if (student.photo && student.photo.startsWith('/api/storage/')) {
+            const photoImg = document.querySelector<HTMLImageElement>('img[alt="Photo"]');
+            if (photoImg) {
+                apiFetch(student.photo, { headers: { Accept: '*/*' } })
+                    .then((res) => res.ok ? res.blob() : Promise.reject())
+                    .then((blob) => {
+                        photoImg.src = URL.createObjectURL(blob);
+                    })
+                    .catch(() => {
+                        photoImg.src = '/avatar-placeholder.png';
+                    });
+            }
+        }
 
         // Modal for Approval
         const modalHtml = `
