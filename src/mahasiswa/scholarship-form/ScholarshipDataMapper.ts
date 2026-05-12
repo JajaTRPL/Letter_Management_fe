@@ -57,15 +57,12 @@ export const mapApplicationToFormData = (app: any, formData: any) => {
         ipk: app.ipk,
         sks_last_2_semesters: app.sks_last_2_semesters,
         total_sks_passed: app.total_sks_passed,
+        total_sks_required: app.total_sks_required,
         on_leave: app.on_leave || 'Belum',
         leave_semester: app.leave_semester,
         thesis_status: app.thesis_status || 'Belum',
         exam_plan_date: app.exam_plan_date,
         has_scholarship_history: app.has_scholarship_history,
-        history_source: app.history_source,
-        history_period: app.history_period,
-        history_amount: app.history_amount,
-        history_status: app.history_status,
         ktm_path: app.ktm_path
     };
 };

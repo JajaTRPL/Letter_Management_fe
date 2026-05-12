@@ -1,6 +1,7 @@
 import { renderAdministrasiSurat } from './AdministrasiSurat';
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import Toastify from 'toastify-js';
+import { apiFetch } from '../shared/api-client';
 
 import { mapApplicationToFormData, mapProfileToFormData } from './scholarship-form/ScholarshipDataMapper';
 import { renderStep1Biodata } from './scholarship-form/Step1Biodata';
@@ -8,6 +9,8 @@ import { renderStep2Keluarga, attachStep2Events } from './scholarship-form/Step2
 import { renderStep3Akademik, attachStep3Events } from './scholarship-form/Step3Akademik';
 import { renderStep4Submit } from './scholarship-form/Step4Submit';
 import { LETTER_WORKFLOW_STATUS } from '../shared/letter-workflow';
+
+const BEASISWA_API_PREFIX = '/api/mahasiswa/surat-permohonan-beasiswa';
 
 export const renderScholarshipForm = () => {
     let currentStep = 1;
@@ -166,14 +169,11 @@ export const renderScholarshipForm = () => {
     };
 
     const fetchDraft = async () => {
-        const token = localStorage.getItem('auth_token');
         console.log("Fetching initial data...");
 
         try {
             // 1. Ambil data profil SSO (Utama)
-            const resOpt = await fetch('/api/profile', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const resOpt = await apiFetch('/api/profile');
             if (resOpt.ok) {
                 const data = await resOpt.json();
                 console.log("SSO Profile received:", data.profile);
@@ -185,9 +185,7 @@ export const renderScholarshipForm = () => {
             }
 
             // 2. Ambil data draf beasiswa
-            const res = await fetch('/api/mahasiswa/scholarship/step-1', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`${BEASISWA_API_PREFIX}/step-1`);
             if (res.ok) {
                 const data = await res.json();
                 console.log("Scholarship Draft received:", data.application);
@@ -212,7 +210,6 @@ export const renderScholarshipForm = () => {
     };
 
     const saveCurrentStep = async () => {
-        const token = localStorage.getItem('auth_token');
         const formElement = document.getElementById('scholarship-form') as HTMLFormElement;
         const currentFormData = new FormData(formElement);
         const data: any = {};
@@ -246,7 +243,7 @@ export const renderScholarshipForm = () => {
             delete data['pas_foto'];
         }
 
-        let endpoint = `/api/mahasiswa/scholarship/step-${currentStep}`;
+        let endpoint = `${BEASISWA_API_PREFIX}/step-${currentStep}`;
         let body: any = data;
 
         // Custom handling for Step 3 (File Upload)
@@ -273,12 +270,9 @@ export const renderScholarshipForm = () => {
         }
 
         try {
-            const res = await fetch(endpoint, {
+            const res = await apiFetch(endpoint, {
                 method: 'POST',
-                headers: currentStep === 3 ? { 'Authorization': `Bearer ${token}` } : {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
+                isFormData: currentStep === 3,
                 body: body
             });
 
@@ -334,13 +328,9 @@ export const renderScholarshipForm = () => {
     };
 
     const submitFinal = async () => {
-        const token = localStorage.getItem('auth_token');
         const isRevision = formData.status === LETTER_WORKFLOW_STATUS.REVISION;
         try {
-            const res = await fetch('/api/mahasiswa/scholarship/submit', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`${BEASISWA_API_PREFIX}/submit`, { method: 'POST' });
             if (res.ok) {
                 const data = await res.json();
                 const assignedName = data.assigned_to || 'staf beasiswa';

@@ -23,7 +23,7 @@ export const renderStep3Akademik = (formData: any) => `
                 <input type="number" name="family_dependents" value="${formData.family_dependents || ''}" placeholder="Contoh: 3" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
             </div>
             <div class="grid grid-cols-[200px_1fr] items-center gap-4">
-                <label class="text-sm font-bold text-gray-800">IP Semester Terakhir</label>
+                <label class="text-sm font-bold text-gray-800">IP 2 Semester Terakhir</label>
                 <input type="number" step="0.01" name="gpa_last_semesters" value="${formData.gpa_last_2_semesters || ''}" placeholder="Contoh: 3.75" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
             </div>
             <div class="grid grid-cols-[200px_1fr] items-center gap-4">
@@ -31,12 +31,22 @@ export const renderStep3Akademik = (formData: any) => `
                 <input type="number" step="0.01" name="ipk" value="${formData.ipk || ''}" placeholder="Contoh: 3.75" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
             </div>
             <div class="grid grid-cols-[200px_1fr] items-center gap-4">
-                <label class="text-sm font-bold text-gray-800">Jumlah SKS Semester Terakhir</label>
+                <label class="text-sm font-bold text-gray-800">Jumlah SKS 2 Semester Terakhir</label>
                 <input type="number" name="sks_last_semesters" value="${formData.sks_last_2_semesters || ''}" placeholder="Contoh: 24" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
-                <label class="text-sm font-bold text-gray-800">Jumlah Beban SKS Lulus</label>
-                <input type="number" name="total_sks_passed" value="${formData.total_sks_passed || ''}" placeholder="Contoh: 24" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+            <div class="grid grid-cols-[200px_1fr] items-start gap-4">
+                <label class="text-sm font-bold text-gray-800 pt-2">SKSK (SKS Kumulatif)</label>
+                <div class="space-y-1">
+                    <input type="number" name="total_sks_passed" value="${formData.total_sks_passed || ''}" placeholder="Contoh: 38" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                    <p class="text-[10px] text-gray-400">Total SKS yang sudah ditempuh sampai saat ini.</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-[200px_1fr] items-start gap-4">
+                <label class="text-sm font-bold text-gray-800 pt-2">Jumlah Beban SKS untuk Lulus</label>
+                <div class="space-y-1">
+                    <input type="number" name="total_sks_required" value="${formData.total_sks_required || ''}" placeholder="Contoh: 144" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                    <p class="text-[10px] text-gray-400">Total minimal SKS kurikulum untuk lulus. Contoh: 144.</p>
+                </div>
             </div>
             <div class="grid grid-cols-[200px_1fr] items-center gap-4">
                 <label class="text-sm font-bold text-gray-800">Status Cuti Kuliah</label>

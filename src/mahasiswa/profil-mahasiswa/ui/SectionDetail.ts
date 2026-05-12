@@ -53,7 +53,7 @@ export const renderSectionDetail = () => `
                                 </div>
                                 <input type="file" id="input-foto" class="hidden" accept="image/*">
                             </label>
-                            <span class="text-xs text-gray-400 w-1/2">Format JPG/PNG, maks 2MB</span>
+                            <span class="text-xs text-gray-400 w-1/2">Format JPG/PNG, maks 5MB</span>
                         </div>
                     </div>
 
@@ -67,7 +67,7 @@ export const renderSectionDetail = () => `
                                 </div>
                                 <input type="file" id="input-ttd" class="hidden" accept="image/*">
                             </label>
-                            <span class="text-xs text-gray-400 w-1/2">Format PNG (transparan), maks 1MB</span>
+                            <span class="text-xs text-gray-400 w-1/2">Format PNG (transparan), maks 2MB</span>
                         </div>
                     </div>
                 </div>
