@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from '../../dashboard/DashboardLayout';
+import { apiFetch } from '../../shared/api-client';
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -264,14 +265,8 @@ export const renderTemplateEditBeasiswa = async (template: TemplateInfo) => {
         const _content = quill.root.innerHTML;
         
         try {
-            const token = localStorage.getItem('auth_token');
-            const response = await fetch('/api/super-admin/templates/update-pdf', {
+            const response = await apiFetch('/api/super-admin/templates/update-pdf', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    ...(token && { 'Authorization': `Bearer ${token}` })
-                },
                 body: JSON.stringify({
                     name: template.name,
                     html: _content
