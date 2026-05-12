@@ -4,11 +4,19 @@ export type TabType = 'super_admin' | 'tendik' | 'akademik' | 'mahasiswa';
 
 export interface UserState {
     allUsers: any[];
+    meta: { current_page: number; per_page: number; total: number; last_page: number } | null;
+    currentPage: number;
+    currentSearch: string;
+    currentStatus: string;
 }
 
 /** Data-only state — no tab logic here. */
 export const state: UserState = {
-    allUsers: []
+    allUsers: [],
+    meta: null,
+    currentPage: 1,
+    currentSearch: '',
+    currentStatus: '',
 };
 
 /**

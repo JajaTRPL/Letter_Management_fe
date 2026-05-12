@@ -48,6 +48,10 @@ export const renderUserModal = (user: any = null, onRefresh: () => void) => {
                         <input type="email" name="email" value="${user?.email || ''}" required class="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all">
                     </div>
                     <div>
+                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">NIP</label>
+                        <input type="text" name="nip" value="${user?.nip || ''}" placeholder="Masukkan NIP" maxlength="50" class="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all">
+                    </div>
+                    <div>
                         <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Role</label>
                         <select id="modal-role-select" name="role" required class="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all">
                             <option value="mahasiswa" ${defaultRole === 'mahasiswa' ? 'selected' : ''}>Mahasiswa</option>
@@ -57,9 +61,9 @@ export const renderUserModal = (user: any = null, onRefresh: () => void) => {
                         </select>
                     </div>
                     <div id="sub-role-container" class="${defaultRole === 'akademik' ? '' : 'hidden'}">
-                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Tipe Jabatan Akademik</label>
+                        <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Peran Akademik</label>
                         <select name="sub_role" class="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all">
-                            <option value="" ${!user?.sub_role ? 'selected' : ''}>Pilih Jabatan...</option>
+                            <option value="" ${!user?.sub_role ? 'selected' : ''}>Pilih Peran...</option>
                             <option value="kadep" ${user?.sub_role === 'kadep' ? 'selected' : ''}>Ketua Departemen (Kadep)</option>
                             <option value="kaprodi" ${user?.sub_role === 'kaprodi' ? 'selected' : ''}>Ketua Program Studi (Kaprodi)</option>
                             <option value="sekdep" ${user?.sub_role === 'sekdep' ? 'selected' : ''}>Sekretaris Departemen (Sekdep)</option>

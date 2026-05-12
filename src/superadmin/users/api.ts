@@ -1,12 +1,17 @@
-import { state } from './types';
+import { state, tabManager } from './types';
 import { apiFetch } from '../../shared/api-client';
 import { showSuccess, showError } from '../../shared/toast';
 
 export const refreshUsers = async (onSuccess: () => void) => {
     try {
-        const response = await apiFetch('/api/super-admin/users');
+        const role = tabManager.getActive();
+        const params = new URLSearchParams({ role, page: String(state.currentPage), per_page: '25' });
+        if (state.currentSearch) params.set('search', state.currentSearch);
+        if (state.currentStatus) params.set('status', state.currentStatus);
+        const response = await apiFetch(`/api/super-admin/users?${params}`);
         const result = await response.json();
-        state.allUsers = result.data;
+        state.allUsers = result.data ?? [];
+        state.meta = result.meta ?? null;
         onSuccess();
     } catch (err) {
         console.error(err);

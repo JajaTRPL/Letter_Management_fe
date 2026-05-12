@@ -3,7 +3,7 @@ import { showSuccess, showError } from '../../shared/toast';
 import { isSuspended } from '../../shared/user-status';
 import { state, tabConfig, tabManager, type TabType } from './types';
 import { refreshUsers } from './api';
-import { renderFilteredRows, renderMahasiswaDetailModal } from './ui-utils';
+import { renderFilteredRows, renderMahasiswaDetailModal, renderPaginationControls } from './ui-utils';
 import { renderUserModal } from './modals';
 import { renderExportDrawer } from './export-drawer';
 import { renderImportDrawer } from './import-drawer';
@@ -29,34 +29,79 @@ export const setupListeners = (renderContent: () => void) => {
         }
     };
 
+    // --- Partial refresh: updates only table body + pagination bar (preserves input focus) ---
+    const doPartialRefresh = () => {
+        refreshUsers(() => {
+            const activeTab = tabManager.getActive();
+            const activeCfg = tabConfig[activeTab];
+            const tableBody = document.getElementById('user-table-body');
+            if (tableBody) {
+                tableBody.innerHTML = renderFilteredRows(state.allUsers, activeCfg.roles);
+            }
+            const paginationBar = document.getElementById('pagination-bar');
+            if (paginationBar) {
+                paginationBar.innerHTML = renderPaginationControls();
+            }
+            attachActionListeners(renderContent, updateSelectionToolbar);
+            attachPaginationListeners();
+            updateSelectionToolbar();
+        });
+    };
+
+    // --- Pagination listeners ---
+    const attachPaginationListeners = () => {
+        document.getElementById('pagination-prev')?.addEventListener('click', () => {
+            if (state.currentPage > 1) {
+                state.currentPage--;
+                doPartialRefresh();
+            }
+        });
+        document.getElementById('pagination-next')?.addEventListener('click', () => {
+            if (state.meta && state.currentPage < state.meta.last_page) {
+                state.currentPage++;
+                doPartialRefresh();
+            }
+        });
+    };
+
+    // --- Mutation refresh: resets to page 1, then full re-render ---
+    const mutationRefresh = () => {
+        state.currentPage = 1;
+        refreshUsers(renderContent);
+    };
+
     // --- Tab switching ---
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             tabManager.setActive((btn as HTMLElement).dataset.tab as TabType);
-            renderContent();
+            state.currentPage = 1;
+            state.currentSearch = '';
+            state.currentStatus = '';
+            refreshUsers(renderContent);
         });
     });
 
-    // --- Search & Status filter ---
+    // --- Search & Status filter (backend-driven) ---
     const searchInput = document.getElementById('user-search') as HTMLInputElement;
     const statusFilter = document.getElementById('status-filter') as HTMLSelectElement;
-    const tableBody = document.getElementById('user-table-body');
 
-    const applyFilters = () => {
-        const roles = tabConfig[tabManager.getActive()].roles;
-        if (tableBody) {
-            tableBody.innerHTML = renderFilteredRows(state.allUsers, roles, searchInput?.value || '', statusFilter?.value || '');
-        }
-        attachActionListeners(renderContent, updateSelectionToolbar);
-        updateSelectionToolbar();
-    };
+    let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+    searchInput?.addEventListener('input', () => {
+        state.currentSearch = searchInput.value;
+        state.currentPage = 1;
+        if (searchDebounce) clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(() => doPartialRefresh(), 400);
+    });
 
-    searchInput?.addEventListener('input', applyFilters);
-    statusFilter?.addEventListener('change', applyFilters);
+    statusFilter?.addEventListener('change', () => {
+        state.currentStatus = statusFilter.value;
+        state.currentPage = 1;
+        doPartialRefresh();
+    });
 
     // --- Add user ---
     document.getElementById('add-user-btn')?.addEventListener('click', () => {
-        renderUserModal(null, () => refreshUsers(renderContent));
+        renderUserModal(null, () => mutationRefresh());
     });
 
     // --- Dropdown Impor/Ekspor toggle ---
@@ -84,7 +129,7 @@ export const setupListeners = (renderContent: () => void) => {
 
     document.getElementById('import-btn')?.addEventListener('click', () => {
         document.getElementById('io-dropdown-menu')?.classList.add('hidden');
-        renderImportDrawer(() => refreshUsers(renderContent));
+        renderImportDrawer(() => mutationRefresh());
     });
 
     // --- Select all checkbox ---
@@ -120,7 +165,7 @@ export const setupListeners = (renderContent: () => void) => {
                 })
             ));
             showSuccess(`${selectedIds.length} akun berhasil dihapus`);
-            await refreshUsers(renderContent);
+            mutationRefresh();
         } catch (err) {
             console.error(err);
             showError('Gagal menghapus beberapa akun');
@@ -128,6 +173,7 @@ export const setupListeners = (renderContent: () => void) => {
     });
 
     attachActionListeners(renderContent, updateSelectionToolbar);
+    attachPaginationListeners();
 };
 
 export const attachActionListeners = (renderContent: () => void, onSelectionChange?: () => void) => {
@@ -199,7 +245,7 @@ export const attachActionListeners = (renderContent: () => void, onSelectionChan
             const user = state.allUsers.find(u => u.id == id);
             if (user) {
                 document.querySelectorAll('.kebab-menu').forEach(m => m.classList.add('hidden'));
-                renderUserModal(user, () => refreshUsers(renderContent));
+                renderUserModal(user, () => { state.currentPage = 1; refreshUsers(renderContent); });
             }
         });
     });
@@ -218,6 +264,7 @@ export const attachActionListeners = (renderContent: () => void, onSelectionChan
                 });
                 const result = await response.json();
                 showSuccess(result.message);
+                state.currentPage = 1;
                 await refreshUsers(renderContent);
             } catch (err) { console.error(err); }
         });
@@ -235,6 +282,7 @@ export const attachActionListeners = (renderContent: () => void, onSelectionChan
                 if (response.ok) {
                     const result = await response.json();
                     showSuccess(result.message || 'Akun berhasil dihapus');
+                    state.currentPage = 1;
                     await refreshUsers(renderContent);
                 }
             } catch (err) { console.error(err); }
@@ -263,7 +311,7 @@ const attachDetailModalListeners = (renderContent: () => void) => {
         const user = state.allUsers.find(u => String(u.id) === String(id));
         const modalContainer = document.getElementById('modal-container')!;
         modalContainer.innerHTML = '';
-        if (user) renderUserModal(user, () => refreshUsers(renderContent));
+        if (user) renderUserModal(user, () => { state.currentPage = 1; refreshUsers(renderContent); });
     });
 
     // Block/Unblock from detail modal
@@ -282,6 +330,7 @@ const attachDetailModalListeners = (renderContent: () => void) => {
             const modalContainer = document.getElementById('modal-container')!;
             modalContainer.innerHTML = '';
             showSuccess(result.message);
+            state.currentPage = 1;
             await refreshUsers(renderContent);
         } catch (err) { console.error(err); }
     });
@@ -299,6 +348,7 @@ const attachDetailModalListeners = (renderContent: () => void) => {
                 const modalContainer = document.getElementById('modal-container')!;
                 modalContainer.innerHTML = '';
                 showSuccess(result.message || 'Akun berhasil dihapus');
+                state.currentPage = 1;
                 await refreshUsers(renderContent);
             }
         } catch (err) { console.error(err); }

@@ -1,5 +1,6 @@
 import { getAngkatan } from '../../shared/nim-utils';
 import { UserStatus, STATUS_BADGE_STYLES, STATUS_DETAIL_STYLES, getSuspendLabel } from '../../shared/user-status';
+import { state } from './types';
 
 /** Check if current logged-in user is Primary Super Admin */
 const isPrimary = (): boolean => {
@@ -212,6 +213,9 @@ export const renderUserRow = (user: any, isSuperAdminTab = false) => {
             </td>
             <td class="px-4 py-3.5 border-b border-gray-50">
                 <span class="text-sm text-gray-400">${user.email}</span>
+            </td>
+            <td class="px-4 py-3.5 border-b border-gray-50">
+                <span class="text-sm text-gray-500 font-mono">${user.nip || '-'}</span>
             </td>
             ${roleCell.replace('class="', 'class="border-b border-gray-50 ')}
             <td class="px-4 py-3.5 border-b border-gray-50">
@@ -460,7 +464,7 @@ const renderGroupedUsers = (users: any[], config: string[], isSuperAdminTab: boo
         // Skip rendering redundant/unknown headers to keep UI clean
         if (!groupName.includes('Tidak Diketahui')) {
             const padding = depth * 4;
-            const colspan = isMahasiswaTab ? '7' : '6';
+            const colspan = '7';
             html += `
                 <tr class="bg-gray-50/50 border-y border-gray-100">
                     <td colspan="${colspan}" class="px-6 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider" style="padding-left: ${1.5 + padding}rem;">
@@ -474,6 +478,34 @@ const renderGroupedUsers = (users: any[], config: string[], isSuperAdminTab: boo
     });
 
     return html;
+};
+
+export const renderPaginationControls = (): string => {
+    const meta = state.meta;
+    if (!meta || meta.total === 0 || meta.last_page <= 1) return '';
+    const { current_page, last_page, total, per_page } = meta;
+    const start = (current_page - 1) * per_page + 1;
+    const end = Math.min(current_page * per_page, total);
+    const hasPrev = current_page > 1;
+    const hasNext = current_page < last_page;
+    return `
+        <div class="flex items-center justify-between px-6 py-4 border-t border-gray-100">
+            <p class="text-sm text-gray-500">${start}–${end} dari ${total} pengguna</p>
+            <div class="flex items-center gap-2">
+                <button id="pagination-prev"
+                    class="px-3 py-1.5 text-sm font-medium border border-gray-200 rounded-lg ${hasPrev ? 'text-gray-700 hover:bg-gray-50 cursor-pointer' : 'text-gray-300 cursor-not-allowed'} transition-colors"
+                    ${hasPrev ? '' : 'disabled'}>
+                    Sebelumnya
+                </button>
+                <span class="text-sm text-gray-600 font-medium">${current_page} / ${last_page}</span>
+                <button id="pagination-next"
+                    class="px-3 py-1.5 text-sm font-medium border border-gray-200 rounded-lg ${hasNext ? 'text-gray-700 hover:bg-gray-50 cursor-pointer' : 'text-gray-300 cursor-not-allowed'} transition-colors"
+                    ${hasNext ? '' : 'disabled'}>
+                    Berikutnya
+                </button>
+            </div>
+        </div>
+    `;
 };
 
 export const renderFilteredRows = (users: any[], roles: string[], search = '', statusFilter = '') => {
@@ -496,7 +528,7 @@ export const renderFilteredRows = (users: any[], roles: string[], search = '', s
     });
 
     if (filtered.length === 0) {
-        const colspan = roles.includes('mahasiswa') ? '7' : '6';
+        const colspan = '7';
         return `<tr><td colspan="${colspan}" class="px-6 py-12 text-center text-sm text-gray-400">Tidak ada data pengguna.</td></tr>`;
     }
 
