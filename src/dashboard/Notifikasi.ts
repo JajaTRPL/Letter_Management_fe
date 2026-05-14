@@ -1,6 +1,7 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { renderLogin } from '../login/Login';
 import Toastify from 'toastify-js';
+import { apiFetch } from '../shared/api-client';
 
 let activeTab: 'semua' | 'belum_dibaca' = 'semua';
 
@@ -213,10 +214,7 @@ export const renderNotifikasi = (role: string) => {
         const token = localStorage.getItem('auth_token');
         if (token) {
             try {
-                await fetch('/api/logout', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                await apiFetch('/api/logout', { method: 'POST' });
             } catch (e) {}
         }
         localStorage.clear();

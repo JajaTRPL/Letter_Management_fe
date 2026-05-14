@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from './DashboardLayout';
+import { apiFetch } from '../shared/api-client';
 
 let refreshInterval: any = null;
 let activePeriod: string = 'week';
@@ -32,12 +33,7 @@ export const renderAdminDashboard = async () => {
         }
 
         try {
-            const response = await fetch('/api/super-admin/dashboard/stats', {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-                    'Accept': 'application/json'
-                }
-            });
+            const response = await apiFetch('/api/super-admin/dashboard/stats');
             const stats = await response.json();
 
             const activeCount = stats.status_distribution?.active?.count || 0;

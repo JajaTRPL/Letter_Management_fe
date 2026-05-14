@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { apiFetch } from '../shared/api-client';
 import {
     canCompleteSubmission,
     canDownloadDocument,
@@ -24,16 +25,13 @@ const ENDPOINTS = [
 ];
 
 export const renderRiwayatPengajuan = async () => {
-    const token = localStorage.getItem('auth_token');
     let applications: any[] = [];
 
     try {
         const results = await Promise.allSettled(
             ENDPOINTS.map(endpoint =>
-                fetch(endpoint.url, {
-                    headers: { 'Authorization': 'Bearer ' + token },
-                    cache: 'no-store'
-                }).then(res => res.ok ? res.json() : Promise.reject(res))
+                apiFetch(endpoint.url, { cache: 'no-store' })
+                    .then(res => res.ok ? res.json() : Promise.reject(res))
             )
         );
 
@@ -194,12 +192,8 @@ const getFileName = (applicationId: string, letterType?: string) => {
 };
 
 const fetchDocument = async (applicationId: string, letterType?: string): Promise<Blob> => {
-    const token = localStorage.getItem('auth_token');
     const prefix = getApiPrefix(letterType);
-    const res = await fetch(`${prefix}/${applicationId}/preview`, {
-        headers: { 'Authorization': 'Bearer ' + token },
-        cache: 'no-store'
-    });
+    const res = await apiFetch(`${prefix}/${applicationId}/preview`, { cache: 'no-store' });
 
     if (!res.ok) {
         let message = 'Dokumen belum dapat diakses.';
@@ -247,13 +241,9 @@ const downloadDocument = async (applicationId: string, letterType?: string) => {
 };
 
 const completeReview = async (applicationId: string, letterType?: string) => {
-    const token = localStorage.getItem('auth_token');
     const prefix = getApiPrefix(letterType);
     try {
-        const res = await fetch(`${prefix}/${applicationId}/complete`, {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
+        const res = await apiFetch(`${prefix}/${applicationId}/complete`, { method: 'POST' });
 
         if (!res.ok) {
             let message = 'Pengajuan belum dapat diselesaikan.';

@@ -2,6 +2,7 @@ import { renderLogin } from '../login/Login';
 import { renderSidebar } from '../components/Sidebar';
 import { getGreetingName } from '../utils/nameHelper';
 import Toastify from 'toastify-js';
+import { apiFetch } from '../shared/api-client';
 
 export const renderDashboardLayout = (title: string, content: string, role: string, activePage: string = 'dashboard') => {
     const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -219,13 +220,7 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         const token = localStorage.getItem('auth_token');
         if (token) {
             try {
-                await fetch('/api/logout', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
+                await apiFetch('/api/logout', { method: 'POST' });
             } catch (error) {
                 console.error('Logout error:', error);
             }

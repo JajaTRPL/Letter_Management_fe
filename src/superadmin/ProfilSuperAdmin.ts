@@ -1,6 +1,7 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import Toastify from 'toastify-js';
 import { renderLogin } from '../login/Login';
+import { apiFetch } from '../shared/api-client';
 
 export const renderProfilSuperAdmin = () => {
     // Hide standard layout header
@@ -104,10 +105,7 @@ export const renderProfilSuperAdmin = () => {
             const token = localStorage.getItem('auth_token');
             if (token) {
                 try {
-                    await fetch('/api/logout', {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
+                    await apiFetch('/api/logout', { method: 'POST' });
                 } catch (e) { }
             }
             localStorage.clear();

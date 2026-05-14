@@ -5,6 +5,7 @@ import { renderSuratPengantarMagangForm } from './SuratPengantarMagangForm';
 import { renderSuratKeteranganAktifForm } from './SuratKeteranganAktifForm';
 import { renderProsesLuarNegeriForm } from './ProsesLuarNegeriForm';
 import Toastify from 'toastify-js';
+import { apiFetch } from '../shared/api-client';
 
 export const renderAdministrasiSurat = () => {
     const content = `
@@ -106,11 +107,8 @@ export const renderAdministrasiSurat = () => {
         fetchDurationEstimates();
 
         const handleCardClick = async (callback?: () => void) => {
-            const token = localStorage.getItem('auth_token');
             try {
-                const res = await fetch('/api/profile', {
-                    headers: { 'Authorization': 'Bearer ' + token }
-                });
+                const res = await apiFetch('/api/profile');
                 if (res.ok) {
                     const data = await res.json();
                     if (data.completeness && !data.completeness.is_complete) {
@@ -167,11 +165,8 @@ export const renderAdministrasiSurat = () => {
  * On failure, static fallback labels remain in place (no-op).
  */
 const fetchDurationEstimates = async () => {
-    const token = localStorage.getItem('auth_token');
     try {
-        const res = await fetch('/api/surat/average-duration', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
+        const res = await apiFetch('/api/surat/average-duration');
         if (!res.ok) return;
 
         const data: Record<string, { value: number | null; source: string; label: string | null }> = await res.json();

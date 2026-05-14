@@ -1,15 +1,11 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { apiFetch } from '../shared/api-client';
 
 export const renderLogReport = async (page: number = 1) => {
     renderDashboardLayout('Log Report', '<div class="flex items-center justify-center h-64"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div></div>', 'super_admin', 'logs');
 
     try {
-        const response = await fetch(`/api/super-admin/reports/admin-logs?page=${page}`, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-                'Accept': 'application/json'
-            }
-        });
+        const response = await apiFetch(`/api/super-admin/reports/admin-logs?page=${page}`);
         const result = await response.json();
         const logs = result.data.data;
         const pagination = result.data;

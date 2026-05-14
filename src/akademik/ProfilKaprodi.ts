@@ -1,6 +1,7 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { renderLogin } from '../login/Login';
 import Toastify from 'toastify-js';
+import { apiFetch } from '../shared/api-client';
 
 export const renderProfilKaprodi = async (role: string) => {
     // Hide standard layout header for custom profile header
@@ -29,9 +30,7 @@ export const renderProfilKaprodi = async (role: string) => {
 
     const fetchProfile = async () => {
         try {
-            const res = await fetch('/api/profile', {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
-            });
+            const res = await apiFetch('/api/profile');
             if (res.ok) {
                 const data = await res.json();
                 userData.name = data.user.name;
@@ -210,7 +209,7 @@ export const renderProfilKaprodi = async (role: string) => {
         // Logout
         document.getElementById('logout-profil')?.addEventListener('click', async () => {
             const token = localStorage.getItem('auth_token');
-            if (token) try { await fetch('/api/logout', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); } catch (e) { }
+            if (token) try { await apiFetch('/api/logout', { method: 'POST' }); } catch (e) { }
             localStorage.clear();
             Toastify({ text: "Berhasil keluar!", duration: 2000, style: { background: "#10B981" } }).showToast();
             setTimeout(() => renderLogin(), 500);
@@ -262,11 +261,7 @@ export const renderProfilKaprodi = async (role: string) => {
             }
 
             try {
-                const res = await fetch('/api/profile', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` },
-                    body: formData
-                });
+                const res = await apiFetch('/api/profile', { method: 'POST', isFormData: true, body: formData });
                 if (res.ok) {
                     Toastify({ text: "Profil berhasil diperbarui!", duration: 3000, style: { background: "#10B981" } }).showToast();
                     isEditingData = false;
@@ -287,11 +282,7 @@ export const renderProfilKaprodi = async (role: string) => {
             formData.append('_method', 'PUT');
 
             try {
-                const res = await fetch('/api/profile', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}`, 'Accept': 'application/json' },
-                    body: formData
-                });
+                const res = await apiFetch('/api/profile', { method: 'POST', isFormData: true, body: formData });
                 if (res.ok) {
                     Toastify({ text: "Kata sandi berhasil diperbarui!", duration: 3000, style: { background: "#10B981" } }).showToast();
                     isEditingPassword = false;

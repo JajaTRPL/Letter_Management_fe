@@ -4,7 +4,6 @@ import { apiFetch, openAuthFile } from '../shared/api-client';
 
 export const renderReviewScholarship = async (appId: number) => {
     const role = localStorage.getItem('auth_role') || 'tendik';
-    const token = localStorage.getItem('auth_token');
 
     // Show loading state
     renderDashboardLayout('Review Dokumen', '<div class="flex items-center justify-center h-64"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-800"></div></div>', role, 'dokumen');
@@ -13,12 +12,7 @@ export const renderReviewScholarship = async (appId: number) => {
     const apiPrefix = isAcademic ? 'akademik' : 'tendik';
 
     try {
-        const response = await fetch(`/api/${apiPrefix}/scholarship/${appId}`, {
-            headers: { 
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json'
-            }
-        });
+        const response = await apiFetch(`/api/${apiPrefix}/scholarship/${appId}`);
         
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") === -1) {
@@ -409,13 +403,8 @@ export const renderReviewScholarship = async (appId: number) => {
             btn.disabled = true;
 
             try {
-                const res = await fetch(`/api/${apiPrefix}/scholarship/${appId}/approve`, {
+                const res = await apiFetch(`/api/${apiPrefix}/scholarship/${appId}/approve`, {
                     method: 'PATCH',
-                    headers: { 
-                        'Authorization': `Bearer ${token}`,
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    },
                     body: Object.keys(bodyData).length > 0 ? JSON.stringify(bodyData) : undefined
                 });
 
@@ -441,13 +430,7 @@ export const renderReviewScholarship = async (appId: number) => {
         document.getElementById('reject-btn')?.addEventListener('click', async () => {
             if (confirm('Apakah Anda yakin ingin menolak pendaftaran ini?')) {
                 try {
-                    const res = await fetch(`/api/${apiPrefix}/scholarship/${appId}/reject`, {
-                        method: 'PATCH',
-                        headers: { 
-                            'Authorization': `Bearer ${token}`,
-                            'Accept': 'application/json'
-                        }
-                    });
+                    const res = await apiFetch(`/api/${apiPrefix}/scholarship/${appId}/reject`, { method: 'PATCH' });
                     if (res.ok) {
                         Toastify({ text: "Pendaftaran berhasil ditolak", style: { background: "#EF4444" } }).showToast();
                         document.getElementById('back-to-list')?.click();
@@ -462,13 +445,8 @@ export const renderReviewScholarship = async (appId: number) => {
             const note = prompt('Masukkan catatan revisi untuk mahasiswa:');
             if (note !== null) {
                 try {
-                    const res = await fetch(`/api/${apiPrefix}/scholarship/${appId}/revise`, {
+                    const res = await apiFetch(`/api/${apiPrefix}/scholarship/${appId}/revise`, {
                         method: 'PATCH',
-                        headers: { 
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
                         body: JSON.stringify({ note })
                     });
                     if (res.ok) {

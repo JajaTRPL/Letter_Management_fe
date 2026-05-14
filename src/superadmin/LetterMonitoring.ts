@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { apiFetch } from '../shared/api-client';
 
 const PERIODS = [
     { key: 'today', label: 'Hari Ini' },
@@ -23,13 +24,7 @@ const getStatusBadge = (status: string) => {
 };
 
 async function fetchMonitoringData(period: string) {
-    const token = localStorage.getItem('auth_token');
-    const response = await fetch(`/api/super-admin/dashboard/monitoring?period=${period}`, {
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-        }
-    });
+    const response = await apiFetch(`/api/super-admin/dashboard/monitoring?period=${period}`);
     if (!response.ok) throw new Error('Failed to fetch monitoring data');
     return response.json();
 }

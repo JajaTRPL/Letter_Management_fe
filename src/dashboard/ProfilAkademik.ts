@@ -1,6 +1,7 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import Toastify from 'toastify-js';
 import { renderLogin } from '../login/Login';
+import { apiFetch } from '../shared/api-client';
 
 let isEditingData = false;
 let isEditingPassword = false;
@@ -22,9 +23,9 @@ export const renderProfilAkademik = (role: string) => {
         'sekprodi': 'Sekprodi',
         'kadep': 'Kadep',
         'sekdep': 'Sekdep',
-        'akademik': 'Pejabat Akademik',
+        'akademik': 'Akademik',
     };
-    const roleLabel = roleLabels[role] || roleLabels[localStorage.getItem('auth_sub_role') || ''] || 'Pejabat Akademik';
+    const roleLabel = roleLabels[role] || roleLabels[localStorage.getItem('auth_sub_role') || ''] || 'Akademik';
 
     // ── Notification Banner ──
     const showNotification = (type: 'success' | 'error') => {
@@ -274,10 +275,7 @@ export const renderProfilAkademik = (role: string) => {
         const token = localStorage.getItem('auth_token');
         if (token) {
             try {
-                await fetch('/api/logout', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                await apiFetch('/api/logout', { method: 'POST' });
             } catch (e) {}
         }
         localStorage.clear();

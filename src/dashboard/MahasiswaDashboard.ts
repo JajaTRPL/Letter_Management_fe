@@ -11,6 +11,7 @@ import {
     LETTER_WORKFLOW_STATUS,
 } from '../shared/letter-workflow';
 import Toastify from 'toastify-js';
+import { apiFetch } from '../shared/api-client';
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -21,14 +22,10 @@ const escapeHtml = (value: unknown): string => String(value ?? '')
 
 export const renderMahasiswaDashboard = async () => {
     // Show a loading state or fetch before rendering
-    const token = localStorage.getItem('auth_token');
     let applications: any[] = [];
     
     try {
-        const res = await fetch('/api/mahasiswa/scholarship/applications', {
-            headers: { 'Authorization': 'Bearer ' + token },
-            cache: 'no-store'
-        });
+        const res = await apiFetch('/api/mahasiswa/scholarship/applications', { cache: 'no-store' });
         if (res.ok) {
             const data = await res.json();
             applications = data.applications || [];
@@ -342,13 +339,8 @@ export const renderMahasiswaDashboard = async () => {
         });
 
         async function fetchProfileProgress() {
-            const token = localStorage.getItem('auth_token');
-            if (!token) return;
             try {
-                const res = await fetch('/api/profile', {
-                    headers: { 'Authorization': 'Bearer ' + token },
-                    cache: 'no-store'
-                });
+                const res = await apiFetch('/api/profile', { cache: 'no-store' });
                 if (res.ok) {
                     const data = await res.json();
                     const profile = data.profile;
@@ -414,11 +406,7 @@ const showToast = (text: string, success = true) => {
 };
 
 const fetchScholarshipDocument = async (applicationId: string): Promise<Blob> => {
-    const token = localStorage.getItem('auth_token');
-    const res = await fetch(`/api/mahasiswa/scholarship/${applicationId}/preview`, {
-        headers: { 'Authorization': 'Bearer ' + token },
-        cache: 'no-store'
-    });
+    const res = await apiFetch(`/api/mahasiswa/scholarship/${applicationId}/preview`, { cache: 'no-store' });
 
     if (!res.ok) {
         let message = 'Dokumen belum dapat diakses.';
@@ -466,12 +454,8 @@ const downloadScholarshipDocument = async (applicationId: string) => {
 };
 
 const completeScholarshipReview = async (applicationId: string) => {
-    const token = localStorage.getItem('auth_token');
     try {
-        const res = await fetch(`/api/mahasiswa/scholarship/${applicationId}/complete`, {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
+        const res = await apiFetch(`/api/mahasiswa/scholarship/${applicationId}/complete`, { method: 'POST' });
 
         if (!res.ok) {
             let message = 'Pengajuan belum dapat diselesaikan.';
