@@ -1,6 +1,24 @@
 export const findRelasi = (keluarga: any[], rel: string) =>
     keluarga.find((k: any) => k.jenis_relasi?.toLowerCase() === rel.toLowerCase()) || {};
 
+/**
+ * Pull current_semester from any of the backend payload shapes that expose it.
+ * Order: explicit current_semester on the source itself, then the nested student/normalized/academic_context fallbacks.
+ * Returns the first non-empty value, or null when nothing is available.
+ */
+export const resolveCurrentSemester = (sources: Array<any>): number | string | null => {
+    for (const source of sources) {
+        if (!source || typeof source !== 'object') continue;
+        const direct = source.current_semester;
+        if (direct !== null && direct !== undefined && direct !== '') return direct;
+        const nested = source.student?.current_semester
+            ?? source.normalized_student?.current_semester
+            ?? source.academic_context?.current_semester;
+        if (nested !== null && nested !== undefined && nested !== '') return nested;
+    }
+    return null;
+};
+
 export const mapApplicationToFormData = (app: any, formData: any) => {
     const profile = app.mahasiswa_profile || app.mahasiswaProfile || {};
     const keluarga = profile.keluarga || [];
@@ -51,7 +69,7 @@ export const mapApplicationToFormData = (app: any, formData: any) => {
         // Academic fields
         scholarship_name: app.scholarship_name,
         study_level: app.study_level || 'D4',
-        current_semester: app.current_semester,
+        current_semester: app.current_semester ?? resolveCurrentSemester([app]),
         family_dependents: app.family_dependents,
         gpa_last_2_semesters: app.gpa_last_2_semesters,
         ipk: app.ipk,
@@ -67,7 +85,12 @@ export const mapApplicationToFormData = (app: any, formData: any) => {
     };
 };
 
-export const mapProfileToFormData = (profile: any, user: any = {}, formData: any = { siblings: [], scholarship_histories: [] }) => {
+export const mapProfileToFormData = (
+    profile: any,
+    user: any = {},
+    formData: any = { siblings: [], scholarship_histories: [] },
+    extras: any = {}
+) => {
     const keluarga = profile.keluarga || [];
     const father = findRelasi(keluarga, 'ayah');
     const mother = findRelasi(keluarga, 'ibu');
@@ -111,6 +134,7 @@ export const mapProfileToFormData = (profile: any, user: any = {}, formData: any
         pas_foto_path: profile.pas_foto_path,
         tanda_tangan_path: profile.tanda_tangan_path,
         siblings: siblings.length > 0 ? siblings : formData.siblings,
-        scholarship_histories: scholarship_histories.length > 0 ? scholarship_histories : formData.scholarship_histories
+        scholarship_histories: scholarship_histories.length > 0 ? scholarship_histories : formData.scholarship_histories,
+        current_semester: resolveCurrentSemester([extras?.student, extras?.normalized, extras])
     };
 };

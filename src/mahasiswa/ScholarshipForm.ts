@@ -8,23 +8,133 @@ import { renderStep1Biodata } from './scholarship-form/Step1Biodata';
 import { renderStep2Keluarga, attachStep2Events } from './scholarship-form/Step2Keluarga';
 import { renderStep3Akademik, attachStep3Events } from './scholarship-form/Step3Akademik';
 import { renderStep4Submit } from './scholarship-form/Step4Submit';
-import { LETTER_WORKFLOW_STATUS } from '../shared/letter-workflow';
+import {
+    LETTER_WORKFLOW_STATUS,
+    ACTIVE_READONLY_LETTER_STATUSES,
+    canCompleteSubmission,
+    canDownloadDocument,
+    canPreviewDocument,
+    getLetterStatusLabel,
+    getLetterStatusTone,
+    isStudentReviewStage,
+} from '../shared/letter-workflow';
 
 const BEASISWA_API_PREFIX = '/api/mahasiswa/surat-permohonan-beasiswa';
+const AUTOSAVE_DEBOUNCE_MS = 800;
 
-export const renderScholarshipForm = () => {
+type AutosaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+const READONLY_DETAIL_STATUSES: readonly string[] = [
+    ...ACTIVE_READONLY_LETTER_STATUSES,
+    LETTER_WORKFLOW_STATUS.COMPLETED,
+    LETTER_WORKFLOW_STATUS.REJECTED,
+];
+
+const escapeHtml = (value: unknown): string => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+const showErrorToast = (text: string) => {
+    // @ts-ignore Toastify has no types
+    Toastify({
+        text,
+        duration: 4000,
+        style: { background: '#EF4444' },
+    }).showToast();
+};
+
+const showSuccessToast = (text: string) => {
+    // @ts-ignore Toastify has no types
+    Toastify({
+        text,
+        duration: 3500,
+        style: { background: '#10B981' },
+    }).showToast();
+};
+
+const parseApiError = async (res: Response, fallback: string): Promise<string> => {
+    try {
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const body = await res.json();
+            if (body?.errors && typeof body.errors === 'object') {
+                const firstKey = Object.keys(body.errors)[0];
+                const value = body.errors[firstKey];
+                if (Array.isArray(value) && value.length > 0) return String(value[0]);
+            }
+            if (body?.message) return String(body.message);
+        }
+    } catch {
+        // fall through
+    }
+    return `${fallback} (${res.status})`;
+};
+
+const findLatestApplication = (apps: any[]): any | null => {
+    if (!Array.isArray(apps) || apps.length === 0) return null;
+    return [...apps].sort((a, b) => {
+        const aDate = new Date(a.submitted_at || a.updated_at || a.created_at || 0).getTime();
+        const bDate = new Date(b.submitted_at || b.updated_at || b.created_at || 0).getTime();
+        return bDate - aDate;
+    })[0];
+};
+
+const fetchExistingApplication = async (): Promise<any | null> => {
+    try {
+        const res = await apiFetch(`${BEASISWA_API_PREFIX}/applications`, { cache: 'no-store' });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return findLatestApplication(data?.applications || []);
+    } catch (e) {
+        console.error('Failed to fetch existing beasiswa applications', e);
+        return null;
+    }
+};
+
+export const renderScholarshipForm = async () => {
+    const existing = await fetchExistingApplication();
+
+    if (existing && READONLY_DETAIL_STATUSES.includes(existing.status)) {
+        renderScholarshipDetail(existing.id);
+        return;
+    }
+
+    // Revision, Draft, or no application at all -> enter the editable form flow.
+    renderScholarshipFormEditable();
+};
+
+const renderScholarshipFormEditable = () => {
     let currentStep = 1;
     let hasFetchedDraft = false;
     let formData: any = {
         siblings: [],
-        scholarship_histories: []
+        scholarship_histories: [],
+    };
+    let autosaveState: AutosaveState = 'idle';
+    let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+    let autosaveInFlight = false;
+    let submitInProgress = false;
+
+    const isEditable = () => {
+        const status = formData.status;
+        return !status || status === LETTER_WORKFLOW_STATUS.DRAFT || status === LETTER_WORKFLOW_STATUS.REVISION;
+    };
+
+    const setAutosaveState = (state: AutosaveState) => {
+        autosaveState = state;
+        const badge = document.getElementById('scholarship-save-badge');
+        if (!badge) return;
+        badge.className = `hidden md:flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border ${badgeToneFor(state, formData.status)}`;
+        badge.innerHTML = badgeContentFor(state, formData.status);
     };
 
     const render = () => {
         const isRevision = formData.status === LETTER_WORKFLOW_STATUS.REVISION;
         const content = `
             <div class="max-w-4xl mx-auto space-y-8 animate-fade-in pb-20">
-                <!-- Header & Back Button -->
                 <div class="flex justify-between items-center bg-white p-6 rounded-[24px] shadow-sm border border-gray-100">
                     <div class="flex items-center gap-4">
                         <button id="btn-back-to-docs" class="p-2.5 hover:bg-gray-50 rounded-xl text-gray-500 transition-colors">
@@ -38,18 +148,14 @@ export const renderScholarshipForm = () => {
                             <p class="text-xs text-gray-500">Lengkapi formulir pengajuan surat rekomendasi</p>
                         </div>
                     </div>
-                    <div class="hidden md:flex items-center gap-2 px-4 py-2 ${isRevision ? 'bg-red-50 text-red-700 border-red-100' : 'bg-amber-50 text-amber-700 border-amber-100'} rounded-xl text-xs font-bold border">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        ${isRevision ? 'Perlu Revisi' : 'Draft Autosaved'}
+                    <div id="scholarship-save-badge" class="${`hidden md:flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border ${badgeToneFor(autosaveState, formData.status)}`}">
+                        ${badgeContentFor(autosaveState, formData.status)}
                     </div>
                 </div>
 
-                <!-- Progress Stepper -->
                 <div class="bg-white p-8 rounded-[24px] shadow-sm border border-gray-100">
                     <div class="relative flex justify-between">
-                        <!-- Progress Line Background -->
                         <div class="absolute top-5 left-0 right-0 h-0.5 bg-gray-100 -z-0 mx-8"></div>
-                        <!-- Active Progress Line -->
                         <div class="absolute top-5 left-0 h-0.5 bg-primary-teal transition-all duration-500 -z-0 mx-8" style="width: ${(currentStep - 1) * 33.33}%"></div>
 
                         ${[1, 2, 3, 4].map(step => `
@@ -69,13 +175,11 @@ export const renderScholarshipForm = () => {
 
                 ${isRevision ? renderRevisionBanner(formData.revision_note) : ''}
 
-                <!-- Form Card -->
                 <div class="bg-white rounded-[32px] shadow-xl shadow-teal-900/5 border border-gray-100 overflow-hidden min-h-[400px]">
                     <div class="p-8 md:p-12">
                         <form id="scholarship-form" class="space-y-8">
                             ${renderStepContent()}
 
-                            <!-- Navigation Buttons -->
                             <div class="pt-8 flex justify-between items-center border-t border-gray-50">
                                 <button type="button" id="btn-prev" class="px-8 py-3.5 text-gray-500 font-bold hover:text-gray-800 transition-colors ${currentStep === 1 ? 'invisible' : ''}">
                                     Sebelumnya
@@ -123,6 +227,9 @@ export const renderScholarshipForm = () => {
             const originalText = btn.innerHTML;
             btn.innerHTML = '<span class="animate-spin mr-2">⏳</span> Menyimpan...';
             btn.disabled = true;
+            // While the user explicitly advances or submits, suspend autosave to avoid overlapping writes.
+            submitInProgress = currentStep === 4;
+            cancelPendingAutosave();
 
             try {
                 if (currentStep < 4) {
@@ -132,15 +239,15 @@ export const renderScholarshipForm = () => {
                         render();
                     }
                 } else {
-                    submitFinal();
+                    await submitFinal();
                 }
             } finally {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
+                submitInProgress = false;
             }
         });
 
-        // Auto-fill initial data if not already filled (only once)
         if (!formData.nim && !hasFetchedDraft) {
             hasFetchedDraft = true;
             fetchDraft();
@@ -151,7 +258,6 @@ export const renderScholarshipForm = () => {
         }
 
         if (currentStep === 3) {
-            // File upload previews for Step 3
             ['transkrip-nilai-upload', 'slip-gaji-ayah-upload', 'slip-gaji-ibu-upload'].forEach(id => {
                 const input = document.getElementById(id) as HTMLInputElement;
                 input?.addEventListener('change', () => {
@@ -166,56 +272,94 @@ export const renderScholarshipForm = () => {
 
             attachStep3Events();
         }
+
+        attachAutosaveListeners();
+    };
+
+    const attachAutosaveListeners = () => {
+        // Autosave only applies to editable text/number/date inputs in steps 1 and 3.
+        // Step 2 fields are read-only (sync from profile) and step 3 has file uploads we never autosave.
+        // Step 4 is review-only.
+        if (currentStep !== 1 && currentStep !== 3) return;
+        if (!isEditable()) return;
+
+        const formElement = document.getElementById('scholarship-form');
+        if (!formElement) return;
+
+        const handler = () => scheduleAutosave();
+        formElement.addEventListener('input', handler);
+        formElement.addEventListener('change', handler);
+    };
+
+    const scheduleAutosave = () => {
+        if (submitInProgress || !isEditable()) return;
+        if (autosaveTimer) clearTimeout(autosaveTimer);
+        autosaveTimer = setTimeout(() => {
+            void runAutosave();
+        }, AUTOSAVE_DEBOUNCE_MS);
+    };
+
+    const cancelPendingAutosave = () => {
+        if (autosaveTimer) {
+            clearTimeout(autosaveTimer);
+            autosaveTimer = null;
+        }
+    };
+
+    const runAutosave = async () => {
+        if (autosaveInFlight) return;
+        if (submitInProgress || !isEditable()) return;
+        autosaveInFlight = true;
+        setAutosaveState('saving');
+        try {
+            const ok = await saveCurrentStep({ silent: true });
+            setAutosaveState(ok ? 'saved' : 'error');
+        } finally {
+            autosaveInFlight = false;
+        }
     };
 
     const fetchDraft = async () => {
-        console.log("Fetching initial data...");
-
         try {
-            // 1. Ambil data profil SSO (Utama)
-            const resOpt = await apiFetch('/api/profile');
-            if (resOpt.ok) {
-                const data = await resOpt.json();
-                console.log("SSO Profile received:", data.profile);
+            const profileRes = await apiFetch('/api/profile');
+            if (profileRes.ok) {
+                const data = await profileRes.json();
                 if (data.profile) {
-                    const profileData = mapProfileToFormData(data.profile, data.user || {}, formData);
+                    const profileData = mapProfileToFormData(data.profile, data.user || {}, formData, {
+                        student: data.student,
+                        normalized: data.normalized,
+                    });
                     Object.assign(formData, profileData);
-                    console.log("Mapped SSO data to formData:", formData);
                 }
             }
 
-            // 2. Ambil data draf beasiswa
-            const res = await apiFetch(`${BEASISWA_API_PREFIX}/step-1`);
-            if (res.ok) {
-                const data = await res.json();
-                console.log("Scholarship Draft received:", data.application);
+            const draftRes = await apiFetch(`${BEASISWA_API_PREFIX}/step-1`);
+            if (draftRes.ok) {
+                const data = await draftRes.json();
                 if (data.application) {
                     const draftData = mapApplicationToFormData(data.application, formData);
                     Object.keys(draftData).forEach(key => {
                         const val = draftData[key];
-                        // Hanya timpa jika draf memiliki nilai nyata
                         if (val !== null && val !== undefined && val !== '' && val !== 0 && val !== '0') {
                             formData[key] = val;
                         }
                     });
-                    console.log("Final Merged formData:", formData);
                 }
             }
         } catch (e) {
-            console.error("Fetch Error Details:", e);
+            console.error('Beasiswa form load failed', e);
         } finally {
             render();
-            console.log("Step rendered with current formData");
         }
     };
 
-    const saveCurrentStep = async () => {
-        const formElement = document.getElementById('scholarship-form') as HTMLFormElement;
+    const saveCurrentStep = async (options: { silent?: boolean } = {}): Promise<boolean> => {
+        const formElement = document.getElementById('scholarship-form') as HTMLFormElement | null;
+        if (!formElement) return false;
         const currentFormData = new FormData(formElement);
         const data: any = {};
         currentFormData.forEach((value, key) => { data[key] = value; });
 
-        // Preproses untuk Step 2 (Send existing formData because fields are now read-only in UI)
         if (currentStep === 2) {
             data.pob = formData.pob;
             data.dob = formData.dob;
@@ -243,14 +387,12 @@ export const renderScholarshipForm = () => {
             delete data['pas_foto'];
         }
 
-        let endpoint = `${BEASISWA_API_PREFIX}/step-${currentStep}`;
+        const endpoint = `${BEASISWA_API_PREFIX}/step-${currentStep}`;
         let body: any = data;
 
-        // Custom handling for Step 3 (File Upload)
         if (currentStep === 3) {
             const bodyFormData = new FormData();
             Object.keys(data).forEach(key => {
-                // Jangan append file dummy ke JSON key
                 if (!['transkrip-nilai', 'slip-ayah', 'slip-ibu'].includes(key)) {
                     bodyFormData.append(key, data[key]);
                 }
@@ -273,7 +415,7 @@ export const renderScholarshipForm = () => {
             const res = await apiFetch(endpoint, {
                 method: 'POST',
                 isFormData: currentStep === 3,
-                body: body
+                body,
             });
 
             if (res.ok) {
@@ -281,48 +423,23 @@ export const renderScholarshipForm = () => {
                 const newDraftData = mapApplicationToFormData(result.application, formData);
                 Object.keys(newDraftData).forEach(key => {
                     const val = newDraftData[key];
-                    // Only overwrite with meaningful values.
                     if (val !== null && val !== undefined && val !== '' && val !== 0 && val !== '0') {
                         formData[key] = val;
                     }
                 });
                 return true;
-            } else {
-                let errorMsg = "Pastikan semua kolom terisi dengan benar.";
-                const contentType = res.headers.get("content-type");
-
-                if (contentType && contentType.includes("application/json")) {
-                    try {
-                        const err = await res.json();
-                        if (err.errors) {
-                            const firstKey = Object.keys(err.errors)[0];
-                            errorMsg = err.errors[firstKey][0];
-                        } else if (err.message) {
-                            errorMsg = err.message;
-                        }
-                    } catch (e) {
-                        console.error("Error parsing JSON failure", e);
-                    }
-                } else {
-                    errorMsg = `Server Error (${res.status}): ${res.statusText}`;
-                }
-
-                // @ts-ignore
-                Toastify({
-                    text: "Gagal menyimpan: " + errorMsg,
-                    duration: 5000,
-                    style: { background: "#EF4444" }
-                }).showToast();
-                return false;
             }
+
+            if (!options.silent) {
+                const errorMsg = await parseApiError(res, 'Gagal menyimpan');
+                showErrorToast('Gagal menyimpan: ' + errorMsg);
+            }
+            return false;
         } catch (error) {
             console.error(error);
-            // @ts-ignore
-            Toastify({
-                text: "Koneksi terputus atau server mati",
-                duration: 3000,
-                style: { background: "#EF4444" }
-            }).showToast();
+            if (!options.silent) {
+                showErrorToast('Koneksi terputus atau server mati');
+            }
             return false;
         }
     };
@@ -335,43 +452,54 @@ export const renderScholarshipForm = () => {
                 const data = await res.json();
                 const assignedName = data.assigned_to || 'staf beasiswa';
 
-                // @ts-ignore
-                Toastify({
-                    text: isRevision
-                        ? `Berhasil! Revisi pengajuan telah dikirim ulang kepada ${assignedName}.`
-                        : `Berhasil! Pengajuan telah dikirim dan ditugaskan kepada ${assignedName}.`,
-                    duration: 4000,
-                    style: { background: "#10B981" }
-                }).showToast();
-                setTimeout(() => renderAdministrasiSurat(), 2000);
+                showSuccessToast(isRevision
+                    ? `Berhasil! Revisi pengajuan telah dikirim ulang kepada ${assignedName}.`
+                    : `Berhasil! Pengajuan telah dikirim dan ditugaskan kepada ${assignedName}.`);
+
+                setTimeout(() => {
+                    void renderScholarshipForm();
+                }, 1500);
             } else {
-                // @ts-ignore
-                Toastify({
-                    text: "Gagal mengirim pengajuan.",
-                    duration: 3000,
-                    style: { background: "#EF4444" }
-                }).showToast();
+                const errorMsg = await parseApiError(res, 'Gagal mengirim pengajuan');
+                showErrorToast(errorMsg);
             }
         } catch (e) {
             console.error(e);
-            // @ts-ignore
-            Toastify({
-                text: "Terjadi kesalahan sistem.",
-                duration: 3000,
-                style: { background: "#EF4444" }
-            }).showToast();
+            showErrorToast('Terjadi kesalahan sistem.');
         }
     };
 
     render();
 };
 
-const escapeHtml = (value: unknown): string => String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+const badgeToneFor = (state: AutosaveState, status?: string): string => {
+    if (status === LETTER_WORKFLOW_STATUS.REVISION) {
+        return 'bg-red-50 text-red-700 border-red-100';
+    }
+    switch (state) {
+        case 'saving': return 'bg-blue-50 text-blue-700 border-blue-100';
+        case 'saved': return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+        case 'error': return 'bg-red-50 text-red-700 border-red-100';
+        default: return 'bg-amber-50 text-amber-700 border-amber-100';
+    }
+};
+
+const badgeContentFor = (state: AutosaveState, status?: string): string => {
+    if (status === LETTER_WORKFLOW_STATUS.REVISION) {
+        return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>Perlu Revisi`;
+    }
+    const icon = state === 'saving'
+        ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>'
+        : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+    const label = state === 'saving'
+        ? 'Menyimpan...'
+        : state === 'saved'
+            ? 'Draft tersimpan'
+            : state === 'error'
+                ? 'Gagal menyimpan'
+                : 'Belum tersimpan';
+    return icon + label;
+};
 
 const renderRevisionBanner = (note?: string | null) => `
     <div class="bg-amber-50 border border-amber-200 rounded-[24px] p-6 shadow-sm">
@@ -392,3 +520,243 @@ const renderRevisionBanner = (note?: string | null) => `
         </div>
     </div>
 `;
+
+const renderRejectedBanner = (reason?: string | null) => `
+    <div class="bg-red-50 border border-red-200 rounded-[24px] p-6 shadow-sm">
+        <div class="flex items-start gap-4">
+            <div class="w-10 h-10 rounded-full bg-red-100 text-red-700 flex items-center justify-center shrink-0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+            </div>
+            <div>
+                <h3 class="text-sm font-black text-red-900 uppercase tracking-wide">Pengajuan Ditolak</h3>
+                <p class="mt-2 text-sm text-red-900 leading-relaxed whitespace-pre-line">
+                    ${escapeHtml(reason || 'Pengajuan ini ditolak. Silakan hubungi staf beasiswa untuk informasi lebih lanjut.')}
+                </p>
+            </div>
+        </div>
+    </div>
+`;
+
+const renderScholarshipDetail = async (applicationId: number | string) => {
+    renderDashboardLayout(
+        'Permohonan Beasiswa',
+        `<div class="max-w-5xl mx-auto bg-white border border-gray-100 rounded-[24px] p-10 shadow-sm flex items-center gap-4 animate-fade-in">
+            <div class="w-9 h-9 rounded-full border-4 border-teal-100 border-t-primary-teal animate-spin"></div>
+            <p class="text-sm font-semibold text-gray-600">Memuat detail pengajuan beasiswa...</p>
+        </div>`,
+        'mahasiswa',
+        'administrasi',
+    );
+
+    let application: any = null;
+    try {
+        const res = await apiFetch(`${BEASISWA_API_PREFIX}/${applicationId}`, { cache: 'no-store' });
+        if (!res.ok) {
+            const message = await parseApiError(res, 'Detail pengajuan tidak tersedia');
+            showErrorToast(message);
+            renderAdministrasiSurat();
+            return;
+        }
+        const data = await res.json();
+        application = data.application;
+    } catch (e) {
+        console.error('Failed to load Beasiswa detail', e);
+        showErrorToast('Gagal memuat detail pengajuan.');
+        renderAdministrasiSurat();
+        return;
+    }
+
+    if (!application) {
+        renderAdministrasiSurat();
+        return;
+    }
+
+    let hasPreviewed = Boolean(application.student_reviewed_at);
+    const previewBlobs = new Set<string>();
+
+    const renderDetail = () => {
+        const status: string = application.status;
+        const statusLabel = getLetterStatusLabel(status, 'student-list');
+        const statusBadge = getLetterStatusTone(status, 'student-detail');
+        const scholarshipName = application.scholarship_name || 'Permohonan Beasiswa';
+        const student = application.student || {};
+        const profile = application.mahasiswa_profile || {};
+
+        const content = `
+            <div class="max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
+                <div class="flex flex-wrap justify-between items-start gap-4 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100">
+                    <div class="flex items-start gap-4">
+                        <button id="btn-back-to-docs" class="p-2.5 hover:bg-gray-50 rounded-xl text-gray-500 transition-colors">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                            </svg>
+                        </button>
+                        <div>
+                            <h2 class="text-xl font-bold text-gray-800">Permohonan Beasiswa</h2>
+                            <p class="text-xs text-gray-500">${escapeHtml(scholarshipName)}</p>
+                        </div>
+                    </div>
+                    <span class="${statusBadge} px-4 py-1.5 rounded-full text-xs font-bold border w-fit">
+                        ${escapeHtml(statusLabel)}
+                    </span>
+                </div>
+
+                ${status === LETTER_WORKFLOW_STATUS.REJECTED ? renderRejectedBanner(application.rejection_reason) : ''}
+
+                <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm p-8 space-y-6">
+                    <div>
+                        <h3 class="text-sm font-black uppercase tracking-wide text-gray-500">Pemohon</h3>
+                        <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm text-gray-700">
+                            <div><span class="font-bold text-gray-800">Nama:</span> ${escapeHtml(student.name || profile.nama_lengkap || '-')}</div>
+                            <div><span class="font-bold text-gray-800">NIM:</span> ${escapeHtml(student.nim || profile.nim || '-')}</div>
+                            <div><span class="font-bold text-gray-800">Program Studi:</span> ${escapeHtml(student.program_studi_display || student.study_program?.name || '-')}</div>
+                            <div><span class="font-bold text-gray-800">Fakultas:</span> ${escapeHtml(student.fakultas_display || student.faculty?.name || '-')}</div>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-gray-100 pt-6">
+                        <h3 class="text-sm font-black uppercase tracking-wide text-gray-500">Detail Pengajuan</h3>
+                        <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm text-gray-700">
+                            <div><span class="font-bold text-gray-800">Nama Beasiswa:</span> ${escapeHtml(scholarshipName)}</div>
+                            <div><span class="font-bold text-gray-800">Semester Saat Ini:</span> ${escapeHtml(application.current_semester ?? '-')}</div>
+                            <div><span class="font-bold text-gray-800">IPK:</span> ${escapeHtml(application.ipk ?? '-')}</div>
+                            <div><span class="font-bold text-gray-800">Tanggal Pengajuan:</span> ${formatDate(application.submitted_at || application.created_at)}</div>
+                        </div>
+                    </div>
+                </div>
+
+                ${renderActionPanel(status)}
+
+                <div id="document-preview-panel" class="hidden border border-gray-200 rounded-2xl overflow-hidden bg-gray-50">
+                    <div class="px-4 py-3 bg-white border-b border-gray-100 flex items-center justify-between">
+                        <p class="text-xs font-bold text-gray-600">Pratinjau Surat Permohonan Beasiswa</p>
+                        <button type="button" id="btn-close-preview" class="text-xs text-gray-400 hover:text-gray-700 font-bold">Tutup</button>
+                    </div>
+                    <iframe id="document-preview-frame" title="Pratinjau Surat Permohonan Beasiswa" class="w-full h-[70vh] bg-white"></iframe>
+                </div>
+            </div>
+        `;
+
+        renderDashboardLayout('Permohonan Beasiswa', content, 'mahasiswa', 'administrasi');
+        attachDetailEvents();
+    };
+
+    const renderActionPanel = (status: string): string => {
+        const showPreview = canPreviewDocument(status);
+        const showComplete = canCompleteSubmission(status, hasPreviewed);
+        const showDownload = canDownloadDocument(status);
+        if (!showPreview && !showComplete && !showDownload) return '';
+
+        return `
+            <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm p-6 flex flex-wrap gap-3 justify-end">
+                ${showPreview ? `<button type="button" id="btn-preview" class="px-5 py-2.5 border border-gray-200 text-gray-700 font-bold rounded-xl hover:border-teal-200 hover:text-teal-600 text-sm flex items-center gap-2">Review Dokumen</button>` : ''}
+                ${showComplete ? `<button type="button" id="btn-complete" class="px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 text-sm">Selesaikan Pengajuan</button>` : ''}
+                ${showDownload ? `<button type="button" id="btn-download" class="px-6 py-2.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 text-sm">Unduh Dokumen Final</button>` : ''}
+            </div>
+        `;
+    };
+
+    const attachDetailEvents = () => {
+        document.getElementById('btn-back-to-docs')?.addEventListener('click', () => {
+            previewBlobs.forEach(url => URL.revokeObjectURL(url));
+            previewBlobs.clear();
+            renderAdministrasiSurat();
+        });
+
+        document.getElementById('btn-preview')?.addEventListener('click', () => {
+            void handlePreview();
+        });
+
+        document.getElementById('btn-complete')?.addEventListener('click', () => {
+            void handleComplete();
+        });
+
+        document.getElementById('btn-download')?.addEventListener('click', () => {
+            void handleDownload();
+        });
+
+        document.getElementById('btn-close-preview')?.addEventListener('click', () => {
+            const panel = document.getElementById('document-preview-panel');
+            const frame = document.getElementById('document-preview-frame') as HTMLIFrameElement | null;
+            if (panel) panel.classList.add('hidden');
+            if (frame) frame.src = 'about:blank';
+        });
+    };
+
+    const fetchPreviewBlob = async (): Promise<Blob> => {
+        const res = await apiFetch(`${BEASISWA_API_PREFIX}/${application.id}/preview`, { cache: 'no-store' });
+        if (!res.ok) {
+            throw new Error(await parseApiError(res, 'Dokumen belum dapat diakses'));
+        }
+        return res.blob();
+    };
+
+    const handlePreview = async () => {
+        try {
+            const blob = await fetchPreviewBlob();
+            const url = URL.createObjectURL(blob);
+            previewBlobs.add(url);
+            const panel = document.getElementById('document-preview-panel');
+            const frame = document.getElementById('document-preview-frame') as HTMLIFrameElement | null;
+            if (panel) panel.classList.remove('hidden');
+            if (frame) frame.src = url;
+            hasPreviewed = true;
+            if (isStudentReviewStage(application.status)) {
+                renderDetail();
+            }
+        } catch (e: any) {
+            showErrorToast(e?.message || 'Gagal membuka pratinjau.');
+        }
+    };
+
+    const handleComplete = async () => {
+        try {
+            const res = await apiFetch(`${BEASISWA_API_PREFIX}/${application.id}/complete`, { method: 'POST' });
+            if (!res.ok) {
+                const message = await parseApiError(res, 'Pengajuan belum dapat diselesaikan');
+                throw new Error(message);
+            }
+            const data = await res.json();
+            if (data.application) {
+                application = data.application;
+            } else {
+                application.status = LETTER_WORKFLOW_STATUS.COMPLETED;
+            }
+            showSuccessToast('Pengajuan berhasil diselesaikan.');
+            renderDetail();
+        } catch (e: any) {
+            showErrorToast(e?.message || 'Gagal menyelesaikan pengajuan.');
+        }
+    };
+
+    const handleDownload = async () => {
+        try {
+            const blob = await fetchPreviewBlob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const safeNim = String(application.student?.nim || application.mahasiswa_profile?.nim || application.id).replace(/[^A-Za-z0-9_-]+/g, '_');
+            a.href = url;
+            a.download = `Surat_Permohonan_Beasiswa_${safeNim}.docx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch (e: any) {
+            showErrorToast(e?.message || 'Gagal mengunduh dokumen.');
+        }
+    };
+
+    renderDetail();
+};
+
+const formatDate = (value?: string | null): string => {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '-';
+    return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+};
