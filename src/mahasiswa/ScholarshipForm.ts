@@ -224,6 +224,14 @@ const renderScholarshipFormEditable = () => {
         document.getElementById('btn-next')?.addEventListener('click', async (e) => {
             e.preventDefault();
             const btn = e.currentTarget as HTMLButtonElement;
+
+            // Hard gate at Step 4: the declaration checkbox must be ticked before submit.
+            // The backend repeats this check so a console call cannot bypass it.
+            if (currentStep === 4 && !isDeclarationAccepted()) {
+                showErrorToast('Centang pernyataan kebenaran data sebelum mengirim pengajuan.');
+                return;
+            }
+
             const originalText = btn.innerHTML;
             btn.innerHTML = '<span class="animate-spin mr-2">⏳</span> Menyimpan...';
             btn.disabled = true;
@@ -247,6 +255,11 @@ const renderScholarshipFormEditable = () => {
                 submitInProgress = false;
             }
         });
+
+        // Step 4: wire the declaration checkbox to the submit button's enabled state.
+        if (currentStep === 4) {
+            attachDeclarationGate();
+        }
 
         if (!formData.nim && !hasFetchedDraft) {
             hasFetchedDraft = true;
@@ -444,10 +457,41 @@ const renderScholarshipFormEditable = () => {
         }
     };
 
+    const isDeclarationAccepted = (): boolean => {
+        const checkbox = document.getElementById('agree-terms') as HTMLInputElement | null;
+        return Boolean(checkbox?.checked);
+    };
+
+    const attachDeclarationGate = () => {
+        const checkbox = document.getElementById('agree-terms') as HTMLInputElement | null;
+        const submitBtn = document.getElementById('btn-next') as HTMLButtonElement | null;
+        if (!checkbox || !submitBtn) return;
+
+        const sync = () => {
+            const accepted = checkbox.checked;
+            submitBtn.disabled = !accepted;
+            submitBtn.classList.toggle('opacity-50', !accepted);
+            submitBtn.classList.toggle('cursor-not-allowed', !accepted);
+        };
+
+        sync();
+        checkbox.addEventListener('change', sync);
+    };
+
     const submitFinal = async () => {
+        // Defensive recheck — gate already enforced on btn-next, but a programmatic submit
+        // (Enter key, console call, restored DOM) must not bypass the declaration.
+        if (!isDeclarationAccepted()) {
+            showErrorToast('Centang pernyataan kebenaran data sebelum mengirim pengajuan.');
+            return;
+        }
+
         const isRevision = formData.status === LETTER_WORKFLOW_STATUS.REVISION;
         try {
-            const res = await apiFetch(`${BEASISWA_API_PREFIX}/submit`, { method: 'POST' });
+            const res = await apiFetch(`${BEASISWA_API_PREFIX}/submit`, {
+                method: 'POST',
+                body: JSON.stringify({ declaration_accepted: true }),
+            });
             if (res.ok) {
                 const data = await res.json();
                 const assignedName = data.assigned_to || 'staf beasiswa';
