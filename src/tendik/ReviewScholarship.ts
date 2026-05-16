@@ -67,7 +67,17 @@ export const renderReviewScholarship = async (appId: number) => {
                         <div class="space-y-4">
                             <div class="border border-gray-200 rounded-xl px-4 py-3 bg-white">
                                 <label class="block text-[10px] font-medium text-gray-400 capitalize mb-1">Program Studi</label>
-                                <p class="text-sm font-semibold text-gray-800">${student.prodi}</p>
+                                <p class="text-sm font-semibold text-gray-800">${student.prodi || '-'}</p>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="border border-gray-200 rounded-xl px-4 py-3 bg-white">
+                                    <label class="block text-[10px] font-medium text-gray-400 capitalize mb-1">Fakultas</label>
+                                    <p class="text-sm font-semibold text-gray-800">${student.fakultas || '-'}</p>
+                                </div>
+                                <div class="border border-gray-200 rounded-xl px-4 py-3 bg-white">
+                                    <label class="block text-[10px] font-medium text-gray-400 capitalize mb-1">Departemen</label>
+                                    <p class="text-sm font-semibold text-gray-800">${student.departemen || '-'}</p>
+                                </div>
                             </div>
                             <div class="border border-gray-200 rounded-xl px-4 py-3 bg-white">
                                 <label class="block text-[10px] font-medium text-gray-400 capitalize mb-1">Email</label>

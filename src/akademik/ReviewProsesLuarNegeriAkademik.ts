@@ -42,6 +42,21 @@ type StudentProfile = {
 type StudentUser = {
     name?: string | null;
     email?: string | null;
+    study_program?: {
+        id?: number | null;
+        code?: string | null;
+        name?: string | null;
+        department?: {
+            id?: number | null;
+            code?: string | null;
+            name?: string | null;
+            faculty?: {
+                id?: number | null;
+                code?: string | null;
+                name?: string | null;
+            } | null;
+        } | null;
+    } | null;
 };
 
 type ReviewerStage = 'prodi' | 'department';
@@ -74,6 +89,10 @@ export const renderReviewProsesLuarNegeriAkademik = async (applicationId: number
         const profile = app.mahasiswa_profile;
         const studentName = valueOrDash(profile?.nama_lengkap || app.user?.name);
         const studentEmail = valueOrDash(profile?.email || app.user?.email);
+        // Canonical academic display: prefer the relation tree over legacy text columns.
+        const canonicalProdi = app.user?.study_program?.name ?? profile?.program_studi ?? null;
+        const canonicalFakultas = app.user?.study_program?.department?.faculty?.name ?? profile?.fakultas ?? null;
+        const canonicalDepartemen = app.user?.study_program?.department?.name ?? null;
         const canProdiAct = isProdiReviewer && app.status === LETTER_WORKFLOW_STATUS.APPROVED_TENDIK;
         const canDepartmentAct = isDepartmentReviewer && app.status === LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI;
         const reviewerStage: ReviewerStage | null = canProdiAct ? 'prodi' : canDepartmentAct ? 'department' : null;
@@ -95,8 +114,9 @@ export const renderReviewProsesLuarNegeriAkademik = async (applicationId: number
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         ${renderInfoBox('Nama Lengkap', studentName)}
                         ${renderInfoBox('NIM', valueOrDash(profile?.nim))}
-                        ${renderInfoBox('Fakultas', valueOrDash(profile?.fakultas))}
-                        ${renderInfoBox('Program Studi', valueOrDash(profile?.program_studi))}
+                        ${renderInfoBox('Fakultas', valueOrDash(canonicalFakultas))}
+                        ${renderInfoBox('Departemen', valueOrDash(canonicalDepartemen))}
+                        ${renderInfoBox('Program Studi', valueOrDash(canonicalProdi))}
                         ${renderInfoBox('Email Aktif', studentEmail)}
                         ${renderInfoBox('No. Telepon', valueOrDash(profile?.no_telp))}
                     </div>
