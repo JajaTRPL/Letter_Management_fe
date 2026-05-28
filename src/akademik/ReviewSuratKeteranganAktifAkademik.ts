@@ -1,7 +1,15 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { attachProtectedPdfViewer, renderProtectedPdfViewer } from '../shared/protected-pdf-viewer';
 import { apiFetch } from '../shared/api-client';
 import { getLetterStatusLabel, getLetterStatusTone, LETTER_WORKFLOW_STATUS } from '../shared/letter-workflow';
 import { showError, showSuccess, showWarning } from '../shared/toast';
+import {
+    activePageForReviewerOrigin,
+    goToReviewerOrigin,
+    resolveReviewerOrigin,
+    type ReviewerOrigin,
+    type ReviewerNavigationOptions,
+} from '../shared/reviewer-navigation';
 
 type AktifReviewResponse = {
     application: AktifApplication;
@@ -66,8 +74,45 @@ type ReviewerStage = 'prodi' | 'department';
 
 const LETTER_LABEL = 'Surat Keterangan Aktif';
 const API_PREFIX = '/api/akademik/surat-keterangan-aktif';
+const GENERATED_LETTER_PREVIEW_ROOT_ID = 'aktif-akademik-generated-letter-preview';
+let revokeGeneratedLetterPreview: (() => void) | null = null;
 
-export const renderReviewSuratKeteranganAktifAkademik = async (applicationId: number) => {
+const PHASE_BEARING_STATUSES: readonly string[] = [
+    LETTER_WORKFLOW_STATUS.APPROVED_TENDIK,
+    LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI,
+    LETTER_WORKFLOW_STATUS.READY_FOR_STUDENT_REVIEW,
+    LETTER_WORKFLOW_STATUS.COMPLETED,
+    LETTER_WORKFLOW_STATUS.REVISION,
+    LETTER_WORKFLOW_STATUS.REJECTED,
+];
+
+const hasGeneratedPreview = (status?: string | null): boolean =>
+    typeof status === 'string' && PHASE_BEARING_STATUSES.includes(status);
+
+const renderGeneratedLetterPreviewCard = (): string =>
+    renderProtectedPdfViewer(GENERATED_LETTER_PREVIEW_ROOT_ID, {
+        title: 'Pratinjau Surat Keterangan Aktif',
+        subtitle: 'Pratinjau PDF sesuai tahap pengajuan saat ini',
+        loading: 'Memuat pratinjau surat...',
+    });
+
+const attachGeneratedLetterPreview = (applicationId: number): void => {
+    cleanupGeneratedLetterPreview();
+    revokeGeneratedLetterPreview = attachProtectedPdfViewer({
+        rootId: GENERATED_LETTER_PREVIEW_ROOT_ID,
+        endpointUrl: `${API_PREFIX}/${applicationId}/generated-preview`,
+    });
+};
+
+const cleanupGeneratedLetterPreview = (): void => {
+    if (!revokeGeneratedLetterPreview) return;
+    revokeGeneratedLetterPreview();
+    revokeGeneratedLetterPreview = null;
+};
+
+export const renderReviewSuratKeteranganAktifAkademik = async (applicationId: number, options?: ReviewerNavigationOptions) => {
+    const origin = resolveReviewerOrigin(options);
+    const activePage = activePageForReviewerOrigin(origin);
     const role = localStorage.getItem('auth_role') || 'akademik';
     const subRole = localStorage.getItem('auth_sub_role') || role;
     const isProdiReviewer = ['kaprodi', 'sekprodi'].includes(role) || ['kaprodi', 'sekprodi'].includes(subRole);
@@ -77,7 +122,7 @@ export const renderReviewSuratKeteranganAktifAkademik = async (applicationId: nu
         'Review Dokumen',
         '<div class="flex items-center justify-center h-64"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-800"></div></div>',
         role,
-        'dokumen'
+        activePage
     );
 
     try {
@@ -162,6 +207,8 @@ export const renderReviewSuratKeteranganAktifAkademik = async (applicationId: nu
 
                 ${renderSection('Tahap Persetujuan', renderTimeline(app))}
 
+                ${hasGeneratedPreview(app.status) ? renderSection('Pratinjau Dokumen', renderGeneratedLetterPreviewCard()) : ''}
+
                 <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
                     <p class="text-sm font-bold text-gray-800 mb-2">Tindakan Persetujuan</p>
                     ${canAct ? `
@@ -189,15 +236,19 @@ export const renderReviewSuratKeteranganAktifAkademik = async (applicationId: nu
             ${canAct ? renderActionModals(studentName, valueOrDash(profile?.nim), reviewerStage) : ''}
         `;
 
-        renderDashboardLayout('Review Dokumen', content, role, 'dokumen');
+        renderDashboardLayout('Review Dokumen', content, role, activePage);
         document.getElementById('back-to-akademik-dashboard')?.addEventListener('click', () => {
-            import('../dashboard/AkademikDashboard').then(({ renderAkademikDashboard }) => {
-                renderAkademikDashboard(role);
-            });
+            void goToReviewerOrigin(origin, role);
         });
 
+        if (hasGeneratedPreview(app.status)) {
+            attachGeneratedLetterPreview(applicationId);
+        } else {
+            cleanupGeneratedLetterPreview();
+        }
+
         if (canAct) {
-            bindActionHandlers(applicationId, role, reviewerStage);
+            bindActionHandlers(applicationId, role, origin, reviewerStage);
         }
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Terjadi kesalahan saat memuat data';
@@ -337,7 +388,7 @@ function renderTextActionModal(config: TextActionModalConfig): string {
     `;
 }
 
-function bindActionHandlers(applicationId: number, role: string, reviewerStage: ReviewerStage): void {
+function bindActionHandlers(applicationId: number, role: string, origin: ReviewerOrigin, reviewerStage: ReviewerStage): void {
     bindModalOpenClose('aktif-akademik-approve-btn', 'aktif-akademik-approval-modal', 'aktif-akademik-cancel-approve');
     bindModalOpenClose('aktif-akademik-revise-btn', 'aktif-akademik-revision-modal', 'aktif-akademik-cancel-revise');
     bindModalOpenClose('aktif-akademik-reject-btn', 'aktif-akademik-rejection-modal', 'aktif-akademik-cancel-reject');
@@ -346,6 +397,7 @@ function bindActionHandlers(applicationId: number, role: string, reviewerStage: 
         await submitAktifAction({
             applicationId,
             role,
+            origin,
             endpoint: 'approve',
             buttonId: 'aktif-akademik-confirm-approve',
             successFallback: reviewerStage === 'department'
@@ -364,6 +416,7 @@ function bindActionHandlers(applicationId: number, role: string, reviewerStage: 
         await submitAktifAction({
             applicationId,
             role,
+            origin,
             endpoint: 'revise',
             payload: { note },
             buttonId: 'aktif-akademik-confirm-revise',
@@ -381,6 +434,7 @@ function bindActionHandlers(applicationId: number, role: string, reviewerStage: 
         await submitAktifAction({
             applicationId,
             role,
+            origin,
             endpoint: 'reject',
             payload: { reason },
             buttonId: 'aktif-akademik-confirm-reject',
@@ -408,6 +462,7 @@ function bindModalOpenClose(buttonId: string, modalId: string, cancelId: string)
 type SubmitActionOptions = {
     applicationId: number;
     role: string;
+    origin: ReviewerOrigin;
     endpoint: 'approve' | 'revise' | 'reject';
     payload?: Record<string, string>;
     buttonId: string;
@@ -436,9 +491,7 @@ async function submitAktifAction(options: SubmitActionOptions): Promise<void> {
 
         showSuccess(result.message || options.successFallback);
         closeAllAktifAkademikModals();
-        import('../dashboard/AkademikDashboard').then(({ renderAkademikDashboard }) => {
-            renderAkademikDashboard(options.role);
-        });
+        void goToReviewerOrigin(options.origin, options.role);
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Gagal memproses pengajuan';
         showError(message);

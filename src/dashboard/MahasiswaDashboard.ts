@@ -1,17 +1,18 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { renderProfilMahasiswa } from '../mahasiswa/ProfilMahasiswa';
-import { renderScholarshipForm } from '../mahasiswa/ScholarshipForm';
+import { renderScholarshipDetail, renderScholarshipForm } from '../mahasiswa/ScholarshipForm';
 import { getGreetingName } from '../utils/nameHelper';
 import {
     canCompleteSubmission,
-    canDownloadDocument,
     getLetterStatusLabel,
     getLetterStatusTone,
     isStudentReviewStage,
     LETTER_WORKFLOW_STATUS,
 } from '../shared/letter-workflow';
 import Toastify from 'toastify-js';
-import { apiFetch } from '../shared/api-client';
+import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
+
+let mahasiswaDashboardAvatarObjectUrl: string | null = null;
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -61,13 +62,7 @@ export const renderMahasiswaDashboard = async () => {
                     </td>
                     <td class="px-8 py-5">
                         <div class="flex items-center justify-center gap-3 group-hover:opacity-100 transition-opacity">
-                            ${isStudentReviewStage(app.status) ? `
-                                <button data-action="preview-scholarship-document" data-id="${app.id}" class="text-primary-teal font-bold text-xs hover:underline">Review Dokumen</button>
-                            ` : canDownloadDocument(app.status) ? `
-                                <button data-action="download-scholarship-document" data-id="${app.id}" class="p-2 text-gray-400 hover:text-primary-teal transition-colors" title="Download">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                </button>
-                            ` : '-'}
+                            <button data-action="open-scholarship-detail" data-origin="riwayat" data-id="${app.id}" class="text-primary-teal font-bold text-xs hover:underline">Lihat Detail</button>
                         </div>
                     </td>
                 </tr>
@@ -151,11 +146,11 @@ export const renderMahasiswaDashboard = async () => {
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                                 <polyline points="14 2 14 8 20 8"></polyline>
                             </svg>
-                            <p class="text-xs font-semibold text-teal-900">Dokumen siap direview. <span class="font-medium text-teal-700">Silakan review dokumen sebelum menyelesaikan pengajuan.</span></p>
+                            <p class="text-xs font-semibold text-teal-900">Pengajuan siap diselesaikan. <span class="font-medium text-teal-700">Buka detail untuk melihat informasi pengajuan sebelum menyelesaikan.</span></p>
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <button data-action="preview-scholarship-document" data-id="${app.id}" class="w-full py-3 bg-white text-primary-teal rounded-xl font-bold border border-primary-teal hover:bg-teal-50 transition-colors shadow-sm">
-                                Review Dokumen
+                            <button data-action="open-scholarship-detail" data-id="${app.id}" class="w-full py-3 bg-white text-primary-teal rounded-xl font-bold border border-primary-teal hover:bg-teal-50 transition-colors shadow-sm">
+                                Lihat Detail
                             </button>
                             <button data-action="complete-scholarship-review" data-id="${app.id}" class="w-full py-3 bg-primary-teal text-white rounded-xl font-bold hover:bg-teal-800 transition-colors shadow-sm">
                                 Selesaikan Pengajuan
@@ -317,10 +312,16 @@ export const renderMahasiswaDashboard = async () => {
             });
         });
 
-        document.querySelectorAll('[data-action="preview-scholarship-document"]').forEach((button) => {
+        document.querySelectorAll('[data-action="open-scholarship-detail"]').forEach((button) => {
             button.addEventListener('click', () => {
                 const id = (button as HTMLElement).dataset.id;
-                if (id) previewScholarshipDocument(id);
+                const origin = (button as HTMLElement).dataset.origin;
+                if (!id) return;
+                if (origin === 'riwayat') {
+                    renderScholarshipDetail(id, { origin: 'riwayat' });
+                    return;
+                }
+                renderScholarshipDetail(id);
             });
         });
 
@@ -328,13 +329,6 @@ export const renderMahasiswaDashboard = async () => {
             button.addEventListener('click', () => {
                 const id = (button as HTMLElement).dataset.id;
                 if (id) completeScholarshipReview(id);
-            });
-        });
-
-        document.querySelectorAll('[data-action="download-scholarship-document"]').forEach((button) => {
-            button.addEventListener('click', () => {
-                const id = (button as HTMLElement).dataset.id;
-                if (id) downloadScholarshipDocument(id);
             });
         });
 
@@ -375,10 +369,15 @@ export const renderMahasiswaDashboard = async () => {
 
                         if (profile.pas_foto_path) {
                             localStorage.setItem('auth_photo', profile.pas_foto_path);
-                            const headerAvatar = document.getElementById('header-user-avatar') as HTMLImageElement;
+                            const headerAvatar = document.getElementById('header-user-avatar') as HTMLImageElement | null;
                             if (headerAvatar) {
-                                headerAvatar.src = profile.pas_foto_path;
-                                headerAvatar.className = 'w-full h-full object-cover';
+                                void loadProtectedImageObjectUrl(profile.pas_foto_path).then((objectUrl) => {
+                                    if (!objectUrl) return;
+                                    revokeProtectedImageObjectUrl(mahasiswaDashboardAvatarObjectUrl);
+                                    mahasiswaDashboardAvatarObjectUrl = objectUrl;
+                                    headerAvatar.src = objectUrl;
+                                    headerAvatar.className = 'w-full h-full object-cover';
+                                });
                             }
                         }
 
@@ -403,54 +402,6 @@ const showToast = (text: string, success = true) => {
         duration: 3500,
         style: { background: success ? '#10B981' : '#EF4444' }
     }).showToast();
-};
-
-const fetchScholarshipDocument = async (applicationId: string): Promise<Blob> => {
-    const res = await apiFetch(`/api/mahasiswa/scholarship/${applicationId}/preview`, { cache: 'no-store' });
-
-    if (!res.ok) {
-        let message = 'Dokumen belum dapat diakses.';
-        try {
-            const data = await res.json();
-            message = data.message || message;
-        } catch {}
-        throw new Error(message);
-    }
-
-    return res.blob();
-};
-
-const previewScholarshipDocument = async (applicationId: string) => {
-    const previewWindow = window.open('', '_blank');
-    try {
-        const blob = await fetchScholarshipDocument(applicationId);
-        const url = URL.createObjectURL(blob);
-        if (previewWindow) {
-            previewWindow.location.href = url;
-        } else {
-            window.open(url, '_blank');
-        }
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (error: any) {
-        if (previewWindow) previewWindow.close();
-        showToast(error?.message || 'Gagal membuka dokumen.', false);
-    }
-};
-
-const downloadScholarshipDocument = async (applicationId: string) => {
-    try {
-        const blob = await fetchScholarshipDocument(applicationId);
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `Surat_Permohonan_Beasiswa_${applicationId}.docx`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (error: any) {
-        showToast(error?.message || 'Gagal mengunduh dokumen.', false);
-    }
 };
 
 const completeScholarshipReview = async (applicationId: string) => {

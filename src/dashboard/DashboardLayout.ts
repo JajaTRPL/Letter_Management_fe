@@ -2,7 +2,9 @@ import { renderLogin } from '../login/Login';
 import { renderSidebar } from '../components/Sidebar';
 import { getGreetingName } from '../utils/nameHelper';
 import Toastify from 'toastify-js';
-import { apiFetch } from '../shared/api-client';
+import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
+
+let dashboardLayoutAvatarObjectUrl: string | null = null;
 
 export const renderDashboardLayout = (title: string, content: string, role: string, activePage: string = 'dashboard') => {
     const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -26,13 +28,12 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                                     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
                                     <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
                                 </svg>
-                                <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
                             </button>
                             
                             <div class="relative group">
                                 <div class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-gray-50 transition-colors">
                                     <div class="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden text-teal-700 font-bold shrink-0">
-                                        <img id="header-user-avatar" src="${(role === 'mahasiswa' && localStorage.getItem('auth_photo')) || '/ugm-logo.png'}" alt="Profile" class="w-full h-full ${(role === 'mahasiswa' && localStorage.getItem('auth_photo')) ? 'object-cover' : 'w-8 h-8 object-contain'}">
+                                        <img id="header-user-avatar" src="/ugm-logo.png" alt="Profile" class="w-8 h-8 object-contain">
                                     </div>
                                     <div class="text-right">
                                         <p class="text-sm font-semibold text-gray-900 leading-none">${getGreetingName(localStorage.getItem('auth_name'))}</p>
@@ -73,6 +74,26 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
             </div>
         </div>
     `;
+
+    // Async-load the header avatar from the auth-protected storage endpoint.
+    // The img always renders the default logo first; if a real photo exists
+    // and loads successfully, the src is swapped to an object URL. Failure
+    // (no photo, 403/404) silently keeps the logo placeholder.
+    const cachedPhoto = localStorage.getItem('auth_photo');
+    if (cachedPhoto) {
+        void loadProtectedImageObjectUrl(cachedPhoto).then((objectUrl) => {
+            if (!objectUrl) return;
+            const headerAvatar = document.getElementById('header-user-avatar') as HTMLImageElement | null;
+            if (!headerAvatar) {
+                revokeProtectedImageObjectUrl(objectUrl);
+                return;
+            }
+            revokeProtectedImageObjectUrl(dashboardLayoutAvatarObjectUrl);
+            dashboardLayoutAvatarObjectUrl = objectUrl;
+            headerAvatar.src = objectUrl;
+            headerAvatar.className = 'w-full h-full object-cover';
+        });
+    }
 
     document.getElementById('profile-btn')?.addEventListener('click', (e) => {
         e.preventDefault();
@@ -207,11 +228,27 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         });
     });
 
+    document.getElementById('sidebar-dokumen-akademik-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        (window as any).clearDashboardInterval?.();
+        import('../akademik/DokumenAkademik').then(({ renderDokumenAkademik }) => {
+            void renderDokumenAkademik(role);
+        });
+    });
+
     document.getElementById('sidebar-riwayat-tendik-link')?.addEventListener('click', (e) => {
         e.preventDefault();
         (window as any).clearDashboardInterval?.();
         import('../tendik/RiwayatTendik').then(({ renderRiwayatTendik }) => {
             renderRiwayatTendik(role);
+        });
+    });
+
+    document.getElementById('sidebar-riwayat-akademik-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        (window as any).clearDashboardInterval?.();
+        import('../akademik/RiwayatAkademik').then(({ renderRiwayatAkademik }) => {
+            void renderRiwayatAkademik(role);
         });
     });
 

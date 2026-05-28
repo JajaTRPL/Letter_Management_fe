@@ -1,21 +1,18 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { apiFetch } from '../shared/api-client';
 import {
-    canCompleteSubmission,
-    canDownloadDocument,
     getLetterStatusLabel,
     getLetterStatusTone,
-    isStudentReviewStage,
     getLetterLabel,
     isMagangLetter,
     isAktifLetter,
     isProsesLuarNegeriLetter,
     isLegacyBeasiswaFallback
 } from '../shared/letter-workflow';
+import { renderScholarshipDetail } from './ScholarshipForm';
 import { renderSuratPengantarMagangDetail } from './SuratPengantarMagangForm';
 import { renderSuratKeteranganAktifDetail } from './SuratKeteranganAktifForm';
 import { renderProsesLuarNegeriDetail } from './ProsesLuarNegeriForm';
-import Toastify from 'toastify-js';
 
 const ENDPOINTS = [
     { type: 'surat-permohonan-beasiswa', url: '/api/mahasiswa/scholarship/applications' },
@@ -23,6 +20,25 @@ const ENDPOINTS = [
     { type: 'surat-keterangan-aktif', url: '/api/mahasiswa/surat-keterangan-aktif/applications' },
     { type: 'proses-luar-negeri', url: '/api/mahasiswa/proses-luar-negeri/applications' }
 ];
+
+const actionButtonClass = 'text-primary-teal font-bold text-sm hover:underline';
+
+const renderApplicationAction = (app: any): string => `
+    <button data-action="view-detail" data-id="${app.id}" data-type="${app.letter_type}" class="${actionButtonClass}">Lihat Detail</button>
+`;
+
+const openDetailForApplication = (id: string, type?: string) => {
+    if (!id) return;
+    if (isMagangLetter(type)) {
+        renderSuratPengantarMagangDetail(id, { origin: 'riwayat' });
+    } else if (isAktifLetter(type)) {
+        renderSuratKeteranganAktifDetail(id, { origin: 'riwayat' });
+    } else if (isProsesLuarNegeriLetter(type)) {
+        renderProsesLuarNegeriDetail(id, { origin: 'riwayat' });
+    } else if (isLegacyBeasiswaFallback(type)) {
+        renderScholarshipDetail(id, { origin: 'riwayat' });
+    }
+};
 
 export const renderRiwayatPengajuan = async () => {
     let applications: any[] = [];
@@ -67,7 +83,7 @@ export const renderRiwayatPengajuan = async () => {
             const label = app.scholarship_name || getLetterLabel(app.letter_type);
 
             return `
-                <tr class="hover:bg-gray-50/50 transition-colors group">
+                <tr class="hover:bg-gray-50/50 transition-colors group cursor-pointer" data-row-action="view-detail" data-id="${app.id}" data-type="${app.letter_type}">
                     <td class="px-8 py-5 text-sm text-gray-500 font-medium">${dateStr}</td>
                     <td class="px-8 py-5 text-sm font-bold text-gray-800">${label}</td>
                     <td class="px-8 py-5">
@@ -76,18 +92,7 @@ export const renderRiwayatPengajuan = async () => {
                         </span>
                     </td>
                     <td class="px-8 py-5 text-right">
-                        ${isLegacyBeasiswaFallback(app.letter_type) ? `
-                            ${isStudentReviewStage(app.status) ? `
-                                <div class="flex justify-end gap-3">
-                                    <button data-action="preview-document" data-id="${app.id}" data-type="${app.letter_type}" class="text-primary-teal font-bold text-sm hover:underline">Review Dokumen</button>
-                                    ${canCompleteSubmission(app.status) ? `<button data-action="complete-review" data-id="${app.id}" data-type="${app.letter_type}" class="text-emerald-600 font-bold text-sm hover:underline">Selesaikan</button>` : ''}
-                                </div>
-                            ` : canDownloadDocument(app.status) ?
-                                `<button data-action="download-document" data-id="${app.id}" data-type="${app.letter_type}" class="text-primary-teal font-bold text-sm hover:underline">Download Dokumen</button>`
-                                : `<span class="text-gray-400 text-sm">Menunggu</span>`}
-                        ` : `
-                            <button data-action="view-detail" data-id="${app.id}" data-type="${app.letter_type}" class="text-primary-teal font-bold text-sm hover:underline">Lihat Detail</button>
-                        `}
+                        ${renderApplicationAction(app)}
                     </td>
                 </tr>
             `;
@@ -124,139 +129,25 @@ export const renderRiwayatPengajuan = async () => {
     renderDashboardLayout('Riwayat Pengajuan', content, 'mahasiswa', 'history');
 
     setTimeout(() => {
-        document.querySelectorAll('[data-action="preview-document"]').forEach((button) => {
-            button.addEventListener('click', (e) => {
-                const target = e.currentTarget as HTMLElement;
-                const id = target.dataset.id;
-                const type = target.dataset.type;
-                if (id) previewDocument(id, type);
-            });
-        });
-
-        document.querySelectorAll('[data-action="complete-review"]').forEach((button) => {
-            button.addEventListener('click', (e) => {
-                const target = e.currentTarget as HTMLElement;
-                const id = target.dataset.id;
-                const type = target.dataset.type;
-                if (id) completeReview(id, type);
-            });
-        });
-
-        document.querySelectorAll('[data-action="download-document"]').forEach((button) => {
-            button.addEventListener('click', (e) => {
-                const target = e.currentTarget as HTMLElement;
-                const id = target.dataset.id;
-                const type = target.dataset.type;
-                if (id) downloadDocument(id, type);
-            });
-        });
         document.querySelectorAll('[data-action="view-detail"]').forEach((button) => {
             button.addEventListener('click', (e) => {
+                e.stopPropagation();
                 const target = e.currentTarget as HTMLElement;
                 const id = target.dataset.id;
                 const type = target.dataset.type;
-                if (!id) return;
+                if (id) openDetailForApplication(id, type);
+            });
+        });
 
-                if (isMagangLetter(type)) {
-                    renderSuratPengantarMagangDetail(id);
-                } else if (isAktifLetter(type)) {
-                    renderSuratKeteranganAktifDetail(id);
-                } else if (isProsesLuarNegeriLetter(type)) {
-                    renderProsesLuarNegeriDetail(id);
-                }
+        document.querySelectorAll('tr[data-row-action="view-detail"]').forEach((row) => {
+            row.addEventListener('click', (e) => {
+                const target = e.target as HTMLElement;
+                if (target.closest('button, a')) return;
+                const current = e.currentTarget as HTMLElement;
+                const id = current.dataset.id;
+                const type = current.dataset.type;
+                if (id) openDetailForApplication(id, type);
             });
         });
     }, 100);
-};
-
-const showToast = (text: string, success = true) => {
-    Toastify({
-        text,
-        duration: 3500,
-        style: { background: success ? '#10B981' : '#EF4444' }
-    }).showToast();
-};
-
-const getApiPrefix = (letterType?: string) => {
-    if (isMagangLetter(letterType)) return '/api/mahasiswa/surat-pengantar-magang';
-    if (isAktifLetter(letterType)) return '/api/mahasiswa/surat-keterangan-aktif';
-    if (isProsesLuarNegeriLetter(letterType)) return '/api/mahasiswa/proses-luar-negeri';
-    return '/api/mahasiswa/scholarship';
-};
-
-const getFileName = (applicationId: string, letterType?: string) => {
-    if (isMagangLetter(letterType)) return `Surat_Pengantar_Magang_${applicationId}.pdf`;
-    if (isAktifLetter(letterType)) return `Surat_Keterangan_Aktif_${applicationId}.pdf`;
-    if (isProsesLuarNegeriLetter(letterType)) return `Proses_Luar_Negeri_${applicationId}.pdf`;
-    return `Surat_Permohonan_Beasiswa_${applicationId}.docx`;
-};
-
-const fetchDocument = async (applicationId: string, letterType?: string): Promise<Blob> => {
-    const prefix = getApiPrefix(letterType);
-    const res = await apiFetch(`${prefix}/${applicationId}/preview`, { cache: 'no-store' });
-
-    if (!res.ok) {
-        let message = 'Dokumen belum dapat diakses.';
-        try {
-            const data = await res.json();
-            message = data.message || message;
-        } catch {}
-        throw new Error(message);
-    }
-
-    return res.blob();
-};
-
-const previewDocument = async (applicationId: string, letterType?: string) => {
-    const previewWindow = window.open('', '_blank');
-    try {
-        const blob = await fetchDocument(applicationId, letterType);
-        const url = URL.createObjectURL(blob);
-        if (previewWindow) {
-            previewWindow.location.href = url;
-        } else {
-            window.open(url, '_blank');
-        }
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (error: any) {
-        if (previewWindow) previewWindow.close();
-        showToast(error?.message || 'Gagal membuka dokumen.', false);
-    }
-};
-
-const downloadDocument = async (applicationId: string, letterType?: string) => {
-    try {
-        const blob = await fetchDocument(applicationId, letterType);
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = getFileName(applicationId, letterType);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (error: any) {
-        showToast(error?.message || 'Gagal mengunduh dokumen.', false);
-    }
-};
-
-const completeReview = async (applicationId: string, letterType?: string) => {
-    const prefix = getApiPrefix(letterType);
-    try {
-        const res = await apiFetch(`${prefix}/${applicationId}/complete`, { method: 'POST' });
-
-        if (!res.ok) {
-            let message = 'Pengajuan belum dapat diselesaikan.';
-            try {
-                const data = await res.json();
-                message = data.message || message;
-            } catch {}
-            throw new Error(message);
-        }
-
-        showToast('Pengajuan berhasil diselesaikan.');
-        renderRiwayatPengajuan();
-    } catch (error: any) {
-        showToast(error?.message || 'Gagal menyelesaikan pengajuan.', false);
-    }
 };

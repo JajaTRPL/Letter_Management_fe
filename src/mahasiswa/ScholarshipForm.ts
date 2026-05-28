@@ -2,6 +2,14 @@ import { renderAdministrasiSurat } from './AdministrasiSurat';
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import Toastify from 'toastify-js';
 import { apiFetch } from '../shared/api-client';
+import { attachProtectedPdfViewer, renderProtectedPdfViewer } from '../shared/protected-pdf-viewer';
+import {
+    activePageForDetailOrigin,
+    backLabelForDetailOrigin,
+    goToMahasiswaDetailOrigin,
+    type MahasiswaDetailNavigationOptions,
+    resolveDetailOrigin,
+} from './detail-navigation';
 
 import { mapApplicationToFormData, mapProfileToFormData } from './scholarship-form/ScholarshipDataMapper';
 import { renderStep1Biodata } from './scholarship-form/Step1Biodata';
@@ -11,23 +19,35 @@ import { renderStep4Submit } from './scholarship-form/Step4Submit';
 import {
     LETTER_WORKFLOW_STATUS,
     ACTIVE_READONLY_LETTER_STATUSES,
+    EDITABLE_LETTER_STATUSES,
     canCompleteSubmission,
     canDownloadDocument,
-    canPreviewDocument,
     getLetterStatusLabel,
     getLetterStatusTone,
     isStudentReviewStage,
 } from '../shared/letter-workflow';
 
 const BEASISWA_API_PREFIX = '/api/mahasiswa/surat-permohonan-beasiswa';
+const GENERATED_LETTER_PREVIEW_ROOT_ID = 'beasiswa-mahasiswa-generated-letter-preview';
 const AUTOSAVE_DEBOUNCE_MS = 800;
+let revokeGeneratedLetterPreview: (() => void) | null = null;
 
 type AutosaveState = 'idle' | 'saving' | 'saved' | 'error';
 
+// Statuses that should route the student into the readonly detail view when they
+// click "Beasiswa" while an in-progress application already exists. Terminal
+// statuses (Completed, Rejected) are deliberately excluded: a finalized
+// application must not block filing a new one. Riwayat keeps history access.
 const READONLY_DETAIL_STATUSES: readonly string[] = [
     ...ACTIVE_READONLY_LETTER_STATUSES,
-    LETTER_WORKFLOW_STATUS.COMPLETED,
-    LETTER_WORKFLOW_STATUS.REJECTED,
+];
+
+// Statuses that mark an application as "the one currently in flight" for this
+// student. Anything outside this set (Completed, Rejected, or unknown) is
+// treated as history and ignored by the form opener.
+const BLOCKING_STATUSES: readonly string[] = [
+    ...EDITABLE_LETTER_STATUSES,
+    ...ACTIVE_READONLY_LETTER_STATUSES,
 ];
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
@@ -73,9 +93,14 @@ const parseApiError = async (res: Response, fallback: string): Promise<string> =
     return `${fallback} (${res.status})`;
 };
 
+// Picks the latest still-in-flight application. Terminal rows (Completed,
+// Rejected) are filtered out so a finalized prior application cannot be
+// mistaken for the "current" one and block a new submission.
 const findLatestApplication = (apps: any[]): any | null => {
     if (!Array.isArray(apps) || apps.length === 0) return null;
-    return [...apps].sort((a, b) => {
+    const inFlight = apps.filter((a) => BLOCKING_STATUSES.includes(a?.status));
+    if (inFlight.length === 0) return null;
+    return [...inFlight].sort((a, b) => {
         const aDate = new Date(a.submitted_at || a.updated_at || a.created_at || 0).getTime();
         const bDate = new Date(b.submitted_at || b.updated_at || b.created_at || 0).getTime();
         return bDate - aDate;
@@ -585,7 +610,215 @@ const renderRejectedBanner = (reason?: string | null) => `
     </div>
 `;
 
-const renderScholarshipDetail = async (applicationId: number | string) => {
+// Long Indonesian datetime formatter for timeline / Informasi Surat.
+// Returns e.g. "Jumat, 20 Feb 2026 10:07". Honest fallback "-" when missing.
+const formatDateTime = (value?: string | null): string => {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '-';
+    const date = parsed.toLocaleDateString('id-ID', {
+        weekday: 'long', day: 'numeric', month: 'short', year: 'numeric',
+    });
+    const time = parsed.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    return `${date} ${time}`;
+};
+
+// Banner shown to students at Ready_For_Student_Review.
+const renderMenungguKonfirmasiBanner = (): string => `
+    <div class="bg-amber-50 border border-amber-200 rounded-[20px] p-5 shadow-sm flex items-start gap-3">
+        <div class="text-amber-600 shrink-0 mt-0.5">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+        </div>
+        <div>
+            <p class="text-sm font-bold text-amber-900">Menunggu Konfirmasi Anda</p>
+            <p class="text-xs text-amber-800 mt-1 leading-relaxed">
+                Semua pihak telah menyetujui pengajuan. Selesaikan pengajuan untuk membuka akses unduhan dokumen final.
+            </p>
+        </div>
+    </div>
+`;
+
+const renderInformasiRow = (label: string, value: string, valueClass = 'text-gray-800 font-semibold'): string => `
+    <div class="flex items-center justify-between gap-4 py-3.5 border-b border-gray-50 last:border-b-0">
+        <span class="text-sm text-gray-500">${escapeHtml(label)}</span>
+        <span class="text-sm ${valueClass} text-right">${value}</span>
+    </div>
+`;
+
+// Primary summary card aligned with design "Informasi Surat".
+const renderInformasiSuratCard = (
+    scholarshipName: string,
+    submittedAtIso: string | null | undefined,
+    statusLabel: string,
+    statusBadgeClass: string,
+): string => {
+    const statusValue = `<span class="${statusBadgeClass} px-3 py-1 rounded-full text-[11px] font-bold border uppercase tracking-wider">${escapeHtml(statusLabel)}</span>`;
+    return `
+        <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+            <div class="px-7 py-5 border-b border-gray-50">
+                <h3 class="text-base font-bold text-gray-800">Informasi Surat</h3>
+            </div>
+            <div class="px-7 py-2">
+                ${renderInformasiRow('Jenis Surat', escapeHtml('Surat Permohonan Beasiswa'))}
+                ${renderInformasiRow('Tujuan', escapeHtml(scholarshipName))}
+                ${renderInformasiRow('Tanggal pengajuan', escapeHtml(formatDateTime(submittedAtIso)))}
+                ${renderInformasiRow('Status', statusValue, '')}
+            </div>
+        </div>
+    `;
+};
+
+// Pemohon card kept compact and complementary to Informasi Surat — honest about
+// missing fields (renders "-" rather than inventing data).
+const renderPemohonCard = (student: any, profile: any): string => {
+    const name = student?.name || profile?.nama_lengkap || '-';
+    const nim = student?.nim || profile?.nim || '-';
+    const prodi = student?.program_studi_display || student?.study_program?.name || '-';
+    const fakultas = student?.fakultas_display || student?.faculty?.name || '-';
+    return `
+        <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+            <div class="px-7 py-5 border-b border-gray-50">
+                <h3 class="text-base font-bold text-gray-800">Pemohon</h3>
+            </div>
+            <div class="px-7 py-2">
+                ${renderInformasiRow('Nama', escapeHtml(name))}
+                ${renderInformasiRow('NIM', escapeHtml(nim))}
+                ${renderInformasiRow('Program Studi', escapeHtml(prodi))}
+                ${renderInformasiRow('Fakultas', escapeHtml(fakultas))}
+            </div>
+        </div>
+    `;
+};
+
+const renderGeneratedLetterPreviewCard = (): string => renderProtectedPdfViewer(GENERATED_LETTER_PREVIEW_ROOT_ID, {
+    title: 'Pratinjau Surat Permohonan Beasiswa',
+    subtitle: 'Pratinjau PDF dokumen pengajuan',
+    loading: 'Memuat pratinjau surat...',
+});
+
+const attachGeneratedLetterPreview = (applicationId: number | string): void => {
+    cleanupGeneratedLetterPreview();
+    revokeGeneratedLetterPreview = attachProtectedPdfViewer({
+        rootId: GENERATED_LETTER_PREVIEW_ROOT_ID,
+        endpointUrl: `${BEASISWA_API_PREFIX}/${applicationId}/generated-preview`,
+    });
+};
+
+const cleanupGeneratedLetterPreview = (): void => {
+    if (!revokeGeneratedLetterPreview) return;
+    revokeGeneratedLetterPreview();
+    revokeGeneratedLetterPreview = null;
+};
+
+// Status-driven step list. Only renders timestamps that exist on the payload;
+// never invents actor names. Step state is derived from canonical status enum
+// + presence of *_approved_at timestamps the backend already exposes.
+const renderTahapPersetujuanCard = (application: any): string => {
+    const status: string = application?.status ?? '';
+
+    const submittedAt = application?.submitted_at ?? null;
+    const tendikAt = application?.tendik_approved_at ?? null;
+    const kaprodiAt = application?.kaprodi_approved_at ?? null;
+    const kadepAt = application?.kadep_approved_at ?? null;
+    const completedAt = application?.completed_at ?? null;
+    const rejectedAt = application?.rejected_at ?? null;
+    const revisedAt = application?.revised_at ?? null;
+
+    type Step = { label: string; timestamp: string | null; state: 'done' | 'current' | 'pending' };
+    const steps: Step[] = [];
+
+    if (status === LETTER_WORKFLOW_STATUS.REJECTED) {
+        steps.push({ label: 'Diajukan', timestamp: submittedAt, state: 'done' });
+        if (tendikAt) steps.push({ label: 'Verifikasi Tenaga Pendidik', timestamp: tendikAt, state: 'done' });
+        if (kaprodiAt) steps.push({ label: 'Persetujuan Ketua Program Studi', timestamp: kaprodiAt, state: 'done' });
+        steps.push({ label: 'Pengajuan Ditolak', timestamp: rejectedAt, state: 'done' });
+    } else if (status === LETTER_WORKFLOW_STATUS.REVISION) {
+        steps.push({ label: 'Diajukan', timestamp: submittedAt, state: 'done' });
+        if (tendikAt) steps.push({ label: 'Verifikasi Tenaga Pendidik', timestamp: tendikAt, state: 'done' });
+        steps.push({ label: 'Dikembalikan untuk Revisi', timestamp: revisedAt, state: 'done' });
+    } else {
+        steps.push({
+            label: 'Diajukan',
+            timestamp: submittedAt,
+            state: 'done',
+        });
+        steps.push({
+            label: 'Verifikasi Tenaga Pendidik',
+            timestamp: tendikAt,
+            state: tendikAt ? 'done' : (status === LETTER_WORKFLOW_STATUS.SUBMITTED ? 'current' : 'pending'),
+        });
+        steps.push({
+            label: 'Persetujuan Ketua Program Studi',
+            timestamp: kaprodiAt,
+            state: kaprodiAt ? 'done' : (status === LETTER_WORKFLOW_STATUS.APPROVED_TENDIK ? 'current' : 'pending'),
+        });
+        steps.push({
+            label: 'Tanda Tangan Ketua Departemen',
+            timestamp: kadepAt,
+            state: kadepAt ? 'done' : (status === LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI ? 'current' : 'pending'),
+        });
+        steps.push({
+            label: 'Selesai',
+            timestamp: completedAt,
+            state: status === LETTER_WORKFLOW_STATUS.COMPLETED
+                ? 'done'
+                : (status === LETTER_WORKFLOW_STATUS.READY_FOR_STUDENT_REVIEW ? 'current' : 'pending'),
+        });
+    }
+
+    const renderStepIcon = (state: Step['state']): string => {
+        if (state === 'done') {
+            return `
+                <span class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 z-10 relative">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </span>`;
+        }
+        if (state === 'current') {
+            return `
+                <span class="w-7 h-7 rounded-full border-2 border-amber-400 bg-white flex items-center justify-center shrink-0 z-10 relative">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                </span>`;
+        }
+        return `
+            <span class="w-7 h-7 rounded-full border-2 border-gray-200 bg-white shrink-0 z-10 relative"></span>`;
+    };
+
+    const rendered = steps.map((step, idx) => {
+        const isLast = idx === steps.length - 1;
+        const nextIsDone = !isLast && steps[idx + 1].state === 'done';
+        const connectorClass = step.state === 'done' && nextIsDone ? 'bg-emerald-200' : 'bg-gray-200';
+        const labelClass = step.state === 'pending' ? 'text-gray-400' : 'text-gray-800';
+        const tsLabelClass = step.state === 'pending' ? 'text-gray-300' : 'text-gray-500';
+        return `
+            <li class="relative flex gap-4 pb-6 last:pb-0">
+                ${isLast ? '' : `<span class="absolute left-3 top-7 bottom-0 w-0.5 ${connectorClass}"></span>`}
+                ${renderStepIcon(step.state)}
+                <div class="flex-1 -mt-0.5">
+                    <p class="text-[11px] ${tsLabelClass} font-medium">${escapeHtml(formatDateTime(step.timestamp))}</p>
+                    <p class="text-sm font-bold ${labelClass} mt-0.5">${escapeHtml(step.label)}</p>
+                </div>
+            </li>
+        `;
+    }).join('');
+
+    return `
+        <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+            <div class="px-7 py-5 border-b border-gray-50">
+                <h3 class="text-base font-bold text-gray-800">Tahap Persetujuan</h3>
+            </div>
+            <ol class="px-7 py-6 list-none">${rendered}</ol>
+        </div>
+    `;
+};
+
+export const renderScholarshipDetail = async (applicationId: number | string, options?: MahasiswaDetailNavigationOptions) => {
+    const origin = resolveDetailOrigin(options);
+    const activePage = activePageForDetailOrigin(origin);
+
     renderDashboardLayout(
         'Permohonan Beasiswa',
         `<div class="max-w-5xl mx-auto bg-white border border-gray-100 rounded-[24px] p-10 shadow-sm flex items-center gap-4 animate-fade-in">
@@ -593,7 +826,7 @@ const renderScholarshipDetail = async (applicationId: number | string) => {
             <p class="text-sm font-semibold text-gray-600">Memuat detail pengajuan beasiswa...</p>
         </div>`,
         'mahasiswa',
-        'administrasi',
+        activePage,
     );
 
     let application: any = null;
@@ -602,7 +835,7 @@ const renderScholarshipDetail = async (applicationId: number | string) => {
         if (!res.ok) {
             const message = await parseApiError(res, 'Detail pengajuan tidak tersedia');
             showErrorToast(message);
-            renderAdministrasiSurat();
+            goToMahasiswaDetailOrigin(origin);
             return;
         }
         const data = await res.json();
@@ -610,17 +843,16 @@ const renderScholarshipDetail = async (applicationId: number | string) => {
     } catch (e) {
         console.error('Failed to load Beasiswa detail', e);
         showErrorToast('Gagal memuat detail pengajuan.');
-        renderAdministrasiSurat();
+        goToMahasiswaDetailOrigin(origin);
         return;
     }
 
     if (!application) {
-        renderAdministrasiSurat();
+        goToMahasiswaDetailOrigin(origin);
         return;
     }
 
-    let hasPreviewed = Boolean(application.student_reviewed_at);
-    const previewBlobs = new Set<string>();
+    let hasPreviewed = isStudentReviewStage(application.status) || Boolean(application.student_reviewed_at);
 
     const renderDetail = () => {
         const status: string = application.status;
@@ -630,18 +862,24 @@ const renderScholarshipDetail = async (applicationId: number | string) => {
         const student = application.student || {};
         const profile = application.mahasiswa_profile || {};
 
+        const isReadyForReview = isStudentReviewStage(status);
+        const isCompleted = status === LETTER_WORKFLOW_STATUS.COMPLETED;
+        const isRevision = status === LETTER_WORKFLOW_STATUS.REVISION;
+        const isRejected = status === LETTER_WORKFLOW_STATUS.REJECTED;
+        const showGeneratedPreview = isReadyForReview || isCompleted || isRevision || isRejected;
+
         const content = `
             <div class="max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
                 <div class="flex flex-wrap justify-between items-start gap-4 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100">
                     <div class="flex items-start gap-4">
-                        <button id="btn-back-to-docs" class="p-2.5 hover:bg-gray-50 rounded-xl text-gray-500 transition-colors">
+                        <button id="btn-back-to-docs" class="p-2.5 hover:bg-gray-50 rounded-xl text-gray-500 transition-colors" aria-label="${backLabelForDetailOrigin(origin)}" title="${backLabelForDetailOrigin(origin)}">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="19" y1="12" x2="5" y2="12"></line>
                                 <polyline points="12 19 5 12 12 5"></polyline>
                             </svg>
                         </button>
                         <div>
-                            <h2 class="text-xl font-bold text-gray-800">Permohonan Beasiswa</h2>
+                            <h2 class="text-xl font-bold text-gray-800">Detail Pengajuan</h2>
                             <p class="text-xs text-gray-500">${escapeHtml(scholarshipName)}</p>
                         </div>
                     </div>
@@ -650,70 +888,98 @@ const renderScholarshipDetail = async (applicationId: number | string) => {
                     </span>
                 </div>
 
-                ${status === LETTER_WORKFLOW_STATUS.REJECTED ? renderRejectedBanner(application.rejection_reason) : ''}
+                ${isReadyForReview ? renderMenungguKonfirmasiBanner() : ''}
+                ${isRevision ? renderRevisionBanner(application.revision_note) : ''}
+                ${isRejected ? renderRejectedBanner(application.rejection_reason) : ''}
 
-                <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm p-8 space-y-6">
-                    <div>
-                        <h3 class="text-sm font-black uppercase tracking-wide text-gray-500">Pemohon</h3>
-                        <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm text-gray-700">
-                            <div><span class="font-bold text-gray-800">Nama:</span> ${escapeHtml(student.name || profile.nama_lengkap || '-')}</div>
-                            <div><span class="font-bold text-gray-800">NIM:</span> ${escapeHtml(student.nim || profile.nim || '-')}</div>
-                            <div><span class="font-bold text-gray-800">Program Studi:</span> ${escapeHtml(student.program_studi_display || student.study_program?.name || '-')}</div>
-                            <div><span class="font-bold text-gray-800">Fakultas:</span> ${escapeHtml(student.fakultas_display || student.faculty?.name || '-')}</div>
-                        </div>
-                    </div>
+                ${renderInformasiSuratCard(scholarshipName, application.submitted_at || application.created_at, statusLabel, statusBadge)}
 
-                    <div class="border-t border-gray-100 pt-6">
-                        <h3 class="text-sm font-black uppercase tracking-wide text-gray-500">Detail Pengajuan</h3>
-                        <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm text-gray-700">
-                            <div><span class="font-bold text-gray-800">Nama Beasiswa:</span> ${escapeHtml(scholarshipName)}</div>
-                            <div><span class="font-bold text-gray-800">Semester Saat Ini:</span> ${escapeHtml(application.current_semester ?? '-')}</div>
-                            <div><span class="font-bold text-gray-800">IPK:</span> ${escapeHtml(application.ipk ?? '-')}</div>
-                            <div><span class="font-bold text-gray-800">Tanggal Pengajuan:</span> ${formatDate(application.submitted_at || application.created_at)}</div>
-                        </div>
-                    </div>
-                </div>
+                ${renderPemohonCard(student, profile)}
 
-                ${renderActionPanel(status)}
+                ${showGeneratedPreview ? renderGeneratedLetterPreviewCard() : ''}
 
-                <div id="document-preview-panel" class="hidden border border-gray-200 rounded-2xl overflow-hidden bg-gray-50">
-                    <div class="px-4 py-3 bg-white border-b border-gray-100 flex items-center justify-between">
-                        <p class="text-xs font-bold text-gray-600">Pratinjau Surat Permohonan Beasiswa</p>
-                        <button type="button" id="btn-close-preview" class="text-xs text-gray-400 hover:text-gray-700 font-bold">Tutup</button>
-                    </div>
-                    <iframe id="document-preview-frame" title="Pratinjau Surat Permohonan Beasiswa" class="w-full h-[70vh] bg-white"></iframe>
-                </div>
+                ${renderTindakanCard(status)}
+
+                ${renderTahapPersetujuanCard(application)}
             </div>
         `;
 
-        renderDashboardLayout('Permohonan Beasiswa', content, 'mahasiswa', 'administrasi');
+        cleanupGeneratedLetterPreview();
+        renderDashboardLayout('Permohonan Beasiswa', content, 'mahasiswa', activePage);
         attachDetailEvents();
+        if (showGeneratedPreview) {
+            attachGeneratedLetterPreview(application.id);
+        }
     };
 
-    const renderActionPanel = (status: string): string => {
-        const showPreview = canPreviewDocument(status);
+    const renderTindakanCard = (status: string): string => {
         const showComplete = canCompleteSubmission(status, hasPreviewed);
         const showDownload = canDownloadDocument(status);
-        if (!showPreview && !showComplete && !showDownload) return '';
+        const showRevise = status === LETTER_WORKFLOW_STATUS.REVISION;
+        if (!showComplete && !showDownload && !showRevise) return '';
 
+        if (showDownload) {
+            return `
+                <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+                    <div class="px-7 py-5 border-b border-gray-50">
+                        <h3 class="text-base font-bold text-gray-800">Unduh Dokumen Final</h3>
+                    </div>
+                    <div class="p-7">
+                        <button type="button" id="btn-download" class="w-full inline-flex items-center justify-center gap-2 py-3.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors shadow-sm">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Unduh Dokumen Final
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (showComplete) {
+            return `
+                <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+                    <div class="px-7 py-5 border-b border-gray-50">
+                        <h3 class="text-base font-bold text-gray-800">Tindakan Verifikasi</h3>
+                    </div>
+                    <div class="p-7 space-y-4">
+                        <button type="button" id="btn-complete" class="w-full py-3.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors shadow-sm">
+                            Selesaikan Pengajuan
+                        </button>
+                        <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-900">
+                            <span class="font-bold">Catatan:</span> Pastikan data pengajuan dan pratinjau dokumen sudah sesuai sebelum menyelesaikan pengajuan. Tindakan ini tidak dapat dibatalkan.
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // showRevise — keep existing revise flow intact, in a polished card.
         return `
-            <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm p-6 flex flex-wrap gap-3 justify-end">
-                ${showPreview ? `<button type="button" id="btn-preview" class="px-5 py-2.5 border border-gray-200 text-gray-700 font-bold rounded-xl hover:border-teal-200 hover:text-teal-600 text-sm flex items-center gap-2">Review Dokumen</button>` : ''}
-                ${showComplete ? `<button type="button" id="btn-complete" class="px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 text-sm">Selesaikan Pengajuan</button>` : ''}
-                ${showDownload ? `<button type="button" id="btn-download" class="px-6 py-2.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 text-sm">Unduh Dokumen Final</button>` : ''}
+            <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+                <div class="px-7 py-5 border-b border-gray-50">
+                    <h3 class="text-base font-bold text-gray-800">Tindakan Revisi</h3>
+                </div>
+                <div class="p-7">
+                    <button type="button" id="btn-revise" class="w-full py-3.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors shadow-sm">
+                        Perbaiki Pengajuan
+                    </button>
+                </div>
             </div>
         `;
     };
 
     const attachDetailEvents = () => {
         document.getElementById('btn-back-to-docs')?.addEventListener('click', () => {
-            previewBlobs.forEach(url => URL.revokeObjectURL(url));
-            previewBlobs.clear();
-            renderAdministrasiSurat();
+            cleanupGeneratedLetterPreview();
+            goToMahasiswaDetailOrigin(origin);
         });
 
-        document.getElementById('btn-preview')?.addEventListener('click', () => {
-            void handlePreview();
+        document.getElementById('btn-revise')?.addEventListener('click', () => {
+            cleanupGeneratedLetterPreview();
+            void renderScholarshipForm();
         });
 
         document.getElementById('btn-complete')?.addEventListener('click', () => {
@@ -723,39 +989,17 @@ const renderScholarshipDetail = async (applicationId: number | string) => {
         document.getElementById('btn-download')?.addEventListener('click', () => {
             void handleDownload();
         });
-
-        document.getElementById('btn-close-preview')?.addEventListener('click', () => {
-            const panel = document.getElementById('document-preview-panel');
-            const frame = document.getElementById('document-preview-frame') as HTMLIFrameElement | null;
-            if (panel) panel.classList.add('hidden');
-            if (frame) frame.src = 'about:blank';
-        });
     };
 
-    const fetchPreviewBlob = async (): Promise<Blob> => {
-        const res = await apiFetch(`${BEASISWA_API_PREFIX}/${application.id}/preview`, { cache: 'no-store' });
+    const fetchFinalDownloadBlob = async (): Promise<Blob> => {
+        const res = await apiFetch(`${BEASISWA_API_PREFIX}/${application.id}/final-download`, {
+            cache: 'no-store',
+            headers: { Accept: 'application/pdf' },
+        });
         if (!res.ok) {
             throw new Error(await parseApiError(res, 'Dokumen belum dapat diakses'));
         }
         return res.blob();
-    };
-
-    const handlePreview = async () => {
-        try {
-            const blob = await fetchPreviewBlob();
-            const url = URL.createObjectURL(blob);
-            previewBlobs.add(url);
-            const panel = document.getElementById('document-preview-panel');
-            const frame = document.getElementById('document-preview-frame') as HTMLIFrameElement | null;
-            if (panel) panel.classList.remove('hidden');
-            if (frame) frame.src = url;
-            hasPreviewed = true;
-            if (isStudentReviewStage(application.status)) {
-                renderDetail();
-            }
-        } catch (e: any) {
-            showErrorToast(e?.message || 'Gagal membuka pratinjau.');
-        }
     };
 
     const handleComplete = async () => {
@@ -780,12 +1024,12 @@ const renderScholarshipDetail = async (applicationId: number | string) => {
 
     const handleDownload = async () => {
         try {
-            const blob = await fetchPreviewBlob();
+            const blob = await fetchFinalDownloadBlob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             const safeNim = String(application.student?.nim || application.mahasiswa_profile?.nim || application.id).replace(/[^A-Za-z0-9_-]+/g, '_');
             a.href = url;
-            a.download = `Surat_Permohonan_Beasiswa_${safeNim}.docx`;
+            a.download = `Surat_Permohonan_Beasiswa_${safeNim}.pdf`;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -796,11 +1040,4 @@ const renderScholarshipDetail = async (applicationId: number | string) => {
     };
 
     renderDetail();
-};
-
-const formatDate = (value?: string | null): string => {
-    if (!value) return '-';
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return '-';
-    return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 };

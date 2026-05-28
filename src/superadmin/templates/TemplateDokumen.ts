@@ -5,6 +5,7 @@ import { showError, showSuccess } from '../../shared/toast';
 interface ManagedTemplate {
     key: string;
     name: string;
+    category: string;
     source_type: string;
     can_refresh: boolean;
     template_id_masked: string | null;
@@ -18,6 +19,18 @@ interface StaticTemplate {
     name: string;
     type: string;
     status: 'unmanaged' | 'planned';
+}
+
+const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
+    'Surat Beasiswa':      { bg: 'bg-emerald-50', text: 'text-emerald-700' },
+    'Surat Magang':        { bg: 'bg-blue-50',    text: 'text-blue-700' },
+    'Surat Keaktifan':     { bg: 'bg-amber-50',   text: 'text-amber-700' },
+    'Surat Luar Negeri':   { bg: 'bg-cyan-50',    text: 'text-cyan-700' },
+    'Peminjaman Ruangan':  { bg: 'bg-purple-50',  text: 'text-purple-700' },
+};
+
+function categoryColor(category: string): { bg: string; text: string } {
+    return CATEGORY_COLORS[category] ?? { bg: 'bg-gray-100', text: 'text-gray-600' };
 }
 
 export const renderTemplateDokumen = async () => {
@@ -43,17 +56,17 @@ export const renderTemplateDokumen = async () => {
 };
 
 function renderContent(managed: ManagedTemplate[]) {
-    const staticRows: StaticTemplate[] = [
-        { name: 'Surat Keterangan Aktif',         type: 'Surat Keaktifan',     status: 'unmanaged' },
-        { name: 'Surat Pengantar Magang',         type: 'Surat Magang',        status: 'unmanaged' },
-        { name: 'Proses Luar Negeri',             type: 'Surat Luar Negeri',   status: 'unmanaged' },
+    // Only future/planned templates that the backend does not manage yet.
+    // SKA/PLN/Magang are now backend-managed and must not appear as duplicate
+    // unmanaged rows.
+    const plannedRows: StaticTemplate[] = [
         { name: 'Peminjaman Ruang Kelas',         type: 'Peminjaman Ruangan',  status: 'planned' },
         { name: 'Peminjaman Ruang Laboratorium',  type: 'Peminjaman Ruangan',  status: 'planned' },
     ];
 
     const managedRowsHtml = managed.map((tpl, i) => renderManagedRow(tpl, i + 1)).join('');
-    const staticRowsHtml  = staticRows.map((tpl, i) => renderStaticRow(tpl, managed.length + i + 1)).join('');
-    const totalCount = managed.length + staticRows.length;
+    const staticRowsHtml  = plannedRows.map((tpl, i) => renderStaticRow(tpl, managed.length + i + 1)).join('');
+    const totalCount = managed.length + plannedRows.length;
 
     const content = `
         <div class="space-y-6 animate-fade-in pb-12">
@@ -147,7 +160,7 @@ function renderManagedRow(tpl: ManagedTemplate, idx: number): string {
                     </div>
                 </div>
             </td>
-            <td class="px-6 py-4"><span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">Surat Beasiswa</span></td>
+            <td class="px-6 py-4"><span class="px-2.5 py-1 rounded-lg ${categoryColor(tpl.category).bg} ${categoryColor(tpl.category).text} text-[10px] font-bold uppercase tracking-wider">${tpl.category}</span></td>
             <td class="px-6 py-4">${cacheBadge}</td>
             <td class="px-6 py-4 text-xs text-gray-500 font-medium">${cachedAtText}</td>
             <td class="px-6 py-4 text-right">
@@ -161,13 +174,7 @@ function renderManagedRow(tpl: ManagedTemplate, idx: number): string {
 }
 
 function renderStaticRow(tpl: StaticTemplate, idx: number): string {
-    const typeColors: Record<string, { bg: string; text: string }> = {
-        'Surat Magang':        { bg: 'bg-blue-50',   text: 'text-blue-700' },
-        'Surat Keaktifan':     { bg: 'bg-amber-50',  text: 'text-amber-700' },
-        'Surat Luar Negeri':   { bg: 'bg-cyan-50',   text: 'text-cyan-700' },
-        'Peminjaman Ruangan':  { bg: 'bg-purple-50', text: 'text-purple-700' },
-    };
-    const color = typeColors[tpl.type] ?? { bg: 'bg-gray-100', text: 'text-gray-600' };
+    const color = categoryColor(tpl.type);
 
     const statusLabel = tpl.status === 'planned'
         ? 'Direncanakan'

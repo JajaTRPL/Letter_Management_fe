@@ -156,15 +156,15 @@ export const renderStep3Akademik = (formData: any) => `
                 <div class="grid grid-cols-[200px_1fr] items-start gap-4">
                     <label class="text-sm font-bold text-gray-800 pt-2">Slip Gaji Ayah</label>
                     <div class="space-y-1">
-                        <input type="file" id="slip-gaji-ayah-upload" name="slip-ayah" accept=".png,.pdf" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
-                        <p class="text-[10px] text-gray-400">Format: PNG, PDF (MAX 2MB)</p>
+                        <input type="file" id="slip-gaji-ayah-upload" name="slip-ayah" accept="application/pdf,.pdf" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
+                        <p class="text-[10px] text-gray-400">Format: PDF (MAX 2MB)</p>
                     </div>
                 </div>
                 <div class="grid grid-cols-[200px_1fr] items-start gap-4">
                     <label class="text-sm font-bold text-gray-800 pt-2">Slip Gaji Ibu</label>
                     <div class="space-y-1">
-                        <input type="file" id="slip-gaji-ibu-upload" name="slip-ibu" accept=".png,.pdf" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
-                        <p class="text-[10px] text-gray-400">Format: PNG, PDF (MAX 2MB)</p>
+                        <input type="file" id="slip-gaji-ibu-upload" name="slip-ibu" accept="application/pdf,.pdf" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
+                        <p class="text-[10px] text-gray-400">Format: PDF (MAX 2MB)</p>
                     </div>
                 </div>
             </div>

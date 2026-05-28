@@ -1,10 +1,22 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { apiFetch } from '../shared/api-client';
+import { attachProtectedPdfViewer, renderProtectedPdfViewer } from '../shared/protected-pdf-viewer';
+import {
+    mergeMahasiswaProfileDisplay,
+    type MahasiswaProfileDisplay,
+    type MahasiswaProfileSource,
+} from '../shared/mahasiswa-profile-source';
+import {
+    activePageForDetailOrigin,
+    backLabelForDetailOrigin,
+    goToMahasiswaDetailOrigin,
+    type MahasiswaDetailOrigin,
+    type MahasiswaDetailNavigationOptions,
+    resolveDetailOrigin,
+} from './detail-navigation';
 import {
     ACTIVE_READONLY_LETTER_STATUSES,
-    canCompleteSubmission,
     canDownloadDocument,
-    canPreviewDocument,
     getLetterStatusLabel,
     getLetterStatusTone,
     isStudentReviewStage,
@@ -38,6 +50,15 @@ type StudentProfile = {
     nim?: string | null;
     fakultas?: string | null;
     program_studi?: string | null;
+    tempat_lahir?: string | null;
+    tanggal_lahir?: string | null;
+    jenis_kelamin?: string | null;
+};
+
+type KeluargaMember = {
+    jenis_relasi?: string | null;
+    nama_lengkap?: string | null;
+    pekerjaan?: string | null;
 };
 
 type StudentUser = {
@@ -68,13 +89,7 @@ type AktifFormData = {
     instansi_orang_tua_wali: string;
 };
 
-type ProfileViewData = {
-    fullName: string;
-    nim: string;
-    faculty: string;
-    studyProgram: string;
-    email: string;
-};
+type ProfileViewData = MahasiswaProfileDisplay;
 
 const API_PREFIX = '/api/mahasiswa/surat-keterangan-aktif';
 const MONTH_NAMES = [
@@ -103,8 +118,13 @@ let formData: AktifFormData = emptyFormData();
 let profileData: ProfileViewData = emptyProfileData();
 let hasAcceptedStatement = false;
 let isSubmitting = false;
-const previewedApplicationIds = new Set<number>();
-let activePreviewObjectUrl: string | null = null;
+// Identity-lock state: tempat_lahir / tanggal_lahir / jenis_kelamin are
+// sourced exclusively from the SSO profile. If any are missing on the wire,
+// continuing/submitting the form is blocked and the labels listed here are
+// surfaced in the warning banner.
+let profileIdentityMissing: string[] = [];
+const GENERATED_LETTER_PREVIEW_ROOT_ID = 'aktif-mahasiswa-generated-letter-preview';
+let revokeGeneratedLetterPreview: (() => void) | null = null;
 
 export const renderSuratKeteranganAktifForm = async (forceEditRevision = false) => {
     resetState();
@@ -119,13 +139,33 @@ export const renderSuratKeteranganAktifForm = async (forceEditRevision = false) 
             }
         }
 
-        const draftData = await fetchDraftData();
-        profileData = mapProfileData(draftData.user, draftData.profile);
+        const [draftData, profileBundle] = await Promise.all([
+            fetchDraftData(),
+            fetchProfileBundle(),
+        ]);
+        profileData = mergeMahasiswaProfileDisplay(
+            {
+                profile_summary: draftData.profile_summary,
+                user: draftData.user,
+                profile: draftData.profile,
+                application: draftData.application,
+            },
+            profileBundle.extras,
+        );
+        validateProfileIdentity(draftData.profile);
 
         if (draftData.application) {
             application = draftData.application;
             formData = mapApplicationData(draftData.application);
         }
+
+        // Identity is profile-sourced and always overrides whatever the
+        // application row may have stored (locked, no manual override).
+        lockIdentityFromProfile(draftData.profile);
+
+        // Family default: fills empty parent/wali fields with Ayah > Ibu >
+        // Wali precedence. Saved draft/revision values are preserved.
+        applyFamilyPrefill(profileBundle.keluarga);
     } catch (error) {
         console.error(error);
         showError(error instanceof Error ? error.message : 'Gagal memuat formulir Surat Keterangan Aktif.');
@@ -134,13 +174,17 @@ export const renderSuratKeteranganAktifForm = async (forceEditRevision = false) 
     renderForm();
 };
 
-export const renderSuratKeteranganAktifDetail = async (applicationId: number | string) => {
-    renderLoading('Memuat detail pengajuan...');
+export const renderSuratKeteranganAktifDetail = async (applicationId: number | string, options?: MahasiswaDetailNavigationOptions) => {
+    const origin = resolveDetailOrigin(options);
+    const activePage = activePageForDetailOrigin(origin);
+
+    renderLoading('Memuat detail pengajuan...', activePage);
 
     try {
-        const response = await apiFetch(`${API_PREFIX}/${applicationId}`, {
-            cache: 'no-store',
-        });
+        // With Global Profile.1 the SKA detail endpoint ships an additive
+        // root-level `profile_summary` block, so the previous parallel
+        // /api/profile fallback is no longer needed.
+        const response = await apiFetch(`${API_PREFIX}/${applicationId}`, { cache: 'no-store' });
 
         if (!response.ok) {
             throw new Error(await parseApiError(response));
@@ -148,14 +192,19 @@ export const renderSuratKeteranganAktifDetail = async (applicationId: number | s
 
         const payload = await response.json();
         const detailApplication = payload.application as AktifApplication;
-        const viewProfile = mapProfileData(detailApplication.user, detailApplication.mahasiswa_profile);
+        const viewProfile = mergeMahasiswaProfileDisplay({
+            profile_summary: payload.profile_summary,
+            user: detailApplication.user,
+            profile: detailApplication.mahasiswa_profile,
+            application: detailApplication,
+        });
 
-        renderDashboardLayout('Detail Pengajuan', renderDetailContent(detailApplication, viewProfile), 'mahasiswa', 'administrasi');
-        attachDetailEvents(detailApplication);
+        renderDashboardLayout('Detail Pengajuan', renderDetailContent(detailApplication, viewProfile, origin), 'mahasiswa', activePage);
+        attachDetailEvents(detailApplication, origin);
     } catch (error) {
         console.error(error);
         showError(error instanceof Error ? error.message : 'Gagal memuat detail pengajuan.');
-        goToAdministrasiSurat();
+        goToMahasiswaDetailOrigin(origin);
     }
 };
 
@@ -166,6 +215,7 @@ const resetState = () => {
     profileData = emptyProfileData();
     hasAcceptedStatement = false;
     isSubmitting = false;
+    profileIdentityMissing = [];
 };
 
 function emptyFormData(): AktifFormData {
@@ -189,9 +239,15 @@ function emptyProfileData(): ProfileViewData {
     return {
         fullName: '',
         nim: '',
+        email: '',
         faculty: '',
         studyProgram: '',
-        email: '',
+        studyProgramCode: '',
+        department: '',
+        tempatLahir: '',
+        tanggalLahir: '',
+        jenisKelamin: '',
+        currentSemester: null,
     };
 }
 
@@ -222,13 +278,10 @@ const fetchLatestActiveApplication = async (): Promise<AktifApplication | null> 
     return applications.find((item) => activeEntryStatuses.includes(item.status)) || null;
 };
 
-const mapProfileData = (user?: StudentUser | null, profile?: StudentProfile | null): ProfileViewData => ({
-    fullName: valueOrEmpty(user?.name) || valueOrEmpty(localStorage.getItem('auth_name')),
-    nim: valueOrEmpty(profile?.nim),
-    faculty: valueOrEmpty(user?.study_program?.department?.faculty?.name) || valueOrEmpty(profile?.fakultas),
-    studyProgram: valueOrEmpty(user?.study_program?.name) || valueOrEmpty(profile?.program_studi),
-    email: valueOrEmpty(user?.email),
-});
+// Profile display is now sourced via the shared mahasiswa-profile-source
+// helper. Each caller passes whichever payload shapes it has on hand —
+// /draft, /api/profile, or detail-application — and the merger picks the
+// first real value for every field with a documented precedence chain.
 
 const mapApplicationData = (app: AktifApplication): AktifFormData => {
     const mapped = emptyFormData();
@@ -250,7 +303,87 @@ const mapApplicationData = (app: AktifApplication): AktifFormData => {
     return mapped;
 };
 
-const renderLoading = (message: string) => {
+// SKA treats identity (tempat_lahir / tanggal_lahir / jenis_kelamin) as
+// profile-locked. The form does not allow the student to edit these in
+// step 2 — the values are always overwritten from the SSO profile on
+// load so the saved/legacy application's editable copy can never drift.
+const lockIdentityFromProfile = (profile?: StudentProfile | null) => {
+    formData.tempat_lahir = String(profile?.tempat_lahir ?? '').trim();
+    const parts = parseDateParts(profile?.tanggal_lahir);
+    formData.tanggal_lahir = parts.isoDate;
+    formData.tanggal_lahir_day = parts.day;
+    formData.tanggal_lahir_month = parts.month;
+    formData.tanggal_lahir_year = parts.year;
+    formData.jenis_kelamin = genderEnumToLabel(profile?.jenis_kelamin);
+};
+
+const validateProfileIdentity = (profile?: StudentProfile | null): void => {
+    const missing: string[] = [];
+    if (!String(profile?.tempat_lahir ?? '').trim()) missing.push('Tempat Lahir');
+    if (!normalizeDateOnly(profile?.tanggal_lahir)) missing.push('Tanggal Lahir');
+    if (!genderEnumToLabel(profile?.jenis_kelamin)) missing.push('Jenis Kelamin');
+    profileIdentityMissing = missing;
+};
+
+const genderEnumToLabel = (value?: string | null): string => {
+    const upper = String(value ?? '').trim().toUpperCase();
+    if (upper === 'L') return 'Laki-laki';
+    if (upper === 'P') return 'Perempuan';
+    return '';
+};
+
+// Parent/wali default: prefer Ayah > Ibu > Wali. Only fills empty form
+// fields, so a saved draft or revision always keeps its edits. NIP /
+// pangkat / instansi do not exist on keluarga_mahasiswas; only nama and
+// pekerjaan can be sourced from the family record.
+// Single /api/profile fetch that produces both the keluarga array (for
+// Ayah > Ibu > Wali prefill) and the canonical profile-display extras
+// (user / normalized / student) consumed by the shared SSO mapper. One
+// round-trip, two consumers.
+type SkaProfileBundle = { extras: MahasiswaProfileSource; keluarga: KeluargaMember[] };
+
+const fetchProfileBundle = async (): Promise<SkaProfileBundle> => {
+    try {
+        const response = await apiFetch('/api/profile', { cache: 'no-store' });
+        if (!response.ok) return { extras: {}, keluarga: [] };
+        const payload = await response.json();
+        const raw = payload?.profile?.keluarga;
+        return {
+            extras: {
+                user: payload?.user,
+                profile: payload?.profile,
+                normalized: payload?.normalized,
+                student: payload?.student,
+            },
+            keluarga: Array.isArray(raw) ? raw as KeluargaMember[] : [],
+        };
+    } catch {
+        return { extras: {}, keluarga: [] };
+    }
+};
+
+const pickDefaultParent = (keluarga: KeluargaMember[]): KeluargaMember | null => {
+    const match = (relasi: string) => keluarga.find((k) =>
+        String(k.jenis_relasi ?? '').toLowerCase() === relasi
+        && String(k.nama_lengkap ?? '').trim().length > 0
+    );
+    return match('ayah') || match('ibu') || match('wali') || null;
+};
+
+const applyFamilyPrefill = (keluarga: KeluargaMember[]): void => {
+    const parent = pickDefaultParent(keluarga);
+    if (!parent) return;
+    if (!formData.nama_orang_tua_wali.trim()) {
+        formData.nama_orang_tua_wali = String(parent.nama_lengkap ?? '').trim();
+    }
+    if (!formData.pekerjaan_orang_tua_wali.trim() && parent.pekerjaan) {
+        formData.pekerjaan_orang_tua_wali = String(parent.pekerjaan).trim();
+    }
+    // nip / pangkat / instansi are not stored on keluarga_mahasiswas, so
+    // they stay manual-entry — never silently faked from another source.
+};
+
+const renderLoading = (message: string, activePage = 'administrasi') => {
     renderDashboardLayout('Formulir Surat', `
         <div class="max-w-5xl mx-auto">
             <div class="bg-white border border-gray-100 rounded-[24px] p-10 shadow-sm flex items-center gap-4">
@@ -258,7 +391,7 @@ const renderLoading = (message: string) => {
                 <p class="text-sm font-semibold text-gray-600">${escapeHtml(message)}</p>
             </div>
         </div>
-    `, 'mahasiswa', 'administrasi');
+    `, 'mahasiswa', activePage);
 };
 
 const renderForm = () => {
@@ -336,19 +469,22 @@ const renderStepContent = () => {
                     <p class="text-sm text-gray-600 mt-2">Lengkapi data berikut sesuai kebutuhan pengajuan surat</p>
                 </div>
 
+                ${renderIdentityLockCard()}
+
                 <div class="space-y-5">
-                    ${renderDatePlaceRow()}
-                    ${renderRadioGroup()}
                     ${renderTextInput('keperluan', 'Keperluan', 'Contoh: Syarat administrasi beasiswa atau keperluan lainnya', formData.keperluan)}
                 </div>
 
                 <div class="border-t border-gray-400 pt-8 space-y-5">
-                    <h3 class="text-2xl font-bold text-gray-800">Data Orang Tua/Wali</h3>
+                    <div class="flex flex-col gap-1">
+                        <h3 class="text-2xl font-bold text-gray-800">Data Orang Tua/Wali</h3>
+                        <p class="text-xs text-gray-500">Default diisi dari data keluarga di profil (Ayah, Ibu, atau Wali). Anda dapat menyunting bila perlu.</p>
+                    </div>
                     ${renderTextInput('nama_orang_tua_wali', 'Nama', 'Masukkan nama lengkap', formData.nama_orang_tua_wali)}
                     ${renderTextInput('pekerjaan_orang_tua_wali', 'Pekerjaan', 'Contoh: Pegawai Swasta', formData.pekerjaan_orang_tua_wali)}
-                    ${renderTextInput('nip_orang_tua_wali', 'NIP', 'Masukkan NIP (jika ada)', formData.nip_orang_tua_wali)}
-                    ${renderTextInput('pangkat_gol_orang_tua_wali', 'Pangkat/Gol', 'Contoh: III/a (jika ada)', formData.pangkat_gol_orang_tua_wali)}
-                    ${renderTextInput('instansi_orang_tua_wali', 'Instansi', 'Contoh: Dinas Pendidikan DIY', formData.instansi_orang_tua_wali)}
+                    ${renderTextInputWithHint('nip_orang_tua_wali', 'NIP', 'Masukkan NIP (jika ada)', formData.nip_orang_tua_wali, "Isi '-' jika orang tua/wali tidak memiliki NIP.")}
+                    ${renderTextInputWithHint('pangkat_gol_orang_tua_wali', 'Pangkat/Gol', 'Contoh: III/a (jika ada)', formData.pangkat_gol_orang_tua_wali, "Isi '-' jika tidak memiliki pangkat/golongan.")}
+                    ${renderTextInputWithHint('instansi_orang_tua_wali', 'Instansi', 'Contoh: Dinas Pendidikan DIY', formData.instansi_orang_tua_wali, "Isi '-' jika tidak ada atau tidak berlaku.")}
                 </div>
             </div>
         `;
@@ -405,48 +541,64 @@ const renderTextInput = (name: keyof AktifFormData, label: string, placeholder: 
     </div>
 `;
 
-const renderDatePlaceRow = () => `
-    <div class="grid grid-cols-1 md:grid-cols-[170px_1fr] gap-3 md:gap-6 md:items-center">
-        <label class="text-sm font-semibold text-gray-800">Tempat, Tanggal Lahir</label>
-        <div class="grid grid-cols-1 sm:grid-cols-[minmax(180px,1fr)_128px_128px_128px] gap-3">
-            <input id="tempat_lahir" name="tempat_lahir" type="text" value="${escapeAttribute(formData.tempat_lahir)}" placeholder="Contoh: Sleman" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
-            ${renderSelect('tanggal_lahir_day', 'Tanggal', dayOptions(), formData.tanggal_lahir_day)}
-            ${renderSelect('tanggal_lahir_month', 'Bulan', monthOptions(), formData.tanggal_lahir_month)}
-            ${renderSelect('tanggal_lahir_year', 'Tahun', yearOptions(), formData.tanggal_lahir_year)}
+const renderTextInputWithHint = (name: keyof AktifFormData, label: string, placeholder: string, value: string, hint: string) => `
+    <div class="grid grid-cols-1 md:grid-cols-[170px_1fr] gap-3 md:gap-6 md:items-start">
+        <label for="${name}" class="text-sm font-semibold text-gray-800 md:pt-2">${escapeHtml(label)}</label>
+        <div class="space-y-1">
+            <input id="${name}" name="${name}" type="text" value="${escapeAttribute(value)}" placeholder="${escapeAttribute(placeholder)}" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
+            <p class="text-xs text-gray-500 leading-relaxed">${escapeHtml(hint)}</p>
         </div>
     </div>
 `;
 
-const renderSelect = (
-    id: keyof AktifFormData,
-    placeholder: string,
-    options: { value: string; label: string }[],
-    selectedValue: string,
-) => `
-    <select id="${id}" name="${id}" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm bg-white outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50 ${selectedValue ? 'text-gray-800' : 'text-gray-400'}">
-        <option value="">${escapeHtml(placeholder)}</option>
-        ${options.map((option) => `
-            <option value="${escapeAttribute(option.value)}" ${option.value === selectedValue ? 'selected' : ''}>${escapeHtml(option.label)}</option>
-        `).join('')}
-    </select>
-`;
+// SKA identity rows are locked: values come from the SSO profile. Editing
+// must be done on the Profil Mahasiswa page, never inside this form.
+const renderIdentityLockCard = (): string => {
+    const place = formData.tempat_lahir.trim();
+    const dateLabel = formatIndonesianDate(formData.tanggal_lahir);
+    const placeAndDate = [place, dateLabel].filter(Boolean).join(', ');
+    const gender = formData.jenis_kelamin;
+    const missing = profileIdentityMissing;
+    const hasMissing = missing.length > 0;
 
-const renderRadioGroup = () => `
-    <fieldset class="grid grid-cols-1 md:grid-cols-[170px_1fr] gap-3 md:gap-6 md:items-center">
-        <legend class="text-sm font-semibold text-gray-800">Jenis Kelamin</legend>
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-14">
-            ${renderRadio('Laki-laki')}
-            ${renderRadio('Perempuan')}
+    return `
+        <div class="space-y-4">
+            <div class="bg-teal-50 border border-teal-100 p-5 rounded-2xl flex gap-4 items-start shadow-sm">
+                <div class="w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center text-teal-600 shrink-0">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                </div>
+                <div class="flex-1">
+                    <h4 class="text-sm font-bold text-teal-800 mb-1">Data Terhubung dengan Profil</h4>
+                    <p class="text-xs text-teal-700/80 leading-relaxed">Tempat &amp; Tanggal Lahir serta Jenis Kelamin diambil otomatis dari profil Anda. Jika perlu diperbarui, silakan ubah melalui halaman <span class="font-bold">Profil Mahasiswa</span>.</p>
+                </div>
+            </div>
+
+            <div class="bg-white border border-gray-100 rounded-2xl p-5 space-y-4 shadow-sm">
+                <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-6 md:items-baseline">
+                    <label class="text-sm font-bold text-gray-800">Tempat, Tanggal Lahir</label>
+                    <p class="text-sm font-medium text-gray-700">${escapeHtml(placeAndDate || '-')}</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-6 md:items-baseline">
+                    <label class="text-sm font-bold text-gray-800">Jenis Kelamin</label>
+                    <p class="text-sm font-medium text-gray-700">${escapeHtml(gender || '-')}</p>
+                </div>
+            </div>
+
+            ${hasMissing ? `
+                <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex gap-3" role="alert">
+                    <div class="text-amber-600 shrink-0">${iconAlert('22')}</div>
+                    <div class="flex-1 space-y-1">
+                        <p class="font-bold text-amber-900">Data profil belum lengkap</p>
+                        <p class="text-sm text-amber-800">Lengkapi data berikut pada Profil Mahasiswa sebelum melanjutkan pengajuan:</p>
+                        <ul class="text-sm text-amber-800 list-disc list-inside font-semibold">
+                            ${missing.map((label) => `<li>${escapeHtml(label)}</li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            ` : ''}
         </div>
-    </fieldset>
-`;
-
-const renderRadio = (value: string) => `
-    <label class="inline-flex items-center gap-3 text-sm text-gray-800 cursor-pointer">
-        <input type="radio" name="jenis_kelamin" value="${escapeAttribute(value)}" ${formData.jenis_kelamin === value ? 'checked' : ''} class="w-5 h-5 text-primary-teal border-gray-300 focus:ring-primary-teal">
-        <span>${escapeHtml(value)}</span>
-    </label>
-`;
+    `;
+};
 
 const renderReviewSection = (title: string, rows: [string, string][]) => `
     <section class="bg-[#F0F8F7] rounded-2xl p-6">
@@ -464,7 +616,11 @@ const renderReviewSection = (title: string, rows: [string, string][]) => `
 
 const renderNavigationButtons = () => {
     const isSubmitStep = currentStep === 3;
-    const submitDisabled = isSubmitStep && !hasAcceptedStatement;
+    // Profile-identity gate: any step that would lead to a payload (advancing
+    // past step 1, or submitting on step 3) is blocked when the SSO profile
+    // lacks tempat_lahir / tanggal_lahir / jenis_kelamin.
+    const identityBlocked = currentStep > 1 && profileIdentityMissing.length > 0;
+    const submitDisabled = (isSubmitStep && !hasAcceptedStatement) || identityBlocked;
     const nextLabel = isSubmitStep
         ? application?.status === LETTER_WORKFLOW_STATUS.REVISION ? 'Perbaiki & Kirim Ulang' : 'Kirim Pengajuan'
         : 'Lanjutkan';
@@ -533,23 +689,32 @@ const collectStep2Values = () => {
         return;
     }
 
-    formData.tempat_lahir = readInputValue('tempat_lahir');
-    formData.tanggal_lahir_day = readInputValue('tanggal_lahir_day');
-    formData.tanggal_lahir_month = readInputValue('tanggal_lahir_month');
-    formData.tanggal_lahir_year = readInputValue('tanggal_lahir_year');
-    formData.jenis_kelamin = readRadioValue('jenis_kelamin');
+    // Identity fields (tempat_lahir / tanggal_lahir / jenis_kelamin) are
+    // profile-locked — never read them from the DOM. Their values are set
+    // by lockIdentityFromProfile on form load and stay in formData.
     formData.keperluan = readInputValue('keperluan');
     formData.nama_orang_tua_wali = readInputValue('nama_orang_tua_wali');
     formData.pekerjaan_orang_tua_wali = readInputValue('pekerjaan_orang_tua_wali');
     formData.nip_orang_tua_wali = readInputValue('nip_orang_tua_wali');
     formData.pangkat_gol_orang_tua_wali = readInputValue('pangkat_gol_orang_tua_wali');
     formData.instansi_orang_tua_wali = readInputValue('instansi_orang_tua_wali');
+
+    // Optional parent/wali fields: when left blank, normalise to "-" so the
+    // review page and the persisted record carry an explicit "not applicable"
+    // marker instead of an empty cell. Required fields (nama, pekerjaan)
+    // are not touched.
+    if (!formData.nip_orang_tua_wali.trim()) formData.nip_orang_tua_wali = '-';
+    if (!formData.pangkat_gol_orang_tua_wali.trim()) formData.pangkat_gol_orang_tua_wali = '-';
+    if (!formData.instansi_orang_tua_wali.trim()) formData.instansi_orang_tua_wali = '-';
 };
 
 const validateStep2 = () => {
+    if (profileIdentityMissing.length > 0) {
+        showError(`Lengkapi profil mahasiswa terlebih dahulu: ${profileIdentityMissing.join(', ')}.`);
+        return false;
+    }
+
     const requiredFields: [keyof AktifFormData, string][] = [
-        ['tempat_lahir', 'Tempat lahir'],
-        ['jenis_kelamin', 'Jenis kelamin'],
         ['keperluan', 'Keperluan'],
         ['nama_orang_tua_wali', 'Nama orang tua/wali'],
         ['pekerjaan_orang_tua_wali', 'Pekerjaan orang tua/wali'],
@@ -561,18 +726,6 @@ const validateStep2 = () => {
         return false;
     }
 
-    const dateResult = buildIsoDate(
-        formData.tanggal_lahir_day,
-        formData.tanggal_lahir_month,
-        formData.tanggal_lahir_year,
-    );
-
-    if (!dateResult.ok) {
-        showWarning(dateResult.message);
-        return false;
-    }
-
-    formData.tanggal_lahir = dateResult.value;
     return true;
 };
 
@@ -682,12 +835,12 @@ const toPayload = () => ({
     instansi_orang_tua_wali: formData.instansi_orang_tua_wali,
 });
 
-const renderDetailContent = (detailApplication: AktifApplication, viewProfile: ProfileViewData) => `
+const renderDetailContent = (detailApplication: AktifApplication, viewProfile: ProfileViewData, origin: MahasiswaDetailOrigin) => `
     <div class="max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <button id="btn-detail-back" type="button" class="inline-flex items-center gap-2 text-gray-700 hover:text-primary-teal font-semibold w-fit">
                 ${iconArrowLeft('20')}
-                <span>Kembali ke Administrasi Surat</span>
+                <span>${backLabelForDetailOrigin(origin)}</span>
             </button>
             <span class="${statusBadgeClass(detailApplication.status)} px-4 py-1.5 rounded-full text-xs font-bold border w-fit">
                 ${escapeHtml(statusLabel(detailApplication.status))}
@@ -737,69 +890,83 @@ const renderDetailContent = (detailApplication: AktifApplication, viewProfile: P
     </div>
 `;
 
-const attachDetailEvents = (detailApplication: AktifApplication) => {
-    document.getElementById('btn-detail-back')?.addEventListener('click', goToAdministrasiSurat);
+const attachDetailEvents = (detailApplication: AktifApplication, origin: MahasiswaDetailOrigin) => {
+    document.getElementById('btn-detail-back')?.addEventListener('click', () => goToMahasiswaDetailOrigin(origin));
     document.getElementById('btn-edit-revision')?.addEventListener('click', () => {
         if (detailApplication.status === LETTER_WORKFLOW_STATUS.REVISION) {
             renderSuratKeteranganAktifForm(true);
         }
     });
-    document.getElementById('btn-review-document')?.addEventListener('click', () => {
-        openDocumentPreview(detailApplication);
-    });
     document.getElementById('btn-complete-application')?.addEventListener('click', () => {
-        completeApplicationAfterReview(detailApplication);
+        completeApplication(detailApplication, origin);
     });
     document.getElementById('btn-download-document')?.addEventListener('click', () => {
         downloadCompletedDocument(detailApplication);
     });
+
+    // Attach the protected PDF.js viewer for student-review and completed states.
+    // The viewer fetches the protected generated-preview endpoint as an
+    // ArrayBuffer and renders via canvas — no iframe, no blob URL, no
+    // legacy /preview dependency.
+    if (
+        isStudentReviewStage(detailApplication.status)
+        || canDownloadDocument(detailApplication.status)
+    ) {
+        cleanupGeneratedLetterPreview();
+        revokeGeneratedLetterPreview = attachProtectedPdfViewer({
+            rootId: GENERATED_LETTER_PREVIEW_ROOT_ID,
+            endpointUrl: `${API_PREFIX}/${detailApplication.id}/generated-preview`,
+        });
+    }
 };
+
+const cleanupGeneratedLetterPreview = (): void => {
+    if (!revokeGeneratedLetterPreview) return;
+    revokeGeneratedLetterPreview();
+    revokeGeneratedLetterPreview = null;
+};
+
+const renderGeneratedLetterPreviewCard = (): string => renderProtectedPdfViewer(GENERATED_LETTER_PREVIEW_ROOT_ID, {
+    title: 'Pratinjau Surat Keterangan Aktif',
+    subtitle: 'Pratinjau PDF dokumen pengajuan',
+    loading: 'Memuat pratinjau surat...',
+});
 
 const renderDocumentReviewSection = (detailApplication: AktifApplication) => {
     if (isStudentReviewStage(detailApplication.status)) {
-        const hasPreviewed = hasDocumentBeenReviewed(detailApplication);
         return `
             <section class="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                         <h3 class="text-lg font-bold text-gray-800">Review Dokumen</h3>
-                        <p class="text-sm text-gray-600 mt-1">Silakan review dokumen sebelum menyelesaikan pengajuan.</p>
+                        <p class="text-sm text-gray-600 mt-1">Periksa pratinjau di bawah sebelum menyelesaikan pengajuan.</p>
                     </div>
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <button id="btn-review-document" type="button" class="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-primary-teal text-primary-teal font-bold rounded-xl hover:bg-teal-50 transition-colors">
-                            ${iconFileText('18')}
-                            <span>Review Dokumen</span>
-                        </button>
-                        <button id="btn-complete-application" type="button" ${hasPreviewed ? '' : 'disabled'} class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-colors ${hasPreviewed ? 'bg-primary-teal text-white hover:bg-teal-800' : 'bg-gray-300 text-white cursor-not-allowed'}">
+                        <button id="btn-complete-application" type="button" class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-colors bg-primary-teal text-white hover:bg-teal-800">
                             ${iconCheck('18')}
                             <span>Selesaikan Pengajuan</span>
                         </button>
                     </div>
                 </div>
-                <div id="document-preview-panel" class="hidden border border-gray-200 rounded-2xl overflow-hidden bg-gray-50">
-                    <div class="px-4 py-3 bg-[#F0F8F7] border-b border-gray-200 flex items-center gap-2 text-sm font-bold text-gray-800">
-                        ${iconFileText('18')}
-                        <span>Pratinjau Surat Keterangan Aktif</span>
-                    </div>
-                    <iframe id="document-preview-frame" title="Pratinjau Surat Keterangan Aktif" class="w-full h-[70vh] bg-white"></iframe>
-                </div>
+                ${renderGeneratedLetterPreviewCard()}
             </section>
         `;
     }
 
     if (canDownloadDocument(detailApplication.status)) {
         return `
-            <section class="bg-white border border-gray-100 rounded-2xl p-6">
+            <section class="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
                 <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h3 class="text-lg font-bold text-gray-800">Dokumen Selesai</h3>
-                        <p class="text-sm text-gray-600 mt-1">Pengajuan telah selesai. Dokumen dapat diunduh.</p>
+                        <p class="text-sm text-gray-600 mt-1">Pengajuan telah selesai. Dokumen dapat diunduh sebagai PDF.</p>
                     </div>
                     <button id="btn-download-document" type="button" class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors">
                         ${iconDownload('18')}
-                        <span>Download Dokumen</span>
+                        <span>Unduh Dokumen Final</span>
                     </button>
                 </div>
+                ${renderGeneratedLetterPreviewCard()}
             </section>
         `;
     }
@@ -807,57 +974,9 @@ const renderDocumentReviewSection = (detailApplication: AktifApplication) => {
     return '';
 };
 
-const openDocumentPreview = async (detailApplication: AktifApplication) => {
-    if (!canPreviewDocument(detailApplication.status)) {
-        showWarning('Dokumen belum tersedia untuk direview.');
-        return;
-    }
-
-    const button = document.getElementById('btn-review-document') as HTMLButtonElement | null;
-    setButtonLoading(button, 'Memuat...');
-
-    try {
-        const response = await apiFetch(`${API_PREFIX}/${detailApplication.id}/preview`, {
-            cache: 'no-store',
-        });
-
-        if (!response.ok) {
-            throw new Error(await parseApiError(response));
-        }
-
-        const blob = await response.blob();
-        if (activePreviewObjectUrl) {
-            URL.revokeObjectURL(activePreviewObjectUrl);
-        }
-        activePreviewObjectUrl = URL.createObjectURL(blob);
-
-        const previewFrame = document.getElementById('document-preview-frame') as HTMLIFrameElement | null;
-        const previewPanel = document.getElementById('document-preview-panel') as HTMLElement | null;
-        if (previewFrame && previewPanel) {
-            previewFrame.src = activePreviewObjectUrl;
-            previewPanel.classList.remove('hidden');
-            previewPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-
-        previewedApplicationIds.add(detailApplication.id);
-        enableCompleteButton();
-        detailApplication.student_reviewed_at = detailApplication.student_reviewed_at || new Date().toISOString();
-    } catch (error) {
-        console.error(error);
-        showError(error instanceof Error ? error.message : 'Tidak dapat membuka pratinjau dokumen. Silakan coba beberapa saat lagi.');
-    } finally {
-        restoreButton(button, `${iconFileText('18')}<span>Review Dokumen</span>`);
-    }
-};
-
-const completeApplicationAfterReview = async (detailApplication: AktifApplication) => {
+const completeApplication = async (detailApplication: AktifApplication, origin: MahasiswaDetailOrigin) => {
     if (!isStudentReviewStage(detailApplication.status)) {
         showWarning('Pengajuan belum berada pada tahap review mahasiswa.');
-        return;
-    }
-
-    if (!canCompleteSubmission(detailApplication.status, hasDocumentBeenReviewed(detailApplication))) {
-        showWarning('Silakan review dokumen sebelum menyelesaikan pengajuan.');
         return;
     }
 
@@ -875,7 +994,8 @@ const completeApplicationAfterReview = async (detailApplication: AktifApplicatio
 
         const payload = await response.json();
         showSuccess('Pengajuan Surat Keterangan Aktif telah diselesaikan.');
-        renderSuratKeteranganAktifDetail(payload.application?.id || detailApplication.id);
+        cleanupGeneratedLetterPreview();
+        renderSuratKeteranganAktifDetail(payload.application?.id || detailApplication.id, { origin });
     } catch (error) {
         console.error(error);
         showError(error instanceof Error ? error.message : 'Gagal menyelesaikan pengajuan. Status pengajuan tidak diubah.');
@@ -893,8 +1013,9 @@ const downloadCompletedDocument = async (detailApplication: AktifApplication) =>
     setButtonLoading(button, 'Mengunduh...');
 
     try {
-        const response = await apiFetch(`${API_PREFIX}/${detailApplication.id}/preview`, {
+        const response = await apiFetch(`${API_PREFIX}/${detailApplication.id}/final-download`, {
             cache: 'no-store',
+            headers: { Accept: 'application/pdf' },
         });
 
         if (!response.ok) {
@@ -914,7 +1035,7 @@ const downloadCompletedDocument = async (detailApplication: AktifApplication) =>
         console.error(error);
         showError(error instanceof Error ? error.message : 'Gagal mengunduh dokumen. Silakan coba beberapa saat lagi.');
     } finally {
-        restoreButton(button, `${iconDownload('18')}<span>Download Dokumen</span>`);
+        restoreButton(button, `${iconDownload('18')}<span>Unduh Dokumen Final</span>`);
     }
 };
 
@@ -977,57 +1098,41 @@ const renderRejectedBanner = (reason?: string | null) => `
     </div>
 `;
 
-const dayOptions = () => Array.from({ length: 31 }, (_, index) => {
-    const value = String(index + 1).padStart(2, '0');
-    return { value, label: String(index + 1) };
-});
-
-const monthOptions = () => MONTH_NAMES.map((label, index) => ({
-    value: String(index + 1).padStart(2, '0'),
-    label,
-}));
-
-const yearOptions = () => {
-    const currentYear = new Date().getFullYear();
-    return Array.from({ length: 80 }, (_, index) => {
-        const year = String(currentYear - index);
-        return { value: year, label: year };
-    });
-};
-
-type DateValidationResult =
-    | { ok: true; value: string }
-    | { ok: false; message: string };
-
-const buildIsoDate = (day: string, month: string, year: string): DateValidationResult => {
-    if (!day || !month || !year) {
-        return { ok: false, message: 'Tanggal lahir wajib dipilih lengkap.' };
-    }
-
-    const dayNumber = Number(day);
-    const monthNumber = Number(month);
-    const yearNumber = Number(year);
-    const candidate = new Date(Date.UTC(yearNumber, monthNumber - 1, dayNumber));
-
-    if (
-        candidate.getUTCFullYear() !== yearNumber
-        || candidate.getUTCMonth() !== monthNumber - 1
-        || candidate.getUTCDate() !== dayNumber
-    ) {
-        return { ok: false, message: 'Tanggal lahir tidak valid. Periksa kembali tanggal, bulan, dan tahun.' };
-    }
-
-    return {
-        ok: true,
-        value: `${year}-${month}-${day}`,
-    };
-};
 
 const parseDateParts = (value?: string | null) => {
-    const isoDate = (valueOrEmpty(value).match(/\d{4}-\d{2}-\d{2}/)?.[0]) || '';
+    const isoDate = normalizeDateOnly(value);
     const [year = '', month = '', day = ''] = isoDate ? isoDate.split('-') : [];
-
     return { isoDate, day, month, year };
+};
+
+// Backend casts `tanggal_lahir` to `date` while config('app.timezone') is
+// Asia/Jakarta (+7). Carbon serialises that as e.g. "2004-03-15T17:00:00.000000Z"
+// for a stored date of 2004-03-16, so a naive leading-date regex would pick the
+// UTC date and produce an off-by-one. This normaliser keeps the original
+// Jakarta date by reverse-shifting Z/UTC wire values; explicit-offset wire
+// values keep their leading date as-is.
+const JAKARTA_OFFSET_MILLIS = 7 * 60 * 60 * 1000;
+
+const normalizeDateOnly = (value?: string | null): string => {
+    if (value == null) return '';
+    const s = String(value).trim();
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const match = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/);
+    if (!match) {
+        const fallback = s.match(/\d{4}-\d{2}-\d{2}/);
+        return fallback ? fallback[0] : '';
+    }
+    const [, y, mo, d, hh, mm, ss, tz] = match;
+    if (tz && tz !== 'Z' && !/^[+-]00:?00$/.test(tz)) {
+        return `${y}-${mo}-${d}`;
+    }
+    const utcMillis = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(hh), Number(mm), Number(ss));
+    const projected = new Date(utcMillis + JAKARTA_OFFSET_MILLIS);
+    const newY = String(projected.getUTCFullYear());
+    const newM = String(projected.getUTCMonth() + 1).padStart(2, '0');
+    const newD = String(projected.getUTCDate()).padStart(2, '0');
+    return `${newY}-${newM}-${newD}`;
 };
 
 const formatPlaceAndDate = (detailApplication?: AktifApplication): string => {
@@ -1054,19 +1159,6 @@ const formatIndonesianDate = (value?: string | null): string => {
     return `${Number(parts.day)} ${MONTH_NAMES[monthIndex] || ''} ${parts.year}`.trim();
 };
 
-const hasDocumentBeenReviewed = (detailApplication: AktifApplication) => (
-    Boolean(detailApplication.student_reviewed_at) || previewedApplicationIds.has(detailApplication.id)
-);
-
-const enableCompleteButton = () => {
-    const button = document.getElementById('btn-complete-application') as HTMLButtonElement | null;
-    if (!button) return;
-
-    button.disabled = false;
-    button.classList.remove('bg-gray-300', 'cursor-not-allowed');
-    button.classList.add('bg-primary-teal', 'hover:bg-teal-800');
-};
-
 const setButtonLoading = (button: HTMLButtonElement | null, label: string) => {
     if (!button) return;
     button.disabled = true;
@@ -1088,11 +1180,6 @@ const statusBadgeClass = (status: string) => getLetterStatusTone(status, 'studen
 const readInputValue = (id: string) => {
     const element = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
     return element?.value.trim() || '';
-};
-
-const readRadioValue = (name: string) => {
-    const element = document.querySelector(`input[name="${name}"]:checked`) as HTMLInputElement | null;
-    return element?.value || '';
 };
 
 const parseApiError = async (response: Response) => {
@@ -1134,5 +1221,4 @@ const iconCheck = (size: string) => `<svg width="${size}" height="${size}" viewB
 const iconChevronRight = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
 const iconArrowLeft = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>`;
 const iconAlert = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
-const iconFileText = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>`;
 const iconDownload = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;

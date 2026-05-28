@@ -20,6 +20,24 @@ export const LETTER_TYPES = {
 
 export type LetterType = typeof LETTER_TYPES[keyof typeof LETTER_TYPES];
 
+export interface TendikTaskRow {
+    id: number | string;
+    letter_type?: string | null;
+    type?: string | null;
+    status?: string | null;
+    submitted_at?: string | null;
+    student_name?: string | null;
+    nim?: string | null;
+    is_overdue?: boolean;
+    docx_url?: string | null;
+    assigned_to?: number | null;
+    assigned_tendik_name?: string | null;
+    nomor_surat?: string | null;
+    tendik_approved_by_name?: string | null;
+    revised_by_name?: string | null;
+    rejected_by_name?: string | null;
+}
+
 export type LetterStatusLabelVariant =
     | 'default'
     | 'student-list'
@@ -135,6 +153,15 @@ export const getLetterStatusLabel = (
     if (labels[key]) return labels[key];
 
     return variant === 'student-list' ? 'Diproses' : key;
+};
+
+// Action-oriented label for the Akademik queue (Dashboard + Dokumen),
+// where the user is the *next* approver, not the previous one.
+export const getAkademikQueueLabel = (status?: string | null): string => {
+    const key = normalizeKey(status);
+    if (key === APPROVED_TENDIK) return 'Menunggu Paraf';
+    if (key === APPROVED_KAPRODI) return 'Menunggu Tanda Tangan';
+    return getLetterStatusLabel(status, 'akademik-review') || '-';
 };
 
 export const getLetterStatusTone = (

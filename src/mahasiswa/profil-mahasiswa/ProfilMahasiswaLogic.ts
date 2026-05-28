@@ -1,5 +1,11 @@
-import { apiFetch } from '../../shared/api-client';
+import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../../shared/api-client';
 import { showSuccess, showError, showWarning } from '../../shared/toast';
+
+// Object URLs held for the currently-rendered Pas Foto / TTD previews, so
+// we can revoke them before swapping in a new one on re-render.
+let pasFotoObjectUrl: string | null = null;
+let tandaTanganObjectUrl: string | null = null;
+let headerAvatarObjectUrl: string | null = null;
 
 import type { SectionController } from './logic/SectionController';
 import { SectionDetailController } from './logic/SectionDetailController';
@@ -801,18 +807,46 @@ export const initProfilMahasiswaLogic = () => {
                     updateBeasiswaCounter();
 
                     if (profile.pas_foto_path) {
-                        const container = document.getElementById('preview-foto-container');
-                        if (container) container.innerHTML = `<img src="${profile.pas_foto_path}?t=${new Date().getTime()}" class="h-10 w-10 object-cover rounded-lg border border-gray-200"> <span class="text-xs text-teal-600 font-bold italic">Tersimpan</span>`;
                         localStorage.setItem('auth_photo', profile.pas_foto_path);
-                        const headerAvatar = document.getElementById('header-user-avatar') as HTMLImageElement;
+                        void loadProtectedImageObjectUrl(profile.pas_foto_path).then((objectUrl) => {
+                            revokeProtectedImageObjectUrl(pasFotoObjectUrl);
+                            pasFotoObjectUrl = objectUrl;
+                            const container = document.getElementById('preview-foto-container');
+                            if (container) {
+                                if (objectUrl) {
+                                    container.innerHTML = `<img src="${objectUrl}" class="h-10 w-10 object-cover rounded-lg border border-gray-200"> <span class="text-xs text-teal-600 font-bold italic">Tersimpan</span>`;
+                                } else {
+                                    container.innerHTML = `<span class="text-xs text-gray-500 font-medium italic">Tersimpan, namun preview tidak tersedia.</span>`;
+                                }
+                            }
+                        });
+                        // Load a separate object URL for the header avatar so the
+                        // preview lifecycle (revoked on re-render) doesn't yank the
+                        // src out from under the topbar <img>.
+                        const headerAvatar = document.getElementById('header-user-avatar') as HTMLImageElement | null;
                         if (headerAvatar) {
-                            headerAvatar.src = `${profile.pas_foto_path}?t=${new Date().getTime()}`;
-                            headerAvatar.className = 'w-full h-full object-cover';
+                            void loadProtectedImageObjectUrl(profile.pas_foto_path).then((avatarUrl) => {
+                                if (!avatarUrl) return;
+                                revokeProtectedImageObjectUrl(headerAvatarObjectUrl);
+                                headerAvatarObjectUrl = avatarUrl;
+                                headerAvatar.src = avatarUrl;
+                                headerAvatar.className = 'w-full h-full object-cover';
+                            });
                         }
                     }
                     if (profile.tanda_tangan_path) {
-                        const container = document.getElementById('preview-ttd-container');
-                        if (container) container.innerHTML = `<img src="${profile.tanda_tangan_path}?t=${new Date().getTime()}" class="h-10 w-20 object-contain rounded-lg border border-gray-200 bg-gray-50"> <span class="text-xs text-teal-600 font-bold italic">Tersimpan</span>`;
+                        void loadProtectedImageObjectUrl(profile.tanda_tangan_path).then((objectUrl) => {
+                            revokeProtectedImageObjectUrl(tandaTanganObjectUrl);
+                            tandaTanganObjectUrl = objectUrl;
+                            const container = document.getElementById('preview-ttd-container');
+                            if (container) {
+                                if (objectUrl) {
+                                    container.innerHTML = `<img src="${objectUrl}" class="h-10 w-20 object-contain rounded-lg border border-gray-200 bg-gray-50"> <span class="text-xs text-teal-600 font-bold italic">Tersimpan</span>`;
+                                } else {
+                                    container.innerHTML = `<span class="text-xs text-gray-500 font-medium italic">Tersimpan, namun preview tidak tersedia.</span>`;
+                                }
+                            }
+                        });
                     }
                     formatProfileNumericFields();
                     updateVisibility();

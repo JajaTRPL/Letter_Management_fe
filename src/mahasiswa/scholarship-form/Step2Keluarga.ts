@@ -1,4 +1,15 @@
 import { renderProfilMahasiswa } from '../ProfilMahasiswa';
+import { loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../../shared/api-client';
+
+// Object URL for the currently-rendered Pas Foto preview. Held at module
+// scope so we can revoke it before swapping in a new one on re-render.
+let pasFotoObjectUrl: string | null = null;
+
+const escapeHtmlAttribute = (value: string): string => value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
 export const renderStep2Keluarga = (formData: any) => `
     <div class="animate-enter-right space-y-10 pb-8">
@@ -22,13 +33,13 @@ export const renderStep2Keluarga = (formData: any) => `
             <div class="border-b border-gray-300 pb-3">
                 <h3 class="text-xl font-bold text-gray-800">Detail Profil</h3>
             </div>
-            
+
             <div class="space-y-5">
                 <div class="grid grid-cols-[200px_1fr] items-baseline gap-4">
                     <label class="text-sm font-bold text-gray-800">Tempat, Tanggal Lahir</label>
                     <p class="text-sm text-gray-600 font-medium">${formData.pob || '-'}, ${formData.dob || '-'}</p>
                 </div>
-                
+
                 <div class="grid grid-cols-[200px_1fr] items-baseline gap-4">
                     <label class="text-sm font-bold text-gray-800">Jenis Kelamin</label>
                     <p class="text-sm text-gray-600 font-medium">${formData.gender || '-'}</p>
@@ -53,11 +64,8 @@ export const renderStep2Keluarga = (formData: any) => `
                     <label class="text-sm font-bold text-gray-800 pt-2">Pas Foto 3x4</label>
                     <div class="space-y-3">
                         ${formData.pas_foto_path ? `
-                            <div class="w-32 h-40 rounded-xl border-2 border-gray-100 overflow-hidden bg-gray-50 shadow-sm relative group">
-                                <img src="${formData.pas_foto_path}" class="w-full h-full object-cover">
-                                <div class="absolute inset-0 bg-black/40 opacity-100 transition-opacity flex items-center justify-center">
-                                    <span class="text-[10px] text-white font-bold">Terunggah</span>
-                                </div>
+                            <div id="step2-pas-foto-preview" data-pas-foto-path="${escapeHtmlAttribute(String(formData.pas_foto_path))}" class="w-32 h-40 rounded-xl border-2 border-gray-100 overflow-hidden bg-gray-50 shadow-sm relative flex items-center justify-center">
+                                <span class="text-[10px] text-gray-400 font-medium italic">Memuat...</span>
                             </div>
                         ` : '<p class="text-sm text-red-500 font-medium italic">Belum diunggah di profil</p>'}
                     </div>
@@ -82,12 +90,12 @@ export const renderStep2Keluarga = (formData: any) => `
                 <div class="grid grid-cols-[200px_1fr] items-baseline gap-4">
                     <label class="text-sm font-bold text-gray-800">Penghasilan</label>
                     <p class="text-sm text-gray-600 font-medium">
-                        ${formData.father_income !== undefined && formData.father_income !== null && formData.father_income !== '' ? 
-                          (['1','2','3','4','5'].includes(String(formData.father_income)) ? 
+                        ${formData.father_income !== undefined && formData.father_income !== null && formData.father_income !== '' ?
+                          (['1','2','3','4','5'].includes(String(formData.father_income)) ?
                             (formData.father_income == '1' ? 'Tidak Berpenghasilan' :
                             formData.father_income == '2' ? '< Rp 1.000.000' :
                             formData.father_income == '3' ? 'Rp 1.000.000 - Rp 3.000.000' :
-                            formData.father_income == '4' ? 'Rp 3.000.000 - Rp 5.000.000' : '> Rp 5.000.000') : 
+                            formData.father_income == '4' ? 'Rp 3.000.000 - Rp 5.000.000' : '> Rp 5.000.000') :
                             'Rp ' + Number(formData.father_income).toLocaleString('id-ID')) : '-'}
                     </p>
                 </div>
@@ -115,12 +123,12 @@ export const renderStep2Keluarga = (formData: any) => `
                 <div class="grid grid-cols-[200px_1fr] items-baseline gap-4">
                     <label class="text-sm font-bold text-gray-800">Penghasilan</label>
                     <p class="text-sm text-gray-600 font-medium">
-                        ${formData.mother_income !== undefined && formData.mother_income !== null && formData.mother_income !== '' ? 
-                          (['1','2','3','4','5'].includes(String(formData.mother_income)) ? 
+                        ${formData.mother_income !== undefined && formData.mother_income !== null && formData.mother_income !== '' ?
+                          (['1','2','3','4','5'].includes(String(formData.mother_income)) ?
                             (formData.mother_income == '1' ? 'Tidak Berpenghasilan' :
                             formData.mother_income == '2' ? '< Rp 1.000.000' :
                             formData.mother_income == '3' ? 'Rp 1.000.000 - Rp 3.000.000' :
-                            formData.mother_income == '4' ? 'Rp 3.000.000 - Rp 5.000.000' : '> Rp 5.000.000') : 
+                            formData.mother_income == '4' ? 'Rp 3.000.000 - Rp 5.000.000' : '> Rp 5.000.000') :
                             'Rp ' + Number(formData.mother_income).toLocaleString('id-ID')) : '-'}
                     </p>
                 </div>
@@ -173,8 +181,45 @@ export const renderStep2Keluarga = (formData: any) => `
     </div>
 `;
 
+const hydratePasFotoPreview = () => {
+    const container = document.getElementById('step2-pas-foto-preview');
+    if (!container) {
+        // Either no path was rendered or the step left the DOM — release any
+        // outstanding URL so we don't leak it between step navigations.
+        revokeProtectedImageObjectUrl(pasFotoObjectUrl);
+        pasFotoObjectUrl = null;
+        return;
+    }
+    const path = container.getAttribute('data-pas-foto-path');
+    if (!path) return;
+
+    void loadProtectedImageObjectUrl(path).then((objectUrl) => {
+        revokeProtectedImageObjectUrl(pasFotoObjectUrl);
+        pasFotoObjectUrl = objectUrl;
+        // The container may have been re-rendered while the fetch was in
+        // flight; re-resolve before mutating.
+        const live = document.getElementById('step2-pas-foto-preview');
+        if (!live) {
+            revokeProtectedImageObjectUrl(objectUrl);
+            pasFotoObjectUrl = null;
+            return;
+        }
+        if (objectUrl) {
+            live.innerHTML = `
+                <img src="${objectUrl}" alt="Pas Foto" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <span class="text-[10px] text-white font-bold">Terunggah</span>
+                </div>
+            `;
+        } else {
+            live.innerHTML = `<span class="text-[10px] text-gray-500 font-medium italic px-2 text-center">Tersimpan, namun preview tidak tersedia.</span>`;
+        }
+    });
+};
+
 export const attachStep2Events = () => {
     document.getElementById('btn-go-to-profile')?.addEventListener('click', () => {
         renderProfilMahasiswa();
     });
+    hydratePasFotoPreview();
 };

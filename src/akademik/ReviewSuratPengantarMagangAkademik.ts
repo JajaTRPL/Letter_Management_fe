@@ -1,7 +1,15 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { apiFetch, openAuthFile } from '../shared/api-client';
+import { attachProtectedPdfViewer, renderProtectedPdfViewer } from '../shared/protected-pdf-viewer';
 import { getLetterStatusLabel, getLetterStatusTone, LETTER_WORKFLOW_STATUS } from '../shared/letter-workflow';
 import { showError, showSuccess, showWarning } from '../shared/toast';
+import {
+    activePageForReviewerOrigin,
+    goToReviewerOrigin,
+    resolveReviewerOrigin,
+    type ReviewerOrigin,
+    type ReviewerNavigationOptions,
+} from '../shared/reviewer-navigation';
 
 type MagangReviewResponse = {
     application: MagangApplication;
@@ -11,14 +19,27 @@ type MagangReviewResponse = {
 type MagangApplication = {
     id: number;
     status?: string | null;
+    // Legacy aggregate fields, retained for read of old records.
     nama_penerima?: string | null;
-    nama_perusahaan?: string | null;
     alamat_perusahaan?: string | null;
-    peran?: string | null;
     rentang_tanggal?: string | null;
+    nomor_surat?: string | null;
+    // Final structured contract.
+    jabatan_penerima?: string | null;
+    nama_perusahaan?: string | null;
+    alamat_jalan?: string | null;
+    alamat_kelurahan?: string | null;
+    alamat_kecamatan?: string | null;
+    alamat_kota_kabupaten?: string | null;
+    alamat_provinsi?: string | null;
+    kode_pos?: string | null;
+    tgl_mulai?: string | null;
+    tgl_selesai?: string | null;
+    nomor_surat_pengantar?: string | null;
+    nomor_surat_tugas?: string | null;
+    peran?: string | null;
     dosen_pembimbing_dpa?: string | null;
     proposal_kegiatan_magang_path?: string | null;
-    nomor_surat?: string | null;
     revision_note?: string | null;
     rejection_reason?: string | null;
     submitted_at?: string | null;
@@ -61,7 +82,46 @@ type StudentUser = {
 
 type ReviewerStage = 'prodi' | 'department';
 
-export const renderReviewSuratPengantarMagangAkademik = async (applicationId: number) => {
+const GENERATED_LETTER_PREVIEW_ROOT_ID = 'magang-akademik-generated-letter-preview';
+let revokeGeneratedLetterPreview: (() => void) | null = null;
+
+const PHASE_BEARING_STATUSES: readonly string[] = [
+    LETTER_WORKFLOW_STATUS.SUBMITTED,
+    LETTER_WORKFLOW_STATUS.APPROVED_TENDIK,
+    LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI,
+    LETTER_WORKFLOW_STATUS.READY_FOR_STUDENT_REVIEW,
+    LETTER_WORKFLOW_STATUS.COMPLETED,
+    LETTER_WORKFLOW_STATUS.REVISION,
+    LETTER_WORKFLOW_STATUS.REJECTED,
+];
+
+const hasGeneratedPreview = (status?: string | null): boolean =>
+    typeof status === 'string' && PHASE_BEARING_STATUSES.includes(status);
+
+const renderGeneratedLetterPreviewCard = (): string =>
+    renderProtectedPdfViewer(GENERATED_LETTER_PREVIEW_ROOT_ID, {
+        title: 'Pratinjau Surat Pengantar Magang',
+        subtitle: 'Pratinjau PDF sesuai tahap pengajuan saat ini',
+        loading: 'Memuat pratinjau surat...',
+    });
+
+const attachGeneratedLetterPreview = (applicationId: number): void => {
+    cleanupGeneratedLetterPreview();
+    revokeGeneratedLetterPreview = attachProtectedPdfViewer({
+        rootId: GENERATED_LETTER_PREVIEW_ROOT_ID,
+        endpointUrl: `/api/akademik/surat-pengantar-magang/${applicationId}/generated-preview`,
+    });
+};
+
+const cleanupGeneratedLetterPreview = (): void => {
+    if (!revokeGeneratedLetterPreview) return;
+    revokeGeneratedLetterPreview();
+    revokeGeneratedLetterPreview = null;
+};
+
+export const renderReviewSuratPengantarMagangAkademik = async (applicationId: number, options?: ReviewerNavigationOptions) => {
+    const origin = resolveReviewerOrigin(options);
+    const activePage = activePageForReviewerOrigin(origin);
     const role = localStorage.getItem('auth_role') || 'akademik';
     const subRole = localStorage.getItem('auth_sub_role') || role;
     const isProdiReviewer = ['kaprodi', 'sekprodi'].includes(role) || ['kaprodi', 'sekprodi'].includes(subRole);
@@ -71,7 +131,7 @@ export const renderReviewSuratPengantarMagangAkademik = async (applicationId: nu
         'Review Dokumen',
         '<div class="flex items-center justify-center h-64"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-800"></div></div>',
         role,
-        'dokumen'
+        activePage
     );
 
     try {
@@ -133,17 +193,22 @@ export const renderReviewSuratPengantarMagangAkademik = async (applicationId: nu
                             <span class="${statusClass(app.status)}">${statusLabel(app.status)}</span>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            ${renderInfoBox('Nama Penerima', valueOrDash(app.nama_penerima))}
-                            ${renderInfoBox('Nama Perusahaan', valueOrDash(app.nama_perusahaan))}
-                            ${renderInfoBox('Peran', valueOrDash(app.peran))}
-                            ${renderInfoBox('Rentang Tanggal', valueOrDash(app.rentang_tanggal))}
-                            ${renderInfoBox('Dosen Pembimbing/DPA', valueOrDash(app.dosen_pembimbing_dpa))}
-                            ${renderInfoBox('Nomor Surat', valueOrDash(app.nomor_surat))}
+                            ${renderInfoBox('Jabatan Penerima / Tujuan Surat', valueOrDash(app.jabatan_penerima || app.nama_penerima))}
+                            ${renderInfoBox('Nama Perusahaan/Instansi', valueOrDash(app.nama_perusahaan))}
+                            ${renderInfoBox('Posisi Magang', valueOrDash(app.peran))}
+                            ${renderInfoBox('Tanggal Mulai Magang', formatBirthDate(app.tgl_mulai))}
+                            ${renderInfoBox('Tanggal Selesai Magang', formatBirthDate(app.tgl_selesai))}
+                            ${renderInfoBox('Dosen Pembimbing Akademik / DPA', valueOrDash(app.dosen_pembimbing_dpa))}
+                            ${renderInfoBox('Nomor Surat Pengantar', valueOrDash(app.nomor_surat_pengantar || app.nomor_surat))}
+                            ${renderInfoBox('Nomor Surat Tugas', valueOrDash(app.nomor_surat_tugas))}
                         </div>
-                        <div class="border border-gray-200 rounded-xl px-4 py-3 bg-white">
-                            <label class="block text-[10px] font-medium text-gray-400 capitalize mb-1">Alamat Perusahaan</label>
-                            <p class="text-sm font-semibold text-gray-800 whitespace-pre-line">${escapeHtml(valueOrDash(app.alamat_perusahaan))}</p>
-                        </div>
+                        ${renderStructuredAddress(app)}
+                        ${(!app.tgl_mulai && !app.tgl_selesai && app.rentang_tanggal) ? `
+                            <div class="border border-amber-100 bg-amber-50 rounded-xl px-4 py-3">
+                                <label class="block text-[10px] font-medium text-amber-700 capitalize mb-1">Rentang Tanggal (data lama)</label>
+                                <p class="text-sm font-semibold text-amber-900">${escapeHtml(valueOrDash(app.rentang_tanggal))}</p>
+                            </div>
+                        ` : ''}
                         <div class="pt-2 border-t border-gray-100 border-dashed text-xs text-gray-500 font-medium">
                             Tanggal Pengajuan: ${formatDate(app.submitted_at || app.created_at)}
                         </div>
@@ -192,6 +257,17 @@ export const renderReviewSuratPengantarMagangAkademik = async (applicationId: nu
                     </div>
                 </div>
 
+                ${hasGeneratedPreview(app.status) ? `
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden text-sm">
+                        <div class="px-6 py-4 border-b border-gray-100 font-bold text-gray-800 bg-[#F8FAFC]/50">
+                            Pratinjau Dokumen
+                        </div>
+                        <div class="p-6 md:p-8">
+                            ${renderGeneratedLetterPreviewCard()}
+                        </div>
+                    </div>
+                ` : ''}
+
                 <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
                     <p class="text-sm font-bold text-gray-800 mb-2">Tindakan Persetujuan</p>
                     ${canAct ? `
@@ -219,18 +295,24 @@ export const renderReviewSuratPengantarMagangAkademik = async (applicationId: nu
             ${canAct ? renderActionModals(app, studentName, valueOrDash(profile?.nim), reviewerStage) : ''}
         `;
 
-        renderDashboardLayout('Review Dokumen', content, role, 'dokumen');
+        renderDashboardLayout('Review Dokumen', content, role, activePage);
         (window as any).__openAuthFile = openAuthFile;
         document.getElementById('back-to-akademik-dashboard')?.addEventListener('click', () => {
-            import('../dashboard/AkademikDashboard').then(({ renderAkademikDashboard }) => {
-                renderAkademikDashboard(role);
-            });
+            cleanupGeneratedLetterPreview();
+            void goToReviewerOrigin(origin, role);
         });
 
+        if (hasGeneratedPreview(app.status)) {
+            attachGeneratedLetterPreview(applicationId);
+        } else {
+            cleanupGeneratedLetterPreview();
+        }
+
         if (canAct) {
-            bindActionHandlers(applicationId, role, reviewerStage);
+            bindActionHandlers(applicationId, role, origin, reviewerStage);
         }
     } catch (error) {
+        cleanupGeneratedLetterPreview();
         const message = error instanceof Error ? error.message : 'Terjadi kesalahan saat memuat data';
         renderDashboardLayout(
             'Error',
@@ -375,7 +457,7 @@ function renderTextActionModal(config: TextActionModalConfig): string {
     `;
 }
 
-function bindActionHandlers(applicationId: number, role: string, reviewerStage: ReviewerStage): void {
+function bindActionHandlers(applicationId: number, role: string, origin: ReviewerOrigin, reviewerStage: ReviewerStage): void {
     bindModalOpenClose('magang-akademik-approve-btn', 'magang-akademik-approval-modal', 'magang-akademik-cancel-approve');
     bindModalOpenClose('magang-akademik-revise-btn', 'magang-akademik-revision-modal', 'magang-akademik-cancel-revise');
     bindModalOpenClose('magang-akademik-reject-btn', 'magang-akademik-rejection-modal', 'magang-akademik-cancel-reject');
@@ -384,6 +466,7 @@ function bindActionHandlers(applicationId: number, role: string, reviewerStage: 
         await submitMagangAction({
             applicationId,
             role,
+            origin,
             endpoint: 'approve',
             buttonId: 'magang-akademik-confirm-approve',
             successFallback: reviewerStage === 'department'
@@ -402,6 +485,7 @@ function bindActionHandlers(applicationId: number, role: string, reviewerStage: 
         await submitMagangAction({
             applicationId,
             role,
+            origin,
             endpoint: 'revise',
             payload: { note },
             buttonId: 'magang-akademik-confirm-revise',
@@ -419,6 +503,7 @@ function bindActionHandlers(applicationId: number, role: string, reviewerStage: 
         await submitMagangAction({
             applicationId,
             role,
+            origin,
             endpoint: 'reject',
             payload: { reason },
             buttonId: 'magang-akademik-confirm-reject',
@@ -446,6 +531,7 @@ function bindModalOpenClose(buttonId: string, modalId: string, cancelId: string)
 type SubmitActionOptions = {
     applicationId: number;
     role: string;
+    origin: ReviewerOrigin;
     endpoint: 'approve' | 'revise' | 'reject';
     payload?: Record<string, string>;
     buttonId: string;
@@ -474,9 +560,8 @@ async function submitMagangAction(options: SubmitActionOptions): Promise<void> {
 
         showSuccess(result.message || options.successFallback);
         closeAllMagangAkademikModals();
-        import('../dashboard/AkademikDashboard').then(({ renderAkademikDashboard }) => {
-            renderAkademikDashboard(options.role);
-        });
+        cleanupGeneratedLetterPreview();
+        void goToReviewerOrigin(options.origin, options.role);
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Gagal memproses pengajuan';
         showError(message);
@@ -579,6 +664,50 @@ function renderInfoBox(label: string, value: string): string {
             <p class="text-sm font-semibold text-gray-800">${escapeHtml(value)}</p>
         </div>
     `;
+}
+
+function renderStructuredAddress(app: MagangApplication): string {
+    const hasStructured = Boolean(
+        app.alamat_jalan
+        || app.alamat_kelurahan
+        || app.alamat_kecamatan
+        || app.alamat_kota_kabupaten
+        || app.alamat_provinsi
+        || app.kode_pos
+    );
+
+    if (hasStructured) {
+        return `
+            <div class="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+                <p class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Alamat Perusahaan</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    ${renderInfoBox('Alamat Jalan', valueOrDash(app.alamat_jalan || app.alamat_perusahaan))}
+                    ${renderInfoBox('Kelurahan/Desa', valueOrDash(app.alamat_kelurahan))}
+                    ${renderInfoBox('Kecamatan', valueOrDash(app.alamat_kecamatan))}
+                    ${renderInfoBox('Kota/Kabupaten', valueOrDash(app.alamat_kota_kabupaten))}
+                    ${renderInfoBox('Provinsi', valueOrDash(app.alamat_provinsi))}
+                    ${renderInfoBox('Kode Pos', valueOrDash(app.kode_pos))}
+                </div>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="border border-gray-200 rounded-xl px-4 py-3 bg-white">
+            <label class="block text-[10px] font-medium text-gray-400 capitalize mb-1">Alamat Perusahaan</label>
+            <p class="text-sm font-semibold text-gray-800 whitespace-pre-line">${escapeHtml(valueOrDash(app.alamat_perusahaan))}</p>
+        </div>
+    `;
+}
+
+function formatBirthDate(value?: string | null): string {
+    if (!value) return '-';
+    const iso = value.match(/\d{4}-\d{2}-\d{2}/)?.[0] || value;
+    const [year, month, day] = iso.split('-');
+    if (!year || !month || !day) return value;
+    const date = new Date(Number(year), Number(month) - 1, Number(day));
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 function renderNotice(title: string, message: string, classes: string): string {
