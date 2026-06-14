@@ -7,6 +7,91 @@ const isPrimary = (): boolean => {
     return localStorage.getItem('auth_role_level') === 'primary';
 };
 
+/**
+ * Identity label for header surfaces (detail modal subtitle).
+ * Mahasiswa → "NIM. <value>" sourced from mahasiswa_profile.
+ * Other roles → "NIP. <value>" sourced from users.nip.
+ * Always returns a prefixed string, never a bare number; falls back to "NIM. -" / "NIP. -".
+ */
+export const formatUserIdentifier = (user: any): string => {
+    if (user?.role === 'mahasiswa') {
+        const nim = user.mahasiswa_profile?.nim || user.mahasiswaProfile?.nim || '';
+        return nim ? `NIM. ${nim}` : 'NIM. -';
+    }
+    const nip = user?.nip || '';
+    return nip ? `NIP. ${nip}` : 'NIP. -';
+};
+
+interface OrgItem {
+    code: string;
+    name: string;
+}
+
+export interface UserOrganization {
+    studyProgram: OrgItem | null;
+    department: OrgItem | null;
+    facultyName: string;
+    laboratory: OrgItem | null;
+}
+
+/**
+ * Resolve a user's organizational chain from whatever shape the API returns,
+ * tolerating both snake_case and camelCase plus nested locations.
+ *
+ * Department falls back through: studyProgram.department → user.department.
+ * Faculty falls back through:
+ *   studyProgram.department.faculty (Kaprodi/Sekprodi route)
+ *   department.faculty               (Kadep/Sekdep route, requires backend eager load)
+ *   department.faculty_name          (legacy denormalized field)
+ *   user.faculty                     (explicit override)
+ */
+export const resolveUserOrganization = (user: any): UserOrganization => {
+    const studyProgramSrc =
+        user?.study_program
+        || user?.studyProgram
+        || user?.mahasiswa_profile?.study_program
+        || user?.mahasiswa_profile?.studyProgram
+        || user?.mahasiswaProfile?.study_program
+        || user?.mahasiswaProfile?.studyProgram
+        || null;
+
+    const departmentSrc =
+        studyProgramSrc?.department
+        || studyProgramSrc?.Department
+        || user?.department
+        || null;
+
+    const facultySrc =
+        departmentSrc?.faculty
+        || (departmentSrc?.faculty_name ? { name: departmentSrc.faculty_name } : null)
+        || user?.faculty
+        || null;
+
+    const labSrc = user?.laboratory || null;
+
+    const toOrg = (src: any): OrgItem | null => {
+        if (!src) return null;
+        const code = src.code || '';
+        const name = src.name || '';
+        if (!code && !name) return null;
+        return { code, name };
+    };
+
+    return {
+        studyProgram: toOrg(studyProgramSrc),
+        department: toOrg(departmentSrc),
+        facultyName: facultySrc?.name || facultySrc?.code || '-',
+        laboratory: toOrg(labSrc),
+    };
+};
+
+/** Join an OrgItem's code + name with an em-dash, returning '-' if both missing. */
+export const joinCodeName = (item: OrgItem | null | undefined): string => {
+    if (!item) return '-';
+    const parts = [item.code, item.name].filter(Boolean);
+    return parts.length > 0 ? parts.join(' — ') : '-';
+};
+
 export const getRoleBadge = (user: any) => {
     const role = user.role;
     const roleLevel = user.role_level;
@@ -96,6 +181,10 @@ export const buildUserPayload = (
             if (data.department_id) data.department_id = parseInt(data.department_id);
         }
     } else if (data.role === 'mahasiswa') {
+        // Mahasiswa identity uses NIM (mahasiswa_profiles.nim), not NIP.
+        // Strip nip defensively so a Mahasiswa update never touches users.nip,
+        // even if a future form change accidentally re-introduces the field.
+        delete data.nip;
         delete data.department_id;
         if (!data.study_program_id) {
             return { data: null, error: 'Program Studi wajib dipilih untuk Mahasiswa' };
@@ -203,9 +292,9 @@ export const renderUserRow = (user: any, isSuperAdminTab = false) => {
     ` : `<span class="text-xs text-gray-300">—</span>`;
 
     return `
-        <tr class="hover:bg-gray-50/70 transition-colors group" data-id="${user.id}">
-            <td class="px-6 py-3.5 border-b border-gray-50">
-                <input type="checkbox" class="user-checkbox w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer" data-id="${user.id}">
+        <tr class="hover:bg-gray-50/70 transition-colors group cursor-pointer user-row-clickable" data-id="${user.id}">
+            <td class="px-6 py-3.5 border-b border-gray-50 no-row-click">
+                <input type="checkbox" class="user-checkbox no-row-click w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer" data-id="${user.id}">
             </td>
             <td class="px-4 py-3.5 border-b border-gray-50">
                 <span class="text-sm font-semibold text-gray-800">${user.name}</span>
@@ -221,7 +310,7 @@ export const renderUserRow = (user: any, isSuperAdminTab = false) => {
             <td class="px-4 py-3.5 border-b border-gray-50">
                 ${getStatusBadge(user.status || UserStatus.ACTIVE)}
             </td>
-            <td class="px-2 py-2 text-right sticky right-0 bg-white group-hover:bg-gray-50/70 shadow-[-4px_0_12px_rgba(0,0,0,0.03)] z-10 border-b border-gray-50 align-middle w-20">
+            <td class="px-2 py-2 text-right sticky right-0 bg-white group-hover:bg-gray-50/70 shadow-[-4px_0_12px_rgba(0,0,0,0.03)] z-10 border-b border-gray-50 align-middle w-20 no-row-click">
                 <div class="flex justify-end pr-4">
                     ${actionMenu}
                 </div>
@@ -263,7 +352,7 @@ export const renderMahasiswaRow = (user: any) => {
     `;
 
     return `
-        <tr class="hover:bg-gray-50/70 transition-colors group cursor-pointer mhs-row" data-id="${user.id}">
+        <tr class="hover:bg-gray-50/70 transition-colors group cursor-pointer user-row-clickable" data-id="${user.id}">
             <td class="px-6 py-3.5 no-row-click border-b border-gray-50">
                 <input type="checkbox" class="user-checkbox no-row-click w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer" data-id="${user.id}">
             </td>
@@ -296,11 +385,12 @@ export const renderMahasiswaRow = (user: any) => {
 
 export const renderMahasiswaDetailModal = (user: any) => {
     const nim = user.mahasiswa_profile?.nim || user.mahasiswaProfile?.nim || '-';
-    const prodiCode = user.study_program?.code || '-';
-    const prodiName = user.study_program?.name || '-';
-    const deptCode = user.study_program?.department?.code || '-';
-    const deptName = user.study_program?.department?.name || '-';
-    const fakultasName = user.study_program?.department?.faculty?.name || '-';
+    const org = resolveUserOrganization(user);
+    const prodiCode = org.studyProgram?.code || '-';
+    const prodiName = org.studyProgram?.name || '-';
+    const deptCode = org.department?.code || '-';
+    const deptName = org.department?.name || '-';
+    const fakultasName = org.facultyName;
     const angkatan = getAngkatan(nim !== '-' ? nim : undefined);
     const status = user.status || UserStatus.ACTIVE;
     const createdAt = user.created_at ? new Date(user.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
@@ -316,8 +406,8 @@ export const renderMahasiswaDetailModal = (user: any) => {
                 <div class="bg-teal-700 px-6 py-5 text-white">
                     <div class="flex justify-between items-start">
                         <div>
-                            <h3 class="text-lg font-bold">${user.name}</h3>
-                            <p class="text-teal-100 text-sm mt-0.5 font-mono">${nim}</p>
+                            <h3 class="text-xl font-bold leading-tight">${user.name}</h3>
+                            <p class="text-teal-100 text-sm mt-1 font-mono tracking-wide">${formatUserIdentifier(user)}</p>
                         </div>
                         <button id="close-mhs-detail" class="hover:bg-white/10 p-1 rounded-lg transition-colors">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -379,11 +469,11 @@ export const renderMahasiswaDetailModal = (user: any) => {
 
                 <!-- Footer Actions -->
                 <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2">
-                    <button class="mhs-detail-edit-btn px-4 py-2 text-sm font-semibold bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all" data-id="${user.id}">Edit</button>
-                    <button class="mhs-detail-block-btn px-4 py-2 text-sm font-semibold bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-xl hover:bg-yellow-100 transition-all" data-id="${user.id}" data-status="${status}">
+                    <button class="user-detail-edit-btn px-4 py-2 text-sm font-semibold bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all" data-id="${user.id}">Edit</button>
+                    <button class="user-detail-block-btn px-4 py-2 text-sm font-semibold bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-xl hover:bg-yellow-100 transition-all" data-id="${user.id}" data-status="${status}">
                         ${getSuspendLabel(status)}
                     </button>
-                    <button class="mhs-detail-delete-btn px-4 py-2 text-sm font-semibold bg-red-50 border border-red-200 text-red-600 rounded-xl hover:bg-red-100 transition-all" data-id="${user.id}">Hapus</button>
+                    <button class="user-detail-delete-btn px-4 py-2 text-sm font-semibold bg-red-50 border border-red-200 text-red-600 rounded-xl hover:bg-red-100 transition-all" data-id="${user.id}">Hapus</button>
                 </div>
             </div>
         </div>
@@ -402,6 +492,214 @@ export const renderMahasiswaDetailModal = (user: any) => {
     document.getElementById('mhs-detail-overlay')?.addEventListener('click', (e) => {
         if (e.target === e.currentTarget) closeDetail();
     });
+};
+
+/**
+ * Read-only detail modal for non-Mahasiswa users (Super Admin / Tendik / Akademik).
+ * Mirrors the Mahasiswa detail modal visual style — header, role section, akun section,
+ * and footer action buttons that share the `.user-detail-*` selectors with the
+ * Mahasiswa modal so `attachDetailModalListeners` handles both.
+ */
+const TENDIK_ROLE_LABELS: Record<string, string> = {
+    persuratan: 'Persuratan',
+    sarpras: 'Sarana & Prasarana (Sarpras)',
+    kepala_lab: 'Kepala Laboratorium',
+    laboran: 'Laboran',
+};
+
+const AKADEMIK_SUBROLE_LABELS: Record<string, string> = {
+    kaprodi: 'Ketua Program Studi (Kaprodi)',
+    sekprodi: 'Sekretaris Program Studi (Sekprodi)',
+    kadep: 'Ketua Departemen (Kadep)',
+    sekdep: 'Sekretaris Departemen (Sekdep)',
+};
+
+const renderGenericUserDetailModal = (user: any) => {
+    const currentUserId = localStorage.getItem('auth_user_id');
+    const isSelf = String(user.id) === String(currentUserId);
+    const canManagePrimary = isPrimary();
+    const isSuperAdminUser = user.role === 'super_admin';
+    const canEdit = isSuperAdminUser ? canManagePrimary && !isSelf : true;
+    const showBlock = isSuperAdminUser ? (canManagePrimary && !isSelf) : true;
+    const showDelete = isSuperAdminUser ? (canManagePrimary && !isSelf) : true;
+
+    const status = user.status || UserStatus.ACTIVE;
+    const sc = STATUS_DETAIL_STYLES[status as keyof typeof STATUS_DETAIL_STYLES]
+        || STATUS_DETAIL_STYLES[UserStatus.ACTIVE];
+    const createdAt = user.created_at
+        ? new Date(user.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+        : '-';
+    const org = resolveUserOrganization(user);
+
+    const roleBadge = isSuperAdminUser
+        ? (user.role_level === 'primary' ? 'Primary Admin' : 'Secondary Admin')
+        : user.role === 'tendik'
+            ? 'Tendik'
+            : user.role === 'akademik'
+                ? 'Akademik'
+                : (user.role || '-');
+
+    let roleSection = '';
+    if (user.role === 'tendik') {
+        const tendikRoleLabel = TENDIK_ROLE_LABELS[user.tendik_role] || '-';
+        const tasks = Array.isArray(user.assigned_tasks) ? user.assigned_tasks : [];
+        const showLab = ['kepala_lab', 'laboran'].includes(user.tendik_role);
+        const showTasks = user.tendik_role === 'persuratan';
+        const tasksHtml = tasks.length === 0
+            ? '<p class="text-sm text-gray-400">-</p>'
+            : `<div class="flex flex-wrap gap-1.5">${tasks.map((t: string) => `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-700 border border-teal-100">${t}</span>`).join('')}</div>`;
+        roleSection = `
+            <div>
+                <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Informasi Peran</h4>
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase">Jenis Peran Tendik</p>
+                        <p class="text-sm font-semibold text-gray-800">${tendikRoleLabel}</p>
+                    </div>
+                    ${showLab ? `
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase">Laboratorium</p>
+                        <p class="text-sm font-semibold text-gray-800">${joinCodeName(org.laboratory)}</p>
+                    </div>
+                    ` : ''}
+                    ${showTasks ? `
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase">Penugasan Verifikasi Dokumen</p>
+                        ${tasksHtml}
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+            <div class="h-px bg-gray-100"></div>
+        `;
+    } else if (user.role === 'akademik') {
+        const jabatan = AKADEMIK_SUBROLE_LABELS[user.sub_role] || '-';
+        const showProdi = ['kaprodi', 'sekprodi'].includes(user.sub_role);
+        roleSection = `
+            <div>
+                <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Informasi Akademik</h4>
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase">Jabatan</p>
+                        <p class="text-sm font-semibold text-gray-800">${jabatan}</p>
+                    </div>
+                    ${showProdi ? `
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase">Program Studi</p>
+                        <p class="text-sm font-semibold text-gray-800">${joinCodeName(org.studyProgram)}</p>
+                    </div>
+                    ` : ''}
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase">Departemen</p>
+                        <p class="text-sm font-semibold text-gray-800">${joinCodeName(org.department)}</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase">Fakultas</p>
+                        <p class="text-sm font-semibold text-gray-800">${org.facultyName}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="h-px bg-gray-100"></div>
+        `;
+    } else if (isSuperAdminUser) {
+        const level = user.role_level === 'primary' ? 'Primary' : 'Secondary';
+        roleSection = `
+            <div>
+                <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Informasi Akses</h4>
+                <div>
+                    <p class="text-[10px] text-gray-400 uppercase">Tingkat Akses</p>
+                    <p class="text-sm font-semibold text-gray-800">${level} Super Admin</p>
+                </div>
+            </div>
+            <div class="h-px bg-gray-100"></div>
+        `;
+    }
+
+    const editBtn = canEdit
+        ? `<button class="user-detail-edit-btn px-4 py-2 text-sm font-semibold bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all" data-id="${user.id}">Edit</button>`
+        : '';
+    const blockBtn = showBlock
+        ? `<button class="user-detail-block-btn px-4 py-2 text-sm font-semibold bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-xl hover:bg-yellow-100 transition-all" data-id="${user.id}" data-status="${status}">${getSuspendLabel(status)}</button>`
+        : '';
+    const delBtn = showDelete
+        ? `<button class="user-detail-delete-btn px-4 py-2 text-sm font-semibold bg-red-50 border border-red-200 text-red-600 rounded-xl hover:bg-red-100 transition-all" data-id="${user.id}">Hapus</button>`
+        : '';
+
+    const footer = (editBtn || blockBtn || delBtn) ? `
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2">
+            ${editBtn}
+            ${blockBtn}
+            ${delBtn}
+        </div>
+    ` : '';
+
+    const modalContainer = document.getElementById('modal-container')!;
+    modalContainer.innerHTML = `
+        <div id="user-detail-overlay" class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+            <div class="bg-white rounded-3xl w-full max-w-lg overflow-hidden animate-scale-in max-h-[90vh] overflow-y-auto">
+                <div class="bg-teal-700 px-6 py-5 text-white">
+                    <div class="flex justify-between items-start">
+                        <div class="min-w-0">
+                            <h3 class="text-xl font-bold leading-tight truncate">${user.name}${isSelf ? '<span class="ml-1.5 text-[9px] font-bold bg-white/20 text-white px-1.5 py-0.5 rounded-full align-middle">Anda</span>' : ''}</h3>
+                            <p class="text-teal-100 text-sm mt-1 font-mono tracking-wide">${formatUserIdentifier(user)}</p>
+                        </div>
+                        <button id="close-user-detail" class="shrink-0 hover:bg-white/10 p-1 rounded-lg transition-colors">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    </div>
+                    <div class="mt-3 flex items-center gap-2">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${sc.bg} ${sc.text}">
+                            <span class="w-1.5 h-1.5 rounded-full ${sc.dot}"></span>
+                            ${status}
+                        </span>
+                        <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 text-white">${roleBadge}</span>
+                    </div>
+                </div>
+                <div class="p-6 space-y-5">
+                    ${roleSection}
+                    <div>
+                        <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Informasi Akun</h4>
+                        <div class="space-y-3">
+                            <div>
+                                <p class="text-[10px] text-gray-400 uppercase">Email</p>
+                                <p class="text-sm text-gray-700 break-words leading-relaxed">${user.email || '-'}</p>
+                            </div>
+                            <div class="pt-3 border-t border-gray-100">
+                                <p class="text-[10px] text-gray-400 uppercase">Tanggal Terdaftar</p>
+                                <p class="text-xs text-gray-500">${createdAt}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                ${footer}
+            </div>
+        </div>
+    `;
+
+    const closeDetail = () => {
+        modalContainer.innerHTML = '';
+        document.removeEventListener('keydown', escHandler);
+    };
+    const escHandler = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') closeDetail();
+    };
+    document.getElementById('close-user-detail')?.addEventListener('click', closeDetail);
+    document.addEventListener('keydown', escHandler);
+    document.getElementById('user-detail-overlay')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeDetail();
+    });
+};
+
+/**
+ * Role-aware detail modal dispatcher. Use this from row-click handlers.
+ * Mahasiswa keeps the existing dedicated layout; others get the generic layout.
+ */
+export const renderUserDetailModal = (user: any) => {
+    if (user.role === 'mahasiswa') {
+        renderMahasiswaDetailModal(user);
+        return;
+    }
+    renderGenericUserDetailModal(user);
 };
 
 const getGroupValue = (user: any, key: string): string => {

@@ -1,6 +1,7 @@
 import { tabManager } from './types';
 import { buildUserPayload } from './ui-utils';
 import { attachNimUppercaseHandler, normalizeNim } from '../../shared/nim-utils';
+import { attachBlurLowercaseEmail, trimAndCollapseWhitespace } from '../../shared/formatters';
 import { populateStudyProgramSelect } from '../../shared/study-program-select';
 import { populateDepartmentSelect } from '../../shared/department-select';
 import { apiFetch } from '../../shared/api-client';
@@ -47,9 +48,9 @@ export const renderUserModal = (user: any = null, onRefresh: () => void) => {
                         <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Email</label>
                         <input type="email" name="email" value="${user?.email || ''}" required class="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all">
                     </div>
-                    <div>
+                    <div id="nip-field-container" class="${defaultRole === 'mahasiswa' ? 'hidden' : ''}">
                         <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">NIP</label>
-                        <input type="text" name="nip" value="${user?.nip || ''}" placeholder="Masukkan NIP" maxlength="50" class="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all">
+                        <input type="text" name="nip" value="${user?.nip || ''}" placeholder="Masukkan NIP" maxlength="50" ${defaultRole === 'mahasiswa' ? 'disabled' : ''} class="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all disabled:bg-gray-50">
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Role</label>
@@ -192,6 +193,15 @@ export const renderUserModal = (user: any = null, onRefresh: () => void) => {
 
         mhsFields.classList.toggle('hidden', !isMhs);
         tendikFields.classList.toggle('hidden', !isTendik);
+
+        // NIP is only for non-Mahasiswa users. Hide AND disable so FormData skips it
+        // (the FormData Guard filters :not(:disabled)).
+        const nipContainer = form.querySelector('#nip-field-container') as HTMLElement | null;
+        const nipInput = form.querySelector('input[name="nip"]') as HTMLInputElement | null;
+        if (nipContainer && nipInput) {
+            nipContainer.classList.toggle('hidden', isMhs);
+            nipInput.disabled = isMhs;
+        }
 
         // Disable hidden selects with duplicate name="study_program_id" to prevent FormData collision
         const akademikProgSelect = form.querySelector('#study-program-select') as HTMLSelectElement;
@@ -469,6 +479,22 @@ export const renderUserModal = (user: any = null, onRefresh: () => void) => {
     const nimInput = form.querySelector('input[name="nim"]') as HTMLInputElement;
     if (nimInput) {
         attachNimUppercaseHandler(nimInput);
+    }
+
+    // Phase 2A — email lowercase on blur; name whitespace-only normalization.
+    // Intentionally NO title-case on name (may contain titles/acronyms admins
+    // type intentionally). NIP is intentionally left raw — institutional NIP
+    // formatting conventions are outside Phase 2A scope.
+    const emailInput = form.querySelector('input[name="email"]') as HTMLInputElement | null;
+    if (emailInput) {
+        attachBlurLowercaseEmail(emailInput);
+    }
+    const nameInput = form.querySelector('input[name="name"]') as HTMLInputElement | null;
+    if (nameInput) {
+        nameInput.addEventListener('blur', () => {
+            const next = trimAndCollapseWhitespace(nameInput.value);
+            if (next !== nameInput.value) nameInput.value = next;
+        });
     }
 
     form.addEventListener('submit', async (e) => {

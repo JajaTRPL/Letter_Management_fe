@@ -3,7 +3,7 @@ import { showSuccess, showError } from '../../shared/toast';
 import { isSuspended } from '../../shared/user-status';
 import { state, tabConfig, tabManager, type TabType } from './types';
 import { refreshUsers } from './api';
-import { renderFilteredRows, renderMahasiswaDetailModal, renderPaginationControls } from './ui-utils';
+import { renderFilteredRows, renderPaginationControls, renderUserDetailModal } from './ui-utils';
 import { renderUserModal } from './modals';
 import { renderExportDrawer } from './export-drawer';
 import { renderImportDrawer } from './import-drawer';
@@ -289,15 +289,15 @@ export const attachActionListeners = (renderContent: () => void, onSelectionChan
         });
     });
 
-    // Mahasiswa row click → open detail modal
-    document.querySelectorAll('.mhs-row').forEach(row => {
+    // Row click (all roles) → open role-aware detail modal
+    document.querySelectorAll('.user-row-clickable').forEach(row => {
         row.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
             if (target.closest('.no-row-click')) return;
             const id = (row as HTMLElement).dataset.id;
             const user = state.allUsers.find(u => String(u.id) === String(id));
             if (user) {
-                renderMahasiswaDetailModal(user);
+                renderUserDetailModal(user);
                 attachDetailModalListeners(renderContent);
             }
         });
@@ -306,8 +306,8 @@ export const attachActionListeners = (renderContent: () => void, onSelectionChan
 
 const attachDetailModalListeners = (renderContent: () => void) => {
     // Edit from detail modal
-    document.querySelector('.mhs-detail-edit-btn')?.addEventListener('click', () => {
-        const id = (document.querySelector('.mhs-detail-edit-btn') as HTMLElement)?.dataset.id;
+    document.querySelector('.user-detail-edit-btn')?.addEventListener('click', () => {
+        const id = (document.querySelector('.user-detail-edit-btn') as HTMLElement)?.dataset.id;
         const user = state.allUsers.find(u => String(u.id) === String(id));
         const modalContainer = document.getElementById('modal-container')!;
         modalContainer.innerHTML = '';
@@ -315,8 +315,8 @@ const attachDetailModalListeners = (renderContent: () => void) => {
     });
 
     // Block/Unblock from detail modal
-    document.querySelector('.mhs-detail-block-btn')?.addEventListener('click', async () => {
-        const btn = document.querySelector('.mhs-detail-block-btn') as HTMLElement;
+    document.querySelector('.user-detail-block-btn')?.addEventListener('click', async () => {
+        const btn = document.querySelector('.user-detail-block-btn') as HTMLElement;
         const id = btn?.dataset.id;
         const status = btn?.dataset.status;
         const endpoint = isSuspended(status ?? '')
@@ -336,9 +336,9 @@ const attachDetailModalListeners = (renderContent: () => void) => {
     });
 
     // Delete from detail modal
-    document.querySelector('.mhs-detail-delete-btn')?.addEventListener('click', async () => {
+    document.querySelector('.user-detail-delete-btn')?.addEventListener('click', async () => {
         if (!confirm('Apakah Anda yakin ingin menghapus akun ini secara permanen?')) return;
-        const id = (document.querySelector('.mhs-detail-delete-btn') as HTMLElement)?.dataset.id;
+        const id = (document.querySelector('.user-detail-delete-btn') as HTMLElement)?.dataset.id;
         try {
             const response = await apiFetch(`/api/super-admin/users/${id}`, {
                 method: 'DELETE',
