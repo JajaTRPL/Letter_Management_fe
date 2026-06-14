@@ -12,6 +12,7 @@ import { SectionDetailController } from './logic/SectionDetailController';
 import { createKeluargaController } from './logic/SectionKeluargaController';
 import { SectionSaudaraController } from './logic/SectionSaudaraController';
 import { SectionBeasiswaController } from './logic/SectionBeasiswaController';
+import { attachRupiahFormatter } from '../../shared/formatters';
 
 let beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
 let hasUnsavedChanges = false;
@@ -66,7 +67,6 @@ export const initProfilMahasiswaLogic = () => {
     const sectionStatusTimers = new Map<string, number>();
     let saudaraDeleteButtons: HTMLButtonElement[] = [];
     let beasiswaDeleteButtons: HTMLButtonElement[] = [];
-    const incomeInputIds = ['ayah_penghasilan', 'ibu_penghasilan', 'wali_penghasilan'];
 
     const onlyDigits = (value: string) => value.replace(/\D/g, '');
 
@@ -96,20 +96,9 @@ export const initProfilMahasiswaLogic = () => {
         if (nextElement?.classList.contains('profile-field-error')) nextElement.remove();
     };
 
-    const formatIndonesianThousands = (value: string) => {
-        const digits = onlyDigits(value);
-        if (!digits) return '';
-        return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    };
-
     const formatProfileNumericFields = () => {
         const phoneInput = document.getElementById('no_hp') as HTMLInputElement | null;
         if (phoneInput) phoneInput.value = onlyDigits(phoneInput.value);
-
-        incomeInputIds.forEach(id => {
-            const input = document.getElementById(id) as HTMLInputElement | null;
-            if (input) input.value = formatIndonesianThousands(input.value);
-        });
     };
 
     const handleProfileNumericInput = (e: Event) => {
@@ -123,11 +112,6 @@ export const initProfilMahasiswaLogic = () => {
             const sectionId = input.closest('.profile-section')?.getAttribute('data-section');
             if (sectionId) clearSectionStatus(sectionId);
             return;
-        }
-
-        if (incomeInputIds.includes(input.id)) {
-            const nextValue = formatIndonesianThousands(input.value);
-            if (input.value !== nextValue) input.value = nextValue;
         }
     };
 
@@ -797,6 +781,11 @@ export const initProfilMahasiswaLogic = () => {
                             }
                         });
                     }
+
+                    ['ayah_penghasilan', 'ibu_penghasilan', 'wali_penghasilan'].forEach(id => {
+                        const el = document.getElementById(id) as HTMLInputElement | null;
+                        if (el) attachRupiahFormatter(el);
+                    });
 
                     if (beasiswaTbody) beasiswaTbody.innerHTML = '';
                     if (profile.scholarship_histories && Array.isArray(profile.scholarship_histories)) {

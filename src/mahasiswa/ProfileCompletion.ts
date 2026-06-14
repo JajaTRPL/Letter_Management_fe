@@ -1,4 +1,3 @@
-import { handleRedirection } from '../login/Login'
 import { attachNimUppercaseHandler, normalizeNim } from '../shared/nim-utils'
 import { populateStudyProgramSelect } from '../shared/study-program-select'
 import { apiFetch } from '../shared/api-client'
@@ -267,6 +266,9 @@ export const renderProfileCompletion = () => {
       if (response.ok) {
         localStorage.setItem('auth_status', UserStatus.ACTIVE)
         showSuccess('Profil berhasil dilengkapi!')
+        // Lazy import of the Login dispatch helper avoids a static page→page edge
+        // (part of the inherited import cycle, C1). Behavior is unchanged.
+        const { handleRedirection } = await import('../login/Login')
         handleRedirection(localStorage.getItem('auth_role') || 'mahasiswa')
       } else {
         const msg = result.errors

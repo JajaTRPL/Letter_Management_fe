@@ -26,6 +26,7 @@ export type MahasiswaProfileDisplay = {
     fullName: string;
     nim: string;
     email: string;
+    phone: string;
     faculty: string;
     studyProgram: string;
     studyProgramCode: string;
@@ -167,6 +168,23 @@ export const mergeMahasiswaProfileDisplay = (
             s => s.application?.user?.email,
             s => s.normalized?.email,
             s => s.student?.email,
+        ]),
+        // No. Telepon — canonical source is MahasiswaProfile.no_hp. The detail
+        // endpoints serialise the raw relation (column `no_hp`); `profile_summary`
+        // does not carry phone today, so the legacy `no_telp` alias and the
+        // scholarship `student.phone` are kept as defensive fallbacks. Never
+        // localStorage, never invented.
+        phone: pickFirstString(sources, [
+            s => s.profile_summary?.no_hp,
+            s => s.profile?.no_hp,
+            s => s.profile?.no_telp,
+            s => s.profile?.phone,
+            s => s.profile?.phone_number,
+            s => s.application?.mahasiswa_profile?.no_hp,
+            s => s.application?.mahasiswa_profile?.no_telp,
+            s => s.application?.mahasiswaProfile?.no_hp,
+            s => s.application?.mahasiswaProfile?.noHp,
+            s => s.student?.phone,
         ]),
         faculty: pickFirstString(sources, [
             s => s.profile_summary?.faculty,
