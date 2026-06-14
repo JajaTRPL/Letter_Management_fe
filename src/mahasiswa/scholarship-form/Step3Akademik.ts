@@ -1,4 +1,4 @@
-export const renderStep3Akademik = (formData: any) => `
+export const renderStep3Akademik = (formData: any, supportingDocumentsHtml = '') => `
     <div class="animate-enter-right space-y-8 pb-8">
         <div class="border-b border-gray-100 pb-4">
             <h3 class="text-xl font-bold text-gray-800">Data Pengajuan & Akademik</h3>
@@ -142,35 +142,34 @@ export const renderStep3Akademik = (formData: any) => `
             </div>
         </div>
 
-        <div class="space-y-6 pt-6 border-t border-gray-100">
-            <h4 class="text-lg font-bold text-gray-800">Dokumen Pendukung</h4>
-            
-            <div class="space-y-4">
-                <div class="grid grid-cols-[200px_1fr] items-start gap-4">
-                    <label class="text-sm font-bold text-gray-800 pt-2">Transkrip Nilai <span class="text-red-500">*</span></label>
-                    <div class="space-y-1">
-                        <input type="file" id="transkrip-nilai-upload" name="transkrip-nilai" accept=".pdf" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
-                        <p class="text-[10px] text-gray-400">Format: PDF (MAX 2MB)</p>
-                    </div>
-                </div>
-                <div class="grid grid-cols-[200px_1fr] items-start gap-4">
-                    <label class="text-sm font-bold text-gray-800 pt-2">Slip Gaji Ayah</label>
-                    <div class="space-y-1">
-                        <input type="file" id="slip-gaji-ayah-upload" name="slip-ayah" accept="application/pdf,.pdf" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
-                        <p class="text-[10px] text-gray-400">Format: PDF (MAX 2MB)</p>
-                    </div>
-                </div>
-                <div class="grid grid-cols-[200px_1fr] items-start gap-4">
-                    <label class="text-sm font-bold text-gray-800 pt-2">Slip Gaji Ibu</label>
-                    <div class="space-y-1">
-                        <input type="file" id="slip-gaji-ibu-upload" name="slip-ibu" accept="application/pdf,.pdf" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200">
-                        <p class="text-[10px] text-gray-400">Format: PDF (MAX 2MB)</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+        ${supportingDocumentsHtml}
     </div>
 `;
+
+// Phase 2A — Wire the Beasiswa name + scholarship-history nama_beasiswa
+// inputs with the acronym-aware title case formatter ("lpdp kip-k" → "LPDP
+// KIP-K"). Other history fields (periode / status) and academic numeric
+// fields are NOT wired here.
+//
+// Phase 2B — additionally wire scholarship_histories[i][jumlah] with the
+// rupiah display formatter. The helper stores the canonical digits-only
+// string on input.dataset.rawValue and updates the displayed value with
+// Indonesian thousands separators. The submit serializer in
+// ScholarshipForm.saveCurrentStep parses the displayed value back to
+// digits-only via parseRupiahToDigits before sending the payload.
+import { attachBlurTitleCase, attachRupiahFormatter } from '../../shared/formatters';
+
+const wireBeasiswaTitleCase = (root: ParentNode) => {
+    const nama = root.querySelector('input[name="scholarship_name"]') as HTMLInputElement | null;
+    if (nama) attachBlurTitleCase(nama);
+    root.querySelectorAll('input[name^="scholarship_histories"][name$="[nama_beasiswa]"]')
+        .forEach(el => attachBlurTitleCase(el as HTMLInputElement));
+};
+
+const wireBeasiswaRupiah = (root: ParentNode) => {
+    root.querySelectorAll('input[name^="scholarship_histories"][name$="[jumlah]"]')
+        .forEach(el => attachRupiahFormatter(el as HTMLInputElement));
+};
 
 export const attachStep3Events = () => {
     // leave semester toggle
@@ -250,9 +249,21 @@ export const attachStep3Events = () => {
             tbody.appendChild(tr);
             bindHapusBeasiswa();
             updateBeasiswaCounter();
+            // Attach formatters to the newly added row only. Both helpers add
+            // listeners to fresh elements, so no duplicate-listener risk.
+            wireBeasiswaTitleCase(tr);
+            wireBeasiswaRupiah(tr);
         }
     });
 
     bindHapusBeasiswa();
     updateBeasiswaCounter();
+
+    // Initial wire: covers the static scholarship_name input and any
+    // already-rendered history rows (e.g. from saved draft data). For
+    // rupiah, attachRupiahFormatter formats pre-populated values on attach
+    // so existing draft "1250000" or legacy "1.250.000" both render as
+    // "1.250.000" with input.dataset.rawValue = "1250000".
+    wireBeasiswaTitleCase(document);
+    wireBeasiswaRupiah(document);
 };

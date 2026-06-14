@@ -20,6 +20,8 @@ export const resolveCurrentSemester = (sources: Array<any>): number | string | n
 };
 
 export const mapApplicationToFormData = (app: any, formData: any) => {
+    const applicationFields = { ...app };
+    delete applicationFields.ktm_path;
     const profile = app.mahasiswa_profile || app.mahasiswaProfile || {};
     const keluarga = profile.keluarga || [];
 
@@ -36,7 +38,7 @@ export const mapApplicationToFormData = (app: any, formData: any) => {
     const scholarship_histories = profile.scholarship_histories || [];
 
     return {
-        ...app,
+        ...applicationFields,
         nim: profile.nim,
         faculty: app.user?.study_program?.department?.faculty?.name || '',
         study_program: app.user?.study_program?.name || '',
@@ -80,8 +82,7 @@ export const mapApplicationToFormData = (app: any, formData: any) => {
         leave_semester: app.leave_semester,
         thesis_status: app.thesis_status || 'Belum',
         exam_plan_date: app.exam_plan_date,
-        has_scholarship_history: app.has_scholarship_history,
-        ktm_path: app.ktm_path
+        has_scholarship_history: app.has_scholarship_history
     };
 };
 
