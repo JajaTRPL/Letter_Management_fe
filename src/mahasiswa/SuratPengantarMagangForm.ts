@@ -2,6 +2,16 @@ import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { apiFetch } from '../shared/api-client';
 import { attachProtectedPdfViewer, renderProtectedPdfViewer } from '../shared/protected-pdf-viewer';
 import {
+    attachSupportingDocumentGallery,
+    renderSupportingDocumentGallery,
+} from '../shared/supporting-document-gallery';
+import { magangSupportingDescriptors } from '../shared/magang-supporting-documents';
+import {
+    formatDetailDateTime,
+    renderDetailHeaderCard,
+    renderDetailInfoCard,
+} from '../shared/mahasiswa-letter-detail';
+import {
     mergeMahasiswaProfileDisplay,
     type MahasiswaProfileDisplay,
 } from '../shared/mahasiswa-profile-source';
@@ -15,13 +25,47 @@ import {
 } from './detail-navigation';
 import {
     ACTIVE_READONLY_LETTER_STATUSES,
-    canDownloadDocument,
     getLetterStatusLabel,
     getLetterStatusTone,
     isStudentReviewStage,
     LETTER_WORKFLOW_STATUS,
 } from '../shared/letter-workflow';
 import { showError, showSuccess, showWarning } from '../shared/toast';
+import {
+    attachBlurDigitsOnly,
+    attachBlurTitleCase,
+    titleCaseIndonesian,
+} from '../shared/formatters';
+import {
+    escapeFormAttribute,
+    escapeFormHtml,
+    renderFormActionFooter,
+    renderFormField,
+} from '../shared/form-primitives';
+import {
+    attachSupportingDocumentUploadSection,
+    createSupportingDocumentUploadState,
+    renderSupportingDocumentUploadSection,
+    validateSupportingDocumentUploads,
+    type SupportingDocumentUploadState,
+} from '../shared/supporting-document-upload';
+import type { SupportingDocumentMetadataMap } from '../shared/supporting-document-metadata';
+import {
+    canDownloadFinalForMahasiswa,
+    canPreviewFinalForMahasiswa,
+    resolveMahasiswaRetentionState,
+    retentionAwareSupportingDescriptors,
+    type LetterRetentionSummary,
+} from '../shared/retention-state';
+import {
+    createMagangDraftPayload,
+    emptyMagangDraftValues,
+    MAGANG_MAHASISWA_ENDPOINTS,
+    MAGANG_SUPPORTING_DOCUMENT_UPLOADS,
+    magangExistingSupportingDocumentValues,
+    mapMagangDraftValues,
+    type MagangDraftValues,
+} from '../shared/magang-form';
 
 type MagangApplication = {
     id: number;
@@ -43,12 +87,13 @@ type MagangApplication = {
     tgl_selesai?: string | null;
     peran?: string | null;
     dosen_pembimbing_dpa?: string | null;
-    proposal_kegiatan_magang_path?: string | null;
+    supporting_documents?: SupportingDocumentMetadataMap | null;
     revision_note?: string | null;
     rejection_reason?: string | null;
     created_at?: string | null;
     submitted_at?: string | null;
     student_reviewed_at?: string | null;
+    retention_summary?: LetterRetentionSummary | null;
     mahasiswa_profile?: StudentProfile | null;
     user?: StudentUser | null;
 };
@@ -72,23 +117,8 @@ type StudentUser = {
     } | null;
 };
 
-type MagangFormData = {
-    jabatan_penerima: string;
-    nama_perusahaan: string;
-    alamat_jalan: string;
-    alamat_kelurahan: string;
-    alamat_kecamatan: string;
-    alamat_kota_kabupaten: string;
-    alamat_provinsi: string;
-    kode_pos: string;
-    peran: string;
-    tgl_mulai: string;
-    tgl_selesai: string;
-    dosen_pembimbing_dpa: string;
-    proposal_kegiatan_magang_path: string;
-};
-
 type ProfileViewData = MahasiswaProfileDisplay;
+type MagangFormData = MagangDraftValues;
 
 const activeReadonlyStatuses: readonly string[] = ACTIVE_READONLY_LETTER_STATUSES;
 
@@ -96,16 +126,36 @@ let currentStep = 1;
 let application: MagangApplication | null = null;
 let formData: MagangFormData = emptyFormData();
 let profileData: ProfileViewData = emptyProfileData();
-let selectedProposalFile: File | null = null;
+let supportingDocumentUploadState: SupportingDocumentUploadState = createSupportingDocumentUploadState();
 let hasAcceptedStatement = false;
 let isSubmitting = false;
 let revokeGeneratedLetterPreview: (() => void) | null = null;
 const GENERATED_LETTER_PREVIEW_ROOT_ID = 'magang-mahasiswa-generated-letter-preview';
 
+// Uploaded supporting document (proposal) preview — owner-side. Uses the shared
+// supporting-document gallery against the dedicated, role-scoped preview
+// endpoint (NOT /api/storage). Mirrors the Tendik/Akademik reviewer pages.
+let revokeSupportingGallery: (() => void) | null = null;
+const SUPPORTING_GALLERY_ROOT_ID = 'magang-mahasiswa-supporting-gallery';
+
+let revokeSupportingDocumentUploadInputs: (() => void) | null = null;
+
 const cleanupGeneratedLetterPreview = (): void => {
     if (!revokeGeneratedLetterPreview) return;
     revokeGeneratedLetterPreview();
     revokeGeneratedLetterPreview = null;
+};
+
+const cleanupProposalPreview = (): void => {
+    if (!revokeSupportingGallery) return;
+    revokeSupportingGallery();
+    revokeSupportingGallery = null;
+};
+
+const cleanupSupportingDocumentUploadInputs = (): void => {
+    if (!revokeSupportingDocumentUploadInputs) return;
+    revokeSupportingDocumentUploadInputs();
+    revokeSupportingDocumentUploadInputs = null;
 };
 
 const renderGeneratedLetterPreviewCard = (): string => renderProtectedPdfViewer(GENERATED_LETTER_PREVIEW_ROOT_ID, {
@@ -130,6 +180,9 @@ export const renderSuratPengantarMagangForm = async () => {
         if (draftData.application) {
             application = draftData.application;
             formData = mapApplicationData(draftData.application);
+            supportingDocumentUploadState = createSupportingDocumentUploadState(
+                magangExistingSupportingDocumentValues(draftData.application),
+            );
         }
 
         if (!application) {
@@ -152,6 +205,7 @@ export const renderSuratPengantarMagangDetail = async (applicationId: number | s
     const activePage = activePageForDetailOrigin(origin);
 
     cleanupGeneratedLetterPreview();
+    cleanupProposalPreview();
     renderLoading('Memuat detail pengajuan...', activePage);
 
     try {
@@ -160,7 +214,7 @@ export const renderSuratPengantarMagangDetail = async (applicationId: number | s
         // legacy `application` payload. The shared merger reads from
         // `profile_summary` first, so the older parallel /api/profile
         // fetch is no longer needed.
-        const response = await apiFetch(`/api/mahasiswa/surat-pengantar-magang/${applicationId}`, {
+        const response = await apiFetch(MAGANG_MAHASISWA_ENDPOINTS.detail(applicationId), {
             cache: 'no-store',
         });
 
@@ -191,31 +245,18 @@ export const renderSuratPengantarMagangDetail = async (applicationId: number | s
 };
 
 const resetState = () => {
+    cleanupSupportingDocumentUploadInputs();
     currentStep = 1;
     application = null;
     formData = emptyFormData();
     profileData = emptyProfileData();
-    selectedProposalFile = null;
+    supportingDocumentUploadState = createSupportingDocumentUploadState();
     hasAcceptedStatement = false;
     isSubmitting = false;
 };
 
 function emptyFormData(): MagangFormData {
-    return {
-        jabatan_penerima: '',
-        nama_perusahaan: '',
-        alamat_jalan: '',
-        alamat_kelurahan: '',
-        alamat_kecamatan: '',
-        alamat_kota_kabupaten: '',
-        alamat_provinsi: '',
-        kode_pos: '',
-        peran: '',
-        tgl_mulai: '',
-        tgl_selesai: '',
-        dosen_pembimbing_dpa: '',
-        proposal_kegiatan_magang_path: '',
-    };
+    return emptyMagangDraftValues();
 }
 
 function emptyProfileData(): ProfileViewData {
@@ -223,6 +264,7 @@ function emptyProfileData(): ProfileViewData {
         fullName: '',
         nim: '',
         email: '',
+        phone: '',
         faculty: '',
         studyProgram: '',
         studyProgramCode: '',
@@ -235,7 +277,7 @@ function emptyProfileData(): ProfileViewData {
 }
 
 const fetchDraftData = async () => {
-    const response = await apiFetch('/api/mahasiswa/surat-pengantar-magang/draft', {
+    const response = await apiFetch(MAGANG_MAHASISWA_ENDPOINTS.draft, {
         cache: 'no-store',
     });
 
@@ -247,7 +289,7 @@ const fetchDraftData = async () => {
 };
 
 const fetchLatestActiveApplication = async (): Promise<MagangApplication | null> => {
-    const response = await apiFetch('/api/mahasiswa/surat-pengantar-magang/applications', {
+    const response = await apiFetch(MAGANG_MAHASISWA_ENDPOINTS.applications, {
         cache: 'no-store',
     });
 
@@ -265,25 +307,10 @@ const fetchLatestActiveApplication = async (): Promise<MagangApplication | null>
 // /draft, /api/profile, or detail-application — and the merger picks the
 // first real value for every field with a documented precedence chain.
 
-const mapApplicationData = (app: MagangApplication): MagangFormData => ({
-    // Prefer the explicit final-contract field; fall back to legacy nama_penerima
-    // so revisions of old records pre-fill instead of forcing re-entry.
-    jabatan_penerima: valueOrEmpty(app.jabatan_penerima) || valueOrEmpty(app.nama_penerima),
-    nama_perusahaan: valueOrEmpty(app.nama_perusahaan),
-    alamat_jalan: valueOrEmpty(app.alamat_jalan),
-    alamat_kelurahan: valueOrEmpty(app.alamat_kelurahan),
-    alamat_kecamatan: valueOrEmpty(app.alamat_kecamatan),
-    alamat_kota_kabupaten: valueOrEmpty(app.alamat_kota_kabupaten),
-    alamat_provinsi: valueOrEmpty(app.alamat_provinsi),
-    kode_pos: valueOrEmpty(app.kode_pos),
-    peran: valueOrEmpty(app.peran),
-    tgl_mulai: isoDateOnly(app.tgl_mulai),
-    tgl_selesai: isoDateOnly(app.tgl_selesai),
-    dosen_pembimbing_dpa: valueOrEmpty(app.dosen_pembimbing_dpa),
-    proposal_kegiatan_magang_path: valueOrEmpty(app.proposal_kegiatan_magang_path),
-});
+const mapApplicationData = (app: MagangApplication): MagangFormData => mapMagangDraftValues(app);
 
 const renderLoading = (message: string, activePage = 'administrasi') => {
+    cleanupSupportingDocumentUploadInputs();
     renderDashboardLayout('Formulir Surat', `
         <div class="max-w-5xl mx-auto">
             <div class="bg-white border border-gray-100 rounded-[24px] p-10 shadow-sm flex items-center gap-4">
@@ -295,6 +322,7 @@ const renderLoading = (message: string, activePage = 'administrasi') => {
 };
 
 const renderForm = () => {
+    cleanupSupportingDocumentUploadInputs();
     const isRevision = application?.status === LETTER_WORKFLOW_STATUS.REVISION;
     const content = `
         <div class="max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
@@ -404,18 +432,11 @@ const renderStepContent = () => {
                     ${renderTextInput('dosen_pembimbing_dpa', 'Dosen Pembimbing Akademik / DPA', 'Masukkan nama lengkap Dosen Pembimbing Akademik (DPA)', formData.dosen_pembimbing_dpa)}
                 </div>
 
-                <div class="border-t border-gray-200 pt-8 space-y-5">
-                    <h3 class="text-xl font-bold text-gray-800">Dokumen Pendukung</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3 md:gap-6 md:items-start">
-                        <label for="proposal_kegiatan_magang" class="text-sm font-bold text-gray-800 pt-2">Proposal Kegiatan Magang</label>
-                        <div>
-                            <input id="proposal_kegiatan_magang" name="proposal_kegiatan_magang" type="file" accept="application/pdf,.pdf" class="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-l-lg file:border-0 file:bg-gray-200 file:text-gray-600 hover:file:bg-gray-300 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-primary-teal">
-                            <p id="proposal-file-name" class="text-xs text-gray-500 mt-2">
-                                ${formData.proposal_kegiatan_magang_path ? `File tersimpan: ${escapeHtml(fileNameFromPath(formData.proposal_kegiatan_magang_path))}` : 'Format: PDF, maks 2 MB.'}
-                            </p>
-                        </div>
-                    </div>
-                </div>
+                ${renderSupportingDocumentUploadSection(
+                    MAGANG_SUPPORTING_DOCUMENT_UPLOADS,
+                    supportingDocumentUploadState,
+                    { disabled: isSubmitting },
+                )}
             </div>
         `;
     }
@@ -454,7 +475,7 @@ const renderStepContent = () => {
                     ['Dosen Pembimbing Akademik / DPA', formData.dosen_pembimbing_dpa],
                 ])}
                 ${renderReviewSection('Dokumen Pendukung', [
-                    ['Proposal Kegiatan Magang', fileNameFromPath(formData.proposal_kegiatan_magang_path)],
+                    ['Proposal Kegiatan Magang', supportingDocumentReviewValue('proposal')],
                 ])}
             </div>
 
@@ -466,33 +487,34 @@ const renderStepContent = () => {
     `;
 };
 
-const renderReadonlyField = (label: string, value: string) => `
-    <div class="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-2 md:gap-6 md:items-center">
-        <label class="text-sm font-bold text-gray-800">${escapeHtml(label)}</label>
-        <input type="text" value="${escapeAttribute(value || '-')}" readonly class="w-full px-4 py-2.5 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 cursor-not-allowed outline-none">
-    </div>
-`;
+const renderReadonlyField = (label: string, value: string) => {
+    const id = `readonly-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    return renderFormField({
+        id,
+        label,
+        columnsClassName: 'grid grid-cols-1 md:grid-cols-[160px_1fr] gap-2 md:gap-6 md:items-center',
+        controlHtml: `<input id="${id}" type="text" value="${escapeAttribute(value || '-')}" readonly class="w-full px-4 py-2.5 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 cursor-not-allowed outline-none">`,
+    });
+};
 
-const renderTextInput = (name: keyof MagangFormData, label: string, placeholder: string, value: string) => `
-    <div class="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3 md:gap-6 md:items-center">
-        <label for="${name}" class="text-sm font-bold text-gray-800">${escapeHtml(label)}</label>
-        <input id="${name}" name="${name}" type="text" value="${escapeAttribute(value)}" placeholder="${escapeAttribute(placeholder)}" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
-    </div>
-`;
+const renderTextInput = (name: keyof MagangFormData, label: string, placeholder: string, value: string) => renderFormField({
+    id: name,
+    label,
+    controlHtml: `<input id="${name}" name="${name}" type="text" value="${escapeAttribute(value)}" placeholder="${escapeAttribute(placeholder)}" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">`,
+});
 
-const renderTextarea = (name: keyof MagangFormData, label: string, placeholder: string, value: string) => `
-    <div class="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3 md:gap-6 md:items-start">
-        <label for="${name}" class="text-sm font-bold text-gray-800 pt-2">${escapeHtml(label)}</label>
-        <textarea id="${name}" name="${name}" rows="4" placeholder="${escapeAttribute(placeholder)}" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none resize-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">${escapeHtml(value)}</textarea>
-    </div>
-`;
+const renderTextarea = (name: keyof MagangFormData, label: string, placeholder: string, value: string) => renderFormField({
+    id: name,
+    label,
+    align: 'start',
+    controlHtml: `<textarea id="${name}" name="${name}" rows="4" placeholder="${escapeAttribute(placeholder)}" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none resize-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">${escapeHtml(value)}</textarea>`,
+});
 
-const renderDateInput = (name: keyof MagangFormData, label: string, value: string) => `
-    <div class="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3 md:gap-6 md:items-center">
-        <label for="${name}" class="text-sm font-bold text-gray-800">${escapeHtml(label)}</label>
-        <input id="${name}" name="${name}" type="date" value="${escapeAttribute(value)}" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
-    </div>
-`;
+const renderDateInput = (name: keyof MagangFormData, label: string, value: string) => renderFormField({
+    id: name,
+    label,
+    controlHtml: `<input id="${name}" name="${name}" type="date" value="${escapeAttribute(value)}" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">`,
+});
 
 const renderReviewSection = (title: string, rows: [string, string][]) => `
     <section class="bg-[#F0F8F7] rounded-2xl p-6">
@@ -508,6 +530,11 @@ const renderReviewSection = (title: string, rows: [string, string][]) => `
     </section>
 `;
 
+const supportingDocumentReviewValue = (key: string): string => {
+    const value = supportingDocumentUploadState.existingValues[key];
+    return typeof value === 'string' && value.trim() !== '' ? value : '-';
+};
+
 const renderNavigationButtons = () => {
     const isSubmitStep = currentStep === 3;
     const submitDisabled = isSubmitStep && !hasAcceptedStatement;
@@ -515,16 +542,19 @@ const renderNavigationButtons = () => {
         ? application?.status === LETTER_WORKFLOW_STATUS.REVISION ? 'Kirim Ulang Pengajuan' : 'Kirim Pengajuan'
         : 'Lanjutkan';
 
-    return `
-        <div class="pt-10 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button id="btn-prev-step" type="button" class="px-6 py-2.5 border border-primary-teal text-primary-teal font-bold rounded-xl hover:bg-teal-50 transition-colors ${currentStep === 1 ? 'sm:invisible' : ''}">
-                ${currentStep === 1 ? 'Batalkan' : 'Kembali'}
-            </button>
-            <button id="btn-next-step" type="button" ${submitDisabled || isSubmitting ? 'disabled' : ''} class="px-7 py-2.5 rounded-xl font-bold transition-colors ${submitDisabled || isSubmitting ? 'bg-gray-300 text-white cursor-not-allowed' : 'bg-primary-teal text-white hover:bg-teal-800'}">
-                ${isSubmitting ? 'Memproses...' : escapeHtml(nextLabel)}
-            </button>
-        </div>
-    `;
+    return renderFormActionFooter({
+        previous: {
+            id: 'btn-prev-step',
+            label: currentStep === 1 ? 'Batalkan' : 'Kembali',
+            invisible: currentStep === 1,
+        },
+        next: {
+            id: 'btn-next-step',
+            label: nextLabel,
+            disabled: submitDisabled,
+            loading: isSubmitting,
+        },
+    });
 };
 
 const attachFormEvents = () => {
@@ -567,19 +597,48 @@ const attachFormEvents = () => {
         await submitApplication();
     });
 
-    document.getElementById('proposal_kegiatan_magang')?.addEventListener('change', (event) => {
-        const input = event.currentTarget as HTMLInputElement;
-        selectedProposalFile = input.files?.[0] || null;
-        const label = document.getElementById('proposal-file-name');
-        if (label && selectedProposalFile) {
-            label.textContent = `File dipilih: ${selectedProposalFile.name}`;
-        }
-    });
+    revokeSupportingDocumentUploadInputs = attachSupportingDocumentUploadSection(
+        MAGANG_SUPPORTING_DOCUMENT_UPLOADS,
+        supportingDocumentUploadState,
+        {
+            disabled: isSubmitting,
+            onValidationError: showWarning,
+        },
+    );
 
     document.getElementById('agreement-checkbox')?.addEventListener('change', (event) => {
         hasAcceptedStatement = (event.currentTarget as HTMLInputElement).checked;
         renderForm();
     });
+
+    wirePhase2AFormatters();
+};
+
+// Phase 2A — wire approved low-risk text/digit fields. Pure inline binding;
+// helpers from src/shared/formatters.ts. Only Step 2 inputs exist in the DOM
+// at this point; missing-id lookups are no-ops, so a guarded query is enough.
+// No keystroke transforms (would mangle in-progress acronyms); blur only.
+const wirePhase2AFormatters = () => {
+    const byId = (id: string) => document.getElementById(id) as HTMLInputElement | null;
+
+    // titleCaseIndonesian — no acronym whitelist applied here.
+    (['jabatan_penerima', 'peran', 'alamat_kelurahan', 'alamat_kecamatan', 'alamat_kota_kabupaten', 'alamat_provinsi'] as const)
+        .forEach(id => {
+            const el = byId(id);
+            if (!el) return;
+            el.addEventListener('blur', () => {
+                const next = titleCaseIndonesian(el.value);
+                if (next !== el.value) el.value = next;
+            });
+        });
+
+    // titleCaseWithAcronyms — needed for institutional names (PT, CV, BCA, …).
+    const namaPerusahaan = byId('nama_perusahaan');
+    if (namaPerusahaan) attachBlurTitleCase(namaPerusahaan);
+
+    // Digits-only blur normalization. No passLiteralDash — postal codes are numeric.
+    const kodePos = byId('kode_pos');
+    if (kodePos) attachBlurDigitsOnly(kodePos);
 };
 
 const collectStep2Values = () => {
@@ -624,13 +683,12 @@ const validateStep2 = () => {
         return false;
     }
 
-    if (!selectedProposalFile && !formData.proposal_kegiatan_magang_path) {
-        showWarning('Proposal Kegiatan Magang wajib diunggah.');
-        return false;
-    }
-
-    if (selectedProposalFile && selectedProposalFile.size > 2 * 1024 * 1024) {
-        showWarning('Ukuran Proposal Kegiatan Magang maksimal 2 MB.');
+    const uploadValidation = validateSupportingDocumentUploads(
+        MAGANG_SUPPORTING_DOCUMENT_UPLOADS,
+        supportingDocumentUploadState,
+    );
+    if (!uploadValidation.valid) {
+        showWarning(uploadValidation.firstError || 'Dokumen pendukung wajib dilengkapi.');
         return false;
     }
 
@@ -641,31 +699,10 @@ const saveDraft = async () => {
     isSubmitting = true;
     renderForm();
 
-    const body = new FormData();
-    // Final structured contract — the source of truth from this phase onward.
-    body.append('jabatan_penerima', formData.jabatan_penerima);
-    body.append('nama_perusahaan', formData.nama_perusahaan);
-    body.append('alamat_jalan', formData.alamat_jalan);
-    body.append('alamat_kelurahan', formData.alamat_kelurahan);
-    body.append('alamat_kecamatan', formData.alamat_kecamatan);
-    body.append('alamat_kota_kabupaten', formData.alamat_kota_kabupaten);
-    body.append('alamat_provinsi', formData.alamat_provinsi);
-    body.append('kode_pos', formData.kode_pos);
-    body.append('peran', formData.peran);
-    body.append('tgl_mulai', formData.tgl_mulai);
-    body.append('tgl_selesai', formData.tgl_selesai);
-    body.append('dosen_pembimbing_dpa', formData.dosen_pembimbing_dpa);
-    // Transitional aliases for the current backend template resolver, which
-    // still reads the legacy aggregate columns. Removed once Magang.1 lands.
-    body.append('nama_penerima', formData.jabatan_penerima);
-    body.append('alamat_perusahaan', composeLegacyAddress(formData));
-    body.append('rentang_tanggal', composeLegacyDateRange(formData.tgl_mulai, formData.tgl_selesai));
-    if (selectedProposalFile) {
-        body.append('proposal_kegiatan_magang', selectedProposalFile);
-    }
+    const body = createMagangDraftPayload(formData, supportingDocumentUploadState);
 
     try {
-        const response = await apiFetch('/api/mahasiswa/surat-pengantar-magang/draft', {
+        const response = await apiFetch(MAGANG_MAHASISWA_ENDPOINTS.draft, {
             method: 'POST',
             body,
             isFormData: true,
@@ -678,7 +715,9 @@ const saveDraft = async () => {
         const payload = await response.json();
         application = payload.application;
         formData = mapApplicationData(payload.application);
-        selectedProposalFile = null;
+        supportingDocumentUploadState = createSupportingDocumentUploadState(
+            magangExistingSupportingDocumentValues(payload.application),
+        );
         return true;
     } catch (error) {
         console.error(error);
@@ -697,7 +736,7 @@ const submitApplication = async () => {
     renderForm();
 
     try {
-        const response = await apiFetch('/api/mahasiswa/surat-pengantar-magang/submit', {
+        const response = await apiFetch(MAGANG_MAHASISWA_ENDPOINTS.submit, {
             method: 'POST',
         });
 
@@ -716,75 +755,108 @@ const submitApplication = async () => {
     }
 };
 
-const renderDetailContent = (detailApplication: MagangApplication, viewProfile: ProfileViewData, origin: MahasiswaDetailOrigin) => `
-    <div class="max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <button id="btn-detail-back" type="button" class="inline-flex items-center gap-2 text-gray-700 hover:text-primary-teal font-semibold w-fit">
-                ${iconArrowLeft('20')}
-                <span>${backLabelForDetailOrigin(origin)}</span>
-            </button>
-            <span class="${statusBadgeClass(detailApplication.status)} px-4 py-1.5 rounded-full text-xs font-bold border w-fit">
-                ${escapeHtml(statusLabel(detailApplication.status))}
-            </span>
+const renderProposalCard = (detailApplication: MagangApplication): string => {
+    const retention = resolveMahasiswaRetentionState(detailApplication.retention_summary);
+
+    return `
+        <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+            <div class="px-7 py-5 border-b border-gray-50">
+                <h3 class="text-base font-bold text-gray-800">Dokumen Pendukung</h3>
+            </div>
+            <div class="p-6 md:p-7">
+                ${renderSupportingDocumentGallery(
+                    SUPPORTING_GALLERY_ROOT_ID,
+                    retentionAwareSupportingDescriptors(
+                        detailApplication.retention_summary,
+                        magangSupportingDescriptors(detailApplication),
+                    ),
+                    { emptyLabel: retention.supportingDocumentsEmptyLabel },
+                )}
+            </div>
         </div>
+    `;
+};
 
-        ${detailApplication.status === LETTER_WORKFLOW_STATUS.REVISION ? renderRevisionBanner(detailApplication.revision_note) : ''}
-        ${detailApplication.status === LETTER_WORKFLOW_STATUS.REJECTED ? renderRejectedBanner(detailApplication.rejection_reason) : ''}
+const renderDetailContent = (detailApplication: MagangApplication, viewProfile: ProfileViewData, origin: MahasiswaDetailOrigin) => {
+    const status = detailApplication.status;
+    return `
+    <div class="max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
+        ${renderDetailHeaderCard({
+            backId: 'btn-detail-back',
+            backLabel: backLabelForDetailOrigin(origin),
+            title: 'Detail Pengajuan',
+            subtitle: 'Surat Pengantar Magang',
+            statusLabel: statusLabel(status),
+            statusBadgeClass: statusBadgeClass(status),
+        })}
 
-        <section class="bg-white rounded-[24px] border border-gray-100 shadow-sm p-6 md:p-10 space-y-6">
-            <div>
-                <h2 class="text-2xl font-bold text-gray-800">Detail Pengajuan</h2>
-                <p class="text-sm text-gray-500 mt-2">Surat Pengantar Magang</p>
+        ${status === LETTER_WORKFLOW_STATUS.REVISION ? renderRevisionBanner(detailApplication.revision_note) : ''}
+        ${status === LETTER_WORKFLOW_STATUS.REJECTED ? renderRejectedBanner(detailApplication.rejection_reason) : ''}
+
+        ${renderDetailInfoCard('Informasi Surat', [
+            ['Jenis Surat', 'Surat Pengantar Magang'],
+            ['Tanggal pengajuan', formatDetailDateTime(detailApplication.submitted_at || detailApplication.created_at)],
+            ['Status', statusLabel(status)],
+        ])}
+
+        ${renderDetailInfoCard('Pemohon', [
+            ['Nama', viewProfile.fullName],
+            ['NIM', viewProfile.nim],
+            ['Program Studi', viewProfile.studyProgram],
+            ['Fakultas', viewProfile.faculty],
+            ['Departemen', viewProfile.department],
+            ['Email Aktif', viewProfile.email],
+            ['No. Telepon', viewProfile.phone],
+        ])}
+
+        ${renderDetailInfoCard('Detail Pengajuan', [
+            ['Jabatan Penerima / Tujuan Surat', valueOrEmpty(detailApplication.jabatan_penerima) || valueOrEmpty(detailApplication.nama_penerima)],
+            ['Nama Perusahaan/Instansi', valueOrEmpty(detailApplication.nama_perusahaan)],
+        ])}
+
+        ${renderDetailInfoCard('Alamat Perusahaan', [
+            ['Alamat Jalan', valueOrEmpty(detailApplication.alamat_jalan) || valueOrEmpty(detailApplication.alamat_perusahaan)],
+            ['Kelurahan/Desa', valueOrEmpty(detailApplication.alamat_kelurahan)],
+            ['Kecamatan', valueOrEmpty(detailApplication.alamat_kecamatan)],
+            ['Kota/Kabupaten', valueOrEmpty(detailApplication.alamat_kota_kabupaten)],
+            ['Provinsi', valueOrEmpty(detailApplication.alamat_provinsi)],
+            ['Kode Pos', valueOrEmpty(detailApplication.kode_pos)],
+        ])}
+
+        ${renderDetailInfoCard('Informasi Kegiatan', [
+            ['Posisi Magang', valueOrEmpty(detailApplication.peran)],
+            ['Tanggal Mulai Magang', formatIndonesianDate(detailApplication.tgl_mulai)],
+            ['Tanggal Selesai Magang', formatIndonesianDate(detailApplication.tgl_selesai)],
+            ['Dosen Pembimbing Akademik / DPA', valueOrEmpty(detailApplication.dosen_pembimbing_dpa)],
+        ])}
+
+        ${detailApplication.rentang_tanggal && !detailApplication.tgl_mulai && !detailApplication.tgl_selesai ? renderDetailInfoCard('Rentang Tanggal (data lama)', [
+            ['Rentang Tanggal', valueOrEmpty(detailApplication.rentang_tanggal)],
+        ]) : ''}
+
+        ${renderProposalCard(detailApplication)}
+
+        ${renderDocumentReviewSection(detailApplication)}
+
+        ${renderTimeline(status)}
+
+        ${status === LETTER_WORKFLOW_STATUS.REVISION ? `
+            <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm p-6 md:p-7 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button id="btn-edit-revision" type="button" class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors">
+                    Perbaiki Pengajuan
+                </button>
             </div>
-
-            ${renderReviewSection('Profil SSO', [
-                ['Nama Lengkap', viewProfile.fullName],
-                ['NIM', viewProfile.nim],
-                ['Fakultas', viewProfile.faculty],
-                ['Program Studi', viewProfile.studyProgram],
-                ['Email Aktif', viewProfile.email],
-            ])}
-            ${renderReviewSection('Detail Pengajuan', [
-                ['Jabatan Penerima / Tujuan Surat', valueOrEmpty(detailApplication.jabatan_penerima) || valueOrEmpty(detailApplication.nama_penerima)],
-                ['Nama Perusahaan/Instansi', valueOrEmpty(detailApplication.nama_perusahaan)],
-            ])}
-            ${renderReviewSection('Alamat Perusahaan', [
-                ['Alamat Jalan', valueOrEmpty(detailApplication.alamat_jalan) || valueOrEmpty(detailApplication.alamat_perusahaan)],
-                ['Kelurahan/Desa', valueOrEmpty(detailApplication.alamat_kelurahan)],
-                ['Kecamatan', valueOrEmpty(detailApplication.alamat_kecamatan)],
-                ['Kota/Kabupaten', valueOrEmpty(detailApplication.alamat_kota_kabupaten)],
-                ['Provinsi', valueOrEmpty(detailApplication.alamat_provinsi)],
-                ['Kode Pos', valueOrEmpty(detailApplication.kode_pos)],
-            ])}
-            ${renderReviewSection('Informasi Kegiatan', [
-                ['Posisi Magang', valueOrEmpty(detailApplication.peran)],
-                ['Tanggal Mulai Magang', formatIndonesianDate(detailApplication.tgl_mulai)],
-                ['Tanggal Selesai Magang', formatIndonesianDate(detailApplication.tgl_selesai)],
-                ['Dosen Pembimbing Akademik / DPA', valueOrEmpty(detailApplication.dosen_pembimbing_dpa)],
-            ])}
-            ${detailApplication.rentang_tanggal && !detailApplication.tgl_mulai && !detailApplication.tgl_selesai ? renderReviewSection('Rentang Tanggal (data lama)', [
-                ['Rentang Tanggal', valueOrEmpty(detailApplication.rentang_tanggal)],
-            ]) : ''}
-            ${renderReviewSection('Dokumen Pendukung', [
-                ['Proposal Kegiatan Magang', fileNameFromPath(valueOrEmpty(detailApplication.proposal_kegiatan_magang_path))],
-            ])}
-
-            ${renderTimeline(detailApplication.status)}
-            ${renderDocumentReviewSection(detailApplication)}
-
-            <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                ${detailApplication.status === LETTER_WORKFLOW_STATUS.REVISION ? `
-                    <button id="btn-edit-revision" type="button" class="px-6 py-2.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors">
-                        Perbaiki Pengajuan
-                    </button>
-                ` : ''}
-            </div>
-        </section>
+        ` : ''}
     </div>
 `;
+};
 
 const attachDetailEvents = (detailApplication: MagangApplication, origin: MahasiswaDetailOrigin) => {
-    document.getElementById('btn-detail-back')?.addEventListener('click', () => goToMahasiswaDetailOrigin(origin));
+    document.getElementById('btn-detail-back')?.addEventListener('click', () => {
+        cleanupGeneratedLetterPreview();
+        cleanupProposalPreview();
+        goToMahasiswaDetailOrigin(origin);
+    });
     document.getElementById('btn-edit-revision')?.addEventListener('click', () => {
         if (detailApplication.status === LETTER_WORKFLOW_STATUS.REVISION) {
             renderSuratPengantarMagangForm();
@@ -797,13 +869,24 @@ const attachDetailEvents = (detailApplication: MagangApplication, origin: Mahasi
         downloadCompletedDocument(detailApplication);
     });
 
+    // Uploaded proposal preview — rendered through the shared supporting-document
+    // gallery against the dedicated, role-scoped preview endpoint (owner-readable).
+    // Not the /api/storage attachment route; no window.open/iframe/download.
+    cleanupProposalPreview();
+    revokeSupportingGallery = attachSupportingDocumentGallery(
+        SUPPORTING_GALLERY_ROOT_ID,
+        retentionAwareSupportingDescriptors(
+            detailApplication.retention_summary,
+            magangSupportingDescriptors(detailApplication),
+        ),
+    );
+
     // Attach the protected PDF.js viewer for student-review and completed states.
     // The viewer fetches the protected generated-preview endpoint as an
     // ArrayBuffer and renders via canvas — no iframe, no blob URL, no
     // legacy /preview dependency.
     if (
-        isStudentReviewStage(detailApplication.status)
-        || canDownloadDocument(detailApplication.status)
+        canPreviewFinalForMahasiswa(detailApplication.status, detailApplication.retention_summary)
     ) {
         cleanupGeneratedLetterPreview();
         revokeGeneratedLetterPreview = attachProtectedPdfViewer({
@@ -814,9 +897,11 @@ const attachDetailEvents = (detailApplication: MagangApplication, origin: Mahasi
 };
 
 const renderDocumentReviewSection = (detailApplication: MagangApplication) => {
+    const retention = resolveMahasiswaRetentionState(detailApplication.retention_summary);
+
     if (isStudentReviewStage(detailApplication.status)) {
         return `
-            <section class="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
+            <section class="bg-white border border-gray-100 rounded-[24px] shadow-sm p-6 md:p-7 space-y-5">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                         <h3 class="text-lg font-bold text-gray-800">Review Dokumen</h3>
@@ -834,9 +919,21 @@ const renderDocumentReviewSection = (detailApplication: MagangApplication) => {
         `;
     }
 
-    if (canDownloadDocument(detailApplication.status)) {
+    if (detailApplication.status === LETTER_WORKFLOW_STATUS.COMPLETED) {
+        if (!retention.finalDownloadAvailable) {
+            return retention.noticeHtml ? `
+                <section class="bg-white border border-gray-100 rounded-[24px] shadow-sm p-6 md:p-7 space-y-5">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">Dokumen Selesai</h3>
+                        <p class="text-sm text-gray-600 mt-1">Pengajuan telah selesai.</p>
+                    </div>
+                    ${retention.noticeHtml}
+                </section>
+            ` : '';
+        }
+
         return `
-            <section class="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
+            <section class="bg-white border border-gray-100 rounded-[24px] shadow-sm p-6 md:p-7 space-y-5">
                 <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h3 class="text-lg font-bold text-gray-800">Dokumen Selesai</h3>
@@ -847,6 +944,7 @@ const renderDocumentReviewSection = (detailApplication: MagangApplication) => {
                         <span>Unduh Dokumen Final</span>
                     </button>
                 </div>
+                ${retention.noticeHtml}
                 ${renderGeneratedLetterPreviewCard()}
             </section>
         `;
@@ -885,8 +983,8 @@ const completeApplicationAfterReview = async (detailApplication: MagangApplicati
 };
 
 const downloadCompletedDocument = async (detailApplication: MagangApplication) => {
-    if (!canDownloadDocument(detailApplication.status)) {
-        showWarning('Download dokumen hanya tersedia setelah pengajuan selesai.');
+    if (!canDownloadFinalForMahasiswa(detailApplication.status, detailApplication.retention_summary)) {
+        showWarning('Masa unduh surat resmi telah berakhir.');
         return;
     }
 
@@ -947,9 +1045,11 @@ const renderTimeline = (status: string) => {
         : Math.max(0, steps.findIndex((step) => step.key === status));
 
     return `
-        <section class="bg-white border border-gray-100 rounded-2xl p-6">
-            <h3 class="text-lg font-bold text-gray-800 mb-5">Tahap Pengajuan</h3>
-            <ol class="space-y-4">
+        <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+            <div class="px-7 py-5 border-b border-gray-50">
+                <h3 class="text-base font-bold text-gray-800">Tahap Persetujuan</h3>
+            </div>
+            <ol class="px-7 py-6 space-y-4">
                 ${steps.map((step, index) => {
                     const done = index <= currentIndex && status !== LETTER_WORKFLOW_STATUS.REJECTED;
                     const active = index === currentIndex && ![
@@ -967,7 +1067,7 @@ const renderTimeline = (status: string) => {
                     `;
                 }).join('')}
             </ol>
-        </section>
+        </div>
     `;
 };
 
@@ -1023,13 +1123,6 @@ const goToAdministrasiSurat = () => {
     });
 };
 
-const fileNameFromPath = (path?: string | null) => {
-    const cleanPath = valueOrEmpty(path);
-    if (!cleanPath) return '-';
-    const withoutQuery = cleanPath.split('?')[0] || cleanPath;
-    return decodeURIComponent(withoutQuery.split('/').pop() || withoutQuery);
-};
-
 const isoDateOnly = (value?: string | null): string => {
     const match = valueOrEmpty(value).match(/\d{4}-\d{2}-\d{2}/);
     return match ? match[0] : '';
@@ -1048,42 +1141,17 @@ const formatIndonesianDate = (value?: string | null): string => {
     return monthName ? `${Number(day)} ${monthName} ${year}` : iso;
 };
 
-const composeLegacyAddress = (data: MagangFormData): string => {
-    return [
-        data.alamat_jalan,
-        data.alamat_kelurahan ? `Kel. ${data.alamat_kelurahan}` : '',
-        data.alamat_kecamatan ? `Kec. ${data.alamat_kecamatan}` : '',
-        data.alamat_kota_kabupaten,
-        data.alamat_provinsi,
-        data.kode_pos,
-    ].map((segment) => segment.trim()).filter(Boolean).join(', ');
-};
-
-const composeLegacyDateRange = (start: string, end: string): string => {
-    const startLabel = formatIndonesianDate(start);
-    const endLabel = formatIndonesianDate(end);
-    if (!startLabel && !endLabel) return '';
-    if (startLabel && endLabel) return `${startLabel} s.d. ${endLabel}`;
-    return startLabel || endLabel;
-};
-
 const valueOrEmpty = (value?: string | null) => value ? String(value) : '';
 const downloadIdentifier = (detailApplication: MagangApplication) => {
     const identifier = valueOrEmpty(detailApplication.mahasiswa_profile?.nim) || String(detailApplication.id);
     return identifier.replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '') || String(detailApplication.id);
 };
 
-const escapeHtml = (value: string | number | null | undefined) => String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-
-const escapeAttribute = escapeHtml;
+const escapeHtml = escapeFormHtml;
+const escapeAttribute = escapeFormAttribute;
 
 const iconCheck = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-const iconChevronRight = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
 const iconArrowLeft = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>`;
+const iconChevronRight = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
 const iconAlert = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
 const iconDownload = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;

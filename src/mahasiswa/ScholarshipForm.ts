@@ -1,8 +1,16 @@
-import { renderAdministrasiSurat } from './AdministrasiSurat';
+// `renderAdministrasiSurat` is loaded lazily inside the back-button handler so
+// the Beasiswa form does not statically depend on the AdministrasiSurat page —
+// that page↔page edge is part of the inherited import cycle (C1). Identical
+// behavior; the dynamic import matches the app's existing navigation convention.
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import Toastify from 'toastify-js';
 import { apiFetch } from '../shared/api-client';
 import { attachProtectedPdfViewer, renderProtectedPdfViewer } from '../shared/protected-pdf-viewer';
+import {
+    formatDetailDateTime,
+    renderDetailHeaderCard,
+    renderDetailInfoCard,
+} from '../shared/mahasiswa-letter-detail';
 import {
     activePageForDetailOrigin,
     backLabelForDetailOrigin,
@@ -12,6 +20,26 @@ import {
 } from './detail-navigation';
 
 import { mapApplicationToFormData, mapProfileToFormData } from './scholarship-form/ScholarshipDataMapper';
+import { parseRupiahToDigits } from '../shared/formatters';
+import {
+    attachSupportingDocumentUploadSection,
+    createSupportingDocumentUploadState,
+    renderSupportingDocumentUploadSection,
+    validateSupportingDocumentUploads,
+    type SupportingDocumentUploadState,
+} from '../shared/supporting-document-upload';
+import {
+    appendBeasiswaSupportingDocuments,
+    beasiswaExistingSupportingDocumentValues,
+    BEASISWA_SUPPORTING_DOCUMENT_UPLOADS,
+} from '../shared/beasiswa-form';
+
+// Phase 2B — keys produced by `new FormData(form)` for scholarship history
+// amounts follow `scholarship_histories[<n>][jumlah]`. The displayed value
+// is the rupiah-formatted string ("1.250.000"); the backend expects a
+// digits-only string ("1250000"). This regex narrows the payload-normalize
+// step to those keys only, leaving every other field untouched.
+const SCHOLARSHIP_JUMLAH_KEY_PATTERN = /^scholarship_histories\[\d+\]\[jumlah\]$/;
 import { renderStep1Biodata } from './scholarship-form/Step1Biodata';
 import { renderStep2Keluarga, attachStep2Events } from './scholarship-form/Step2Keluarga';
 import { renderStep3Akademik, attachStep3Events } from './scholarship-form/Step3Akademik';
@@ -21,11 +49,15 @@ import {
     ACTIVE_READONLY_LETTER_STATUSES,
     EDITABLE_LETTER_STATUSES,
     canCompleteSubmission,
-    canDownloadDocument,
     getLetterStatusLabel,
     getLetterStatusTone,
     isStudentReviewStage,
 } from '../shared/letter-workflow';
+import {
+    canDownloadFinalForMahasiswa,
+    canPreviewFinalForMahasiswa,
+    resolveMahasiswaRetentionState,
+} from '../shared/retention-state';
 
 const BEASISWA_API_PREFIX = '/api/mahasiswa/surat-permohonan-beasiswa';
 const GENERATED_LETTER_PREVIEW_ROOT_ID = 'beasiswa-mahasiswa-generated-letter-preview';
@@ -142,6 +174,11 @@ const renderScholarshipFormEditable = () => {
     let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
     let autosaveInFlight = false;
     let submitInProgress = false;
+    // Beasiswa's 3 supporting documents flow through the shared upload module
+    // (config-driven render + listeners + PDF/size validation). State is rebuilt
+    // from supporting_documents metadata on each render.
+    let supportingDocumentUploadState: SupportingDocumentUploadState = createSupportingDocumentUploadState();
+    let revokeSupportingDocumentUploadInputs: (() => void) | null = null;
 
     const isEditable = () => {
         const status = formData.status;
@@ -228,7 +265,20 @@ const renderScholarshipFormEditable = () => {
         switch (currentStep) {
             case 1: return renderStep1Biodata(formData);
             case 2: return renderStep2Keluarga(formData);
-            case 3: return renderStep3Akademik(formData);
+            case 3: {
+                // Rebuild the upload state from metadata so existing documents
+                // render a safe filename label, then hand the shared section
+                // markup to the step renderer.
+                supportingDocumentUploadState = createSupportingDocumentUploadState(
+                    beasiswaExistingSupportingDocumentValues(formData),
+                );
+                const supportingDocumentsHtml = renderSupportingDocumentUploadSection(
+                    BEASISWA_SUPPORTING_DOCUMENT_UPLOADS,
+                    supportingDocumentUploadState,
+                    { disabled: !isEditable() },
+                );
+                return renderStep3Akademik(formData, supportingDocumentsHtml);
+            }
             case 4: return renderStep4Submit(formData);
             default: return '';
         }
@@ -236,7 +286,7 @@ const renderScholarshipFormEditable = () => {
 
     const attachEvents = () => {
         document.getElementById('btn-back-to-docs')?.addEventListener('click', () => {
-            renderAdministrasiSurat();
+            void import('./AdministrasiSurat').then(({ renderAdministrasiSurat }) => renderAdministrasiSurat());
         });
 
         document.getElementById('btn-prev')?.addEventListener('click', () => {
@@ -296,19 +346,23 @@ const renderScholarshipFormEditable = () => {
         }
 
         if (currentStep === 3) {
-            ['transkrip-nilai-upload', 'slip-gaji-ayah-upload', 'slip-gaji-ibu-upload'].forEach(id => {
-                const input = document.getElementById(id) as HTMLInputElement;
-                input?.addEventListener('change', () => {
-                    if (input.files && input.files[0]) {
-                        const label = input.parentElement?.previousElementSibling as HTMLLabelElement;
-                        if (label) {
-                            label.innerHTML = `${label.innerText.split(' (')[0]} <span class="text-teal-600">(Terpilih: ${input.files[0].name.substring(0, 15)}...)</span>`;
-                        }
-                    }
-                });
-            });
+            // Shared upload listeners: PDF + max-size validation, selected/existing
+            // filename status, and a returned cleanup. Replaces the previous
+            // hand-rolled per-input change handler (which had no validation).
+            revokeSupportingDocumentUploadInputs?.();
+            revokeSupportingDocumentUploadInputs = attachSupportingDocumentUploadSection(
+                BEASISWA_SUPPORTING_DOCUMENT_UPLOADS,
+                supportingDocumentUploadState,
+                {
+                    disabled: !isEditable(),
+                    onValidationError: (message) => showErrorToast(message),
+                },
+            );
 
             attachStep3Events();
+        } else {
+            revokeSupportingDocumentUploadInputs?.();
+            revokeSupportingDocumentUploadInputs = null;
         }
 
         attachAutosaveListeners();
@@ -398,6 +452,17 @@ const renderScholarshipFormEditable = () => {
         const data: any = {};
         currentFormData.forEach((value, key) => { data[key] = value; });
 
+        // Phase 2B — canonicalize scholarship history amount keys to a
+        // digits-only string before serialization. Display reads "1.250.000";
+        // backend persists as string per migration evidence and prefers
+        // digits-only so PHP `is_numeric()` → `number_format(...)` renders
+        // consistently in generated documents.
+        Object.keys(data).forEach((key) => {
+            if (SCHOLARSHIP_JUMLAH_KEY_PATTERN.test(key)) {
+                data[key] = parseRupiahToDigits(data[key]);
+            }
+        });
+
         if (currentStep === 2) {
             data.pob = formData.pob;
             data.dob = formData.dob;
@@ -430,19 +495,18 @@ const renderScholarshipFormEditable = () => {
 
         if (currentStep === 3) {
             const bodyFormData = new FormData();
+            // The shared upload inputs carry the canonical multipart names
+            // (transkrip_nilai / slip_gaji_ayah / slip_gaji_ibu). Skip those raw
+            // FormData entries here; the selected File objects are appended below
+            // from the shared upload state via the adapter.
+            const uploadInputNames = BEASISWA_SUPPORTING_DOCUMENT_UPLOADS.map((definition) => definition.inputName);
             Object.keys(data).forEach(key => {
-                if (!['transkrip-nilai', 'slip-ayah', 'slip-ibu'].includes(key)) {
+                if (!uploadInputNames.includes(key)) {
                     bodyFormData.append(key, data[key]);
                 }
             });
 
-            const transkripFile = (document.getElementById('transkrip-nilai-upload') as HTMLInputElement)?.files?.[0];
-            const slipAyahFile = (document.getElementById('slip-gaji-ayah-upload') as HTMLInputElement)?.files?.[0];
-            const slipIbuFile = (document.getElementById('slip-gaji-ibu-upload') as HTMLInputElement)?.files?.[0];
-
-            if (transkripFile) bodyFormData.append('transkrip_nilai', transkripFile);
-            if (slipAyahFile) bodyFormData.append('slip_gaji_ayah', slipAyahFile);
-            if (slipIbuFile) bodyFormData.append('slip_gaji_ibu', slipIbuFile);
+            appendBeasiswaSupportingDocuments(bodyFormData, supportingDocumentUploadState);
 
             body = bodyFormData;
         } else {
@@ -508,6 +572,15 @@ const renderScholarshipFormEditable = () => {
         // (Enter key, console call, restored DOM) must not bypass the declaration.
         if (!isDeclarationAccepted()) {
             showErrorToast('Centang pernyataan kebenaran data sebelum mengirim pengajuan.');
+            return;
+        }
+
+        const uploadValidation = validateSupportingDocumentUploads(
+            BEASISWA_SUPPORTING_DOCUMENT_UPLOADS,
+            supportingDocumentUploadState,
+        );
+        if (!uploadValidation.valid) {
+            showErrorToast(uploadValidation.firstError || 'Dokumen pendukung wajib dilengkapi.');
             return;
         }
 
@@ -641,58 +714,6 @@ const renderMenungguKonfirmasiBanner = (): string => `
         </div>
     </div>
 `;
-
-const renderInformasiRow = (label: string, value: string, valueClass = 'text-gray-800 font-semibold'): string => `
-    <div class="flex items-center justify-between gap-4 py-3.5 border-b border-gray-50 last:border-b-0">
-        <span class="text-sm text-gray-500">${escapeHtml(label)}</span>
-        <span class="text-sm ${valueClass} text-right">${value}</span>
-    </div>
-`;
-
-// Primary summary card aligned with design "Informasi Surat".
-const renderInformasiSuratCard = (
-    scholarshipName: string,
-    submittedAtIso: string | null | undefined,
-    statusLabel: string,
-    statusBadgeClass: string,
-): string => {
-    const statusValue = `<span class="${statusBadgeClass} px-3 py-1 rounded-full text-[11px] font-bold border uppercase tracking-wider">${escapeHtml(statusLabel)}</span>`;
-    return `
-        <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
-            <div class="px-7 py-5 border-b border-gray-50">
-                <h3 class="text-base font-bold text-gray-800">Informasi Surat</h3>
-            </div>
-            <div class="px-7 py-2">
-                ${renderInformasiRow('Jenis Surat', escapeHtml('Surat Permohonan Beasiswa'))}
-                ${renderInformasiRow('Tujuan', escapeHtml(scholarshipName))}
-                ${renderInformasiRow('Tanggal pengajuan', escapeHtml(formatDateTime(submittedAtIso)))}
-                ${renderInformasiRow('Status', statusValue, '')}
-            </div>
-        </div>
-    `;
-};
-
-// Pemohon card kept compact and complementary to Informasi Surat — honest about
-// missing fields (renders "-" rather than inventing data).
-const renderPemohonCard = (student: any, profile: any): string => {
-    const name = student?.name || profile?.nama_lengkap || '-';
-    const nim = student?.nim || profile?.nim || '-';
-    const prodi = student?.program_studi_display || student?.study_program?.name || '-';
-    const fakultas = student?.fakultas_display || student?.faculty?.name || '-';
-    return `
-        <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
-            <div class="px-7 py-5 border-b border-gray-50">
-                <h3 class="text-base font-bold text-gray-800">Pemohon</h3>
-            </div>
-            <div class="px-7 py-2">
-                ${renderInformasiRow('Nama', escapeHtml(name))}
-                ${renderInformasiRow('NIM', escapeHtml(nim))}
-                ${renderInformasiRow('Program Studi', escapeHtml(prodi))}
-                ${renderInformasiRow('Fakultas', escapeHtml(fakultas))}
-            </div>
-        </div>
-    `;
-};
 
 const renderGeneratedLetterPreviewCard = (): string => renderProtectedPdfViewer(GENERATED_LETTER_PREVIEW_ROOT_ID, {
     title: 'Pratinjau Surat Permohonan Beasiswa',
@@ -863,42 +884,46 @@ export const renderScholarshipDetail = async (applicationId: number | string, op
         const profile = application.mahasiswa_profile || {};
 
         const isReadyForReview = isStudentReviewStage(status);
-        const isCompleted = status === LETTER_WORKFLOW_STATUS.COMPLETED;
         const isRevision = status === LETTER_WORKFLOW_STATUS.REVISION;
         const isRejected = status === LETTER_WORKFLOW_STATUS.REJECTED;
-        const showGeneratedPreview = isReadyForReview || isCompleted || isRevision || isRejected;
+        const showGeneratedPreview = isReadyForReview
+            || isRevision
+            || isRejected
+            || canPreviewFinalForMahasiswa(status, application.retention_summary);
 
         const content = `
             <div class="max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
-                <div class="flex flex-wrap justify-between items-start gap-4 bg-white p-6 rounded-[24px] shadow-sm border border-gray-100">
-                    <div class="flex items-start gap-4">
-                        <button id="btn-back-to-docs" class="p-2.5 hover:bg-gray-50 rounded-xl text-gray-500 transition-colors" aria-label="${backLabelForDetailOrigin(origin)}" title="${backLabelForDetailOrigin(origin)}">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="19" y1="12" x2="5" y2="12"></line>
-                                <polyline points="12 19 5 12 12 5"></polyline>
-                            </svg>
-                        </button>
-                        <div>
-                            <h2 class="text-xl font-bold text-gray-800">Detail Pengajuan</h2>
-                            <p class="text-xs text-gray-500">${escapeHtml(scholarshipName)}</p>
-                        </div>
-                    </div>
-                    <span class="${statusBadge} px-4 py-1.5 rounded-full text-xs font-bold border w-fit">
-                        ${escapeHtml(statusLabel)}
-                    </span>
-                </div>
+                ${renderDetailHeaderCard({
+                    backId: 'btn-back-to-docs',
+                    backLabel: backLabelForDetailOrigin(origin),
+                    title: 'Detail Pengajuan',
+                    subtitle: scholarshipName,
+                    statusLabel,
+                    statusBadgeClass: statusBadge,
+                })}
 
                 ${isReadyForReview ? renderMenungguKonfirmasiBanner() : ''}
                 ${isRevision ? renderRevisionBanner(application.revision_note) : ''}
                 ${isRejected ? renderRejectedBanner(application.rejection_reason) : ''}
 
-                ${renderInformasiSuratCard(scholarshipName, application.submitted_at || application.created_at, statusLabel, statusBadge)}
+                ${renderDetailInfoCard('Informasi Surat', [
+                    ['Jenis Surat', 'Surat Permohonan Beasiswa'],
+                    ['Tujuan', scholarshipName],
+                    ['Tanggal pengajuan', formatDetailDateTime(application.submitted_at || application.created_at)],
+                    ['Status', statusLabel],
+                ])}
 
-                ${renderPemohonCard(student, profile)}
+                ${renderDetailInfoCard('Pemohon', [
+                    ['Nama', student?.name || profile?.nama_lengkap || '-'],
+                    ['NIM', student?.nim || profile?.nim || '-'],
+                    ['Program Studi', student?.program_studi_display || student?.study_program?.name || '-'],
+                    ['Fakultas', student?.fakultas_display || student?.faculty?.name || '-'],
+                    // No. Telepon — canonical MahasiswaProfile.no_hp, with legacy no_telp
+                    // and scholarship student.phone as defensive fallbacks. Honest "-".
+                    ['No. Telepon', profile?.no_hp || profile?.no_telp || student?.phone || profile?.phone || '-'],
+                ])}
 
-                ${showGeneratedPreview ? renderGeneratedLetterPreviewCard() : ''}
-
-                ${renderTindakanCard(status)}
+                ${renderReviewDokumenSection(status)}
 
                 ${renderTahapPersetujuanCard(application)}
             </div>
@@ -912,62 +937,66 @@ export const renderScholarshipDetail = async (applicationId: number | string, op
         }
     };
 
-    const renderTindakanCard = (status: string): string => {
+    // Unified "Review Dokumen" section: the action (complete / download /
+    // revise) sits in the section header — directly ABOVE the PDF preview —
+    // matching the SKA/PLN/Magang top-action placement instead of being buried
+    // in a separate card below the preview. Behaviour, button IDs, endpoints,
+    // and gates are unchanged; only the placement/visual wrapper moved.
+    const renderReviewDokumenSection = (status: string): string => {
+        const isReadyForReview = isStudentReviewStage(status);
+        const isCompleted = status === LETTER_WORKFLOW_STATUS.COMPLETED;
+        const isRevision = status === LETTER_WORKFLOW_STATUS.REVISION;
+        const isRejected = status === LETTER_WORKFLOW_STATUS.REJECTED;
+        const retention = resolveMahasiswaRetentionState(application.retention_summary);
+        const showSection = isReadyForReview || isCompleted || isRevision || isRejected;
+        if (!showSection) return '';
+
         const showComplete = canCompleteSubmission(status, hasPreviewed);
-        const showDownload = canDownloadDocument(status);
-        const showRevise = status === LETTER_WORKFLOW_STATUS.REVISION;
-        if (!showComplete && !showDownload && !showRevise) return '';
+        const showDownload = canDownloadFinalForMahasiswa(status, application.retention_summary);
+
+        const downloadIconSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+        const actionButtonClass = 'inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors shadow-sm';
+
+        let heading = 'Pratinjau Dokumen';
+        let subtitle = 'Pratinjau PDF dokumen pengajuan.';
+        let action = '';
+        let extra = '';
 
         if (showDownload) {
-            return `
-                <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
-                    <div class="px-7 py-5 border-b border-gray-50">
-                        <h3 class="text-base font-bold text-gray-800">Unduh Dokumen Final</h3>
-                    </div>
-                    <div class="p-7">
-                        <button type="button" id="btn-download" class="w-full inline-flex items-center justify-center gap-2 py-3.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors shadow-sm">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            Unduh Dokumen Final
-                        </button>
-                    </div>
-                </div>
-            `;
+            heading = 'Dokumen Selesai';
+            subtitle = 'Pengajuan telah selesai. Dokumen dapat diunduh sebagai PDF.';
+            action = `<button type="button" id="btn-download" class="${actionButtonClass}">${downloadIconSvg}<span>Unduh Dokumen Final</span></button>`;
+            extra = retention.noticeHtml;
+        } else if (isCompleted && retention.noticeHtml) {
+            heading = 'Dokumen Selesai';
+            subtitle = 'Pengajuan telah selesai.';
+            extra = retention.noticeHtml;
+        } else if (showComplete) {
+            heading = 'Review Dokumen';
+            subtitle = 'Periksa pratinjau di bawah sebelum menyelesaikan pengajuan.';
+            action = `<button type="button" id="btn-complete" class="${actionButtonClass}"><span>Selesaikan Pengajuan</span></button>`;
+            extra = `<div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-900"><span class="font-bold">Catatan:</span> Pastikan data pengajuan dan pratinjau dokumen sudah sesuai sebelum menyelesaikan pengajuan. Tindakan ini tidak dapat dibatalkan.</div>`;
+        } else if (isRevision) {
+            heading = 'Perbaiki Pengajuan';
+            subtitle = 'Pengajuan memerlukan revisi. Periksa pratinjau lalu perbaiki pengajuan Anda.';
+            action = `<button type="button" id="btn-revise" class="${actionButtonClass}"><span>Perbaiki Pengajuan</span></button>`;
+        } else if (isRejected) {
+            heading = 'Pratinjau Dokumen';
+            subtitle = 'Pengajuan ditolak. Berikut pratinjau dokumen pengajuan.';
         }
 
-        if (showComplete) {
-            return `
-                <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
-                    <div class="px-7 py-5 border-b border-gray-50">
-                        <h3 class="text-base font-bold text-gray-800">Tindakan Verifikasi</h3>
-                    </div>
-                    <div class="p-7 space-y-4">
-                        <button type="button" id="btn-complete" class="w-full py-3.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors shadow-sm">
-                            Selesaikan Pengajuan
-                        </button>
-                        <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-900">
-                            <span class="font-bold">Catatan:</span> Pastikan data pengajuan dan pratinjau dokumen sudah sesuai sebelum menyelesaikan pengajuan. Tindakan ini tidak dapat dibatalkan.
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        // showRevise — keep existing revise flow intact, in a polished card.
         return `
-            <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
-                <div class="px-7 py-5 border-b border-gray-50">
-                    <h3 class="text-base font-bold text-gray-800">Tindakan Revisi</h3>
+            <section class="bg-white rounded-[24px] border border-gray-100 shadow-sm p-6 md:p-7 space-y-5">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">${heading}</h3>
+                        <p class="text-sm text-gray-600 mt-1">${subtitle}</p>
+                    </div>
+                    ${action ? `<div class="flex flex-col gap-3 sm:flex-row sm:items-center">${action}</div>` : ''}
                 </div>
-                <div class="p-7">
-                    <button type="button" id="btn-revise" class="w-full py-3.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors shadow-sm">
-                        Perbaiki Pengajuan
-                    </button>
-                </div>
-            </div>
+                ${extra}
+                ${showDownload || showComplete || isRevision || isRejected ? renderGeneratedLetterPreviewCard() : ''}
+            </section>
         `;
     };
 
@@ -1023,6 +1052,11 @@ export const renderScholarshipDetail = async (applicationId: number | string, op
     };
 
     const handleDownload = async () => {
+        if (!canDownloadFinalForMahasiswa(application.status, application.retention_summary)) {
+            showErrorToast('Masa unduh surat resmi telah berakhir.');
+            return;
+        }
+
         try {
             const blob = await fetchFinalDownloadBlob();
             const url = URL.createObjectURL(blob);

@@ -50,6 +50,10 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                 <span class="font-medium">Riwayat Aktivitas</span>
             </a>
+            <a href="#" id="sidebar-retention-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'retention' ? activeClass : inactiveClass}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 15.53-6.22"></path><path d="M21 3v6h-6"></path><path d="M21 12a9 9 0 0 1-15.53 6.22"></path><path d="M3 21v-6h6"></path></svg>
+                <span class="font-medium">Retensi & Arsip Surat</span>
+            </a>
             <a href="#" id="sidebar-academic-periods-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'academic-periods' ? activeClass : inactiveClass}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                 <span class="font-medium">Periode Akademik</span>
@@ -78,7 +82,7 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
     }
 
     return `
-        <aside class="w-64 bg-primary-teal text-white min-h-screen flex flex-col sticky top-0 h-screen overflow-y-auto" 
+        <aside id="dashboard-sidebar" aria-label="Navigasi utama" aria-hidden="true" class="fixed inset-y-0 left-0 z-[60] w-64 bg-primary-teal text-white min-h-screen h-screen flex flex-col overflow-y-auto transform -translate-x-full transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:z-auto lg:translate-x-0 lg:transition-none"
             style="
                 background-image: url('sidebar.png');
                 background-size: cover;
@@ -86,14 +90,22 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
             "
         >
             <div class="p-5 border-b border-white/10">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
-                        <img src="/ugm-logo.png" alt="UGM Logo" class="w-15 h-15 object-contain brightness-0 invert">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
+                            <img src="/ugm-logo.png" alt="UGM Logo" class="w-15 h-15 object-contain brightness-0 invert">
+                        </div>
+                        <div>
+                            <p class="text-white text-sm font-bold leading-tight">Sistem Persuratan</p>
+                            <p class="text-white/60 text-[9px] leading-tight mt-0.5">Departemen Teknik<br>Elektro dan Informatika</p>
+                        </div>
                     </div>
-                    <div>
-                        <p class="text-white text-sm font-bold leading-tight">Sistem Persuratan</p>
-                        <p class="text-white/60 text-[9px] leading-tight mt-0.5">Departemen Teknik<br>Elektro dan Informatika</p>
-                    </div>
+                    <button id="dashboard-sidebar-close" type="button" class="lg:hidden rounded-lg p-1.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/70" aria-label="Tutup menu navigasi">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
                 </div>
             </div>
 

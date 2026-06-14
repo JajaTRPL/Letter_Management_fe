@@ -2,6 +2,11 @@ import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { apiFetch } from '../shared/api-client';
 import { attachProtectedPdfViewer, renderProtectedPdfViewer } from '../shared/protected-pdf-viewer';
 import {
+    formatDetailDateTime,
+    renderDetailHeaderCard,
+    renderDetailInfoCard,
+} from '../shared/mahasiswa-letter-detail';
+import {
     mergeMahasiswaProfileDisplay,
     type MahasiswaProfileDisplay,
     type MahasiswaProfileSource,
@@ -16,13 +21,39 @@ import {
 } from './detail-navigation';
 import {
     ACTIVE_READONLY_LETTER_STATUSES,
-    canDownloadDocument,
     getLetterStatusLabel,
     getLetterStatusTone,
     isStudentReviewStage,
     LETTER_WORKFLOW_STATUS,
 } from '../shared/letter-workflow';
 import { showError, showSuccess, showWarning } from '../shared/toast';
+import {
+    attachBlurDigitsOnly,
+    attachBlurTitleCase,
+} from '../shared/formatters';
+import {
+    escapeFormAttribute,
+    escapeFormHtml,
+    renderFormActionFooter,
+    renderFormField,
+} from '../shared/form-primitives';
+import {
+    attachSupportingDocumentUploadSection,
+    renderSupportingDocumentUploadSection,
+    type SupportingDocumentUploadState,
+    createSupportingDocumentUploadState,
+} from '../shared/supporting-document-upload';
+import {
+    createSkaDraftPayload,
+    SKA_MAHASISWA_ENDPOINTS,
+    SKA_SUPPORTING_DOCUMENT_UPLOADS,
+} from '../shared/ska-form';
+import {
+    canDownloadFinalForMahasiswa,
+    canPreviewFinalForMahasiswa,
+    resolveMahasiswaRetentionState,
+    type LetterRetentionSummary,
+} from '../shared/retention-state';
 
 type AktifApplication = {
     id: number;
@@ -38,10 +69,10 @@ type AktifApplication = {
     instansi_orang_tua_wali?: string | null;
     revision_note?: string | null;
     rejection_reason?: string | null;
-    generated_pdf_path?: string | null;
     created_at?: string | null;
     submitted_at?: string | null;
     student_reviewed_at?: string | null;
+    retention_summary?: LetterRetentionSummary | null;
     mahasiswa_profile?: StudentProfile | null;
     user?: StudentUser | null;
 };
@@ -91,6 +122,8 @@ type AktifFormData = {
 
 type ProfileViewData = MahasiswaProfileDisplay;
 
+// Detail/complete/final-download/generated-preview reuse this base; the draft,
+// submit, and applications calls go through the typed adapter endpoints.
 const API_PREFIX = '/api/mahasiswa/surat-keterangan-aktif';
 const MONTH_NAMES = [
     'Januari',
@@ -125,6 +158,13 @@ let isSubmitting = false;
 let profileIdentityMissing: string[] = [];
 const GENERATED_LETTER_PREVIEW_ROOT_ID = 'aktif-mahasiswa-generated-letter-preview';
 let revokeGeneratedLetterPreview: (() => void) | null = null;
+// SKA has zero supporting documents. The state is created from the (empty)
+// SKA_SUPPORTING_DOCUMENT_UPLOADS definitions so the shared upload section is
+// driven entirely by config — it renders nothing and mounts no listeners while
+// the definition list is empty, and would light up automatically if a future
+// descriptor is added to the adapter.
+let supportingDocumentUploadState: SupportingDocumentUploadState = createSupportingDocumentUploadState();
+let revokeSupportingDocumentUploadInputs: (() => void) | null = null;
 
 export const renderSuratKeteranganAktifForm = async (forceEditRevision = false) => {
     resetState();
@@ -216,6 +256,9 @@ const resetState = () => {
     hasAcceptedStatement = false;
     isSubmitting = false;
     profileIdentityMissing = [];
+    revokeSupportingDocumentUploadInputs?.();
+    revokeSupportingDocumentUploadInputs = null;
+    supportingDocumentUploadState = createSupportingDocumentUploadState();
 };
 
 function emptyFormData(): AktifFormData {
@@ -240,6 +283,7 @@ function emptyProfileData(): ProfileViewData {
         fullName: '',
         nim: '',
         email: '',
+        phone: '',
         faculty: '',
         studyProgram: '',
         studyProgramCode: '',
@@ -252,7 +296,7 @@ function emptyProfileData(): ProfileViewData {
 }
 
 const fetchDraftData = async () => {
-    const response = await apiFetch(`${API_PREFIX}/draft`, {
+    const response = await apiFetch(SKA_MAHASISWA_ENDPOINTS.draft, {
         cache: 'no-store',
     });
 
@@ -264,7 +308,7 @@ const fetchDraftData = async () => {
 };
 
 const fetchLatestActiveApplication = async (): Promise<AktifApplication | null> => {
-    const response = await apiFetch(`${API_PREFIX}/applications`, {
+    const response = await apiFetch(SKA_MAHASISWA_ENDPOINTS.applications, {
         cache: 'no-store',
     });
 
@@ -486,6 +530,12 @@ const renderStepContent = () => {
                     ${renderTextInputWithHint('pangkat_gol_orang_tua_wali', 'Pangkat/Gol', 'Contoh: III/a (jika ada)', formData.pangkat_gol_orang_tua_wali, "Isi '-' jika tidak memiliki pangkat/golongan.")}
                     ${renderTextInputWithHint('instansi_orang_tua_wali', 'Instansi', 'Contoh: Dinas Pendidikan DIY', formData.instansi_orang_tua_wali, "Isi '-' jika tidak ada atau tidak berlaku.")}
                 </div>
+
+                ${renderSupportingDocumentUploadSection(
+                    SKA_SUPPORTING_DOCUMENT_UPLOADS,
+                    supportingDocumentUploadState,
+                    { disabled: isSubmitting },
+                )}
             </div>
         `;
     }
@@ -527,29 +577,30 @@ const renderStepContent = () => {
     `;
 };
 
-const renderReadonlyField = (label: string, value: string) => `
-    <div class="grid grid-cols-1 md:grid-cols-[120px_1fr] gap-2 md:gap-6 md:items-center">
-        <label class="text-sm font-bold text-gray-900">${escapeHtml(label)}</label>
-        <input type="text" value="${escapeAttribute(value || '-')}" readonly class="w-full px-4 py-2.5 bg-[#E1E3E8] border border-[#E1E3E8] rounded-lg text-gray-500 cursor-not-allowed outline-none">
-    </div>
-`;
+// Field wrappers delegate to the shared renderFormField primitive. The SKA
+// column layout is preserved via columnsClassName so the visual contract is
+// unchanged while the markup is now shared with the other migrated forms.
+const renderReadonlyField = (label: string, value: string) => renderFormField({
+    label,
+    columnsClassName: 'grid grid-cols-1 md:grid-cols-[120px_1fr] gap-2 md:gap-6 md:items-center',
+    controlHtml: `<input type="text" value="${escapeFormAttribute(value || '-')}" readonly class="w-full px-4 py-2.5 bg-[#E1E3E8] border border-[#E1E3E8] rounded-lg text-gray-500 cursor-not-allowed outline-none">`,
+});
 
-const renderTextInput = (name: keyof AktifFormData, label: string, placeholder: string, value: string) => `
-    <div class="grid grid-cols-1 md:grid-cols-[170px_1fr] gap-3 md:gap-6 md:items-center">
-        <label for="${name}" class="text-sm font-semibold text-gray-800">${escapeHtml(label)}</label>
-        <input id="${name}" name="${name}" type="text" value="${escapeAttribute(value)}" placeholder="${escapeAttribute(placeholder)}" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
-    </div>
-`;
+const renderTextInput = (name: keyof AktifFormData, label: string, placeholder: string, value: string) => renderFormField({
+    id: name,
+    label,
+    columnsClassName: 'grid grid-cols-1 md:grid-cols-[170px_1fr] gap-3 md:gap-6 md:items-center',
+    controlHtml: `<input id="${name}" name="${name}" type="text" value="${escapeFormAttribute(value)}" placeholder="${escapeFormAttribute(placeholder)}" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">`,
+});
 
-const renderTextInputWithHint = (name: keyof AktifFormData, label: string, placeholder: string, value: string, hint: string) => `
-    <div class="grid grid-cols-1 md:grid-cols-[170px_1fr] gap-3 md:gap-6 md:items-start">
-        <label for="${name}" class="text-sm font-semibold text-gray-800 md:pt-2">${escapeHtml(label)}</label>
-        <div class="space-y-1">
-            <input id="${name}" name="${name}" type="text" value="${escapeAttribute(value)}" placeholder="${escapeAttribute(placeholder)}" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
-            <p class="text-xs text-gray-500 leading-relaxed">${escapeHtml(hint)}</p>
-        </div>
-    </div>
-`;
+const renderTextInputWithHint = (name: keyof AktifFormData, label: string, placeholder: string, value: string, hint: string) => renderFormField({
+    id: name,
+    label,
+    align: 'start',
+    columnsClassName: 'grid grid-cols-1 md:grid-cols-[170px_1fr] gap-3 md:gap-6 md:items-start',
+    helperText: hint,
+    controlHtml: `<input id="${name}" name="${name}" type="text" value="${escapeFormAttribute(value)}" placeholder="${escapeFormAttribute(placeholder)}" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">`,
+});
 
 // SKA identity rows are locked: values come from the SSO profile. Editing
 // must be done on the Profil Mahasiswa page, never inside this form.
@@ -625,16 +676,18 @@ const renderNavigationButtons = () => {
         ? application?.status === LETTER_WORKFLOW_STATUS.REVISION ? 'Perbaiki & Kirim Ulang' : 'Kirim Pengajuan'
         : 'Lanjutkan';
 
-    return `
-        <div class="pt-10 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button id="btn-prev-step" type="button" class="px-6 py-2.5 border border-primary-teal text-primary-teal font-bold rounded-xl hover:bg-teal-50 transition-colors">
-                ${currentStep === 1 ? 'Batalkan' : 'Kembali'}
-            </button>
-            <button id="btn-next-step" type="button" ${submitDisabled || isSubmitting ? 'disabled' : ''} class="px-7 py-2.5 rounded-xl font-bold transition-colors ${submitDisabled || isSubmitting ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-primary-teal text-white hover:bg-teal-800'}">
-                ${isSubmitting ? 'Memproses...' : escapeHtml(nextLabel)}
-            </button>
-        </div>
-    `;
+    return renderFormActionFooter({
+        previous: {
+            id: 'btn-prev-step',
+            label: currentStep === 1 ? 'Batalkan' : 'Kembali',
+        },
+        next: {
+            id: 'btn-next-step',
+            label: nextLabel,
+            disabled: submitDisabled,
+            loading: isSubmitting,
+        },
+    });
 };
 
 const attachFormEvents = () => {
@@ -682,6 +735,35 @@ const attachFormEvents = () => {
         hasAcceptedStatement = (event.currentTarget as HTMLInputElement).checked;
         renderForm();
     });
+
+    // Config-driven supporting-document listeners. With SKA's empty definition
+    // list this mounts nothing and returns a no-op cleanup — no fake listener,
+    // no validation hook — while staying ready for a future descriptor.
+    revokeSupportingDocumentUploadInputs?.();
+    revokeSupportingDocumentUploadInputs = attachSupportingDocumentUploadSection(
+        SKA_SUPPORTING_DOCUMENT_UPLOADS,
+        supportingDocumentUploadState,
+        { disabled: isSubmitting },
+    );
+
+    wirePhase2AFormatters();
+};
+
+// Phase 2A — wire approved low-risk fields only. Person-name fields
+// (nama_orang_tua_wali) and code-shaped fields (pangkat_gol_orang_tua_wali)
+// are intentionally NOT wired. NIP wali allows literal "-" per existing form
+// guidance ("Isi '-' jika orang tua/wali tidak memiliki NIP.").
+const wirePhase2AFormatters = () => {
+    const byId = (id: string) => document.getElementById(id) as HTMLInputElement | null;
+
+    const instansi = byId('instansi_orang_tua_wali');
+    if (instansi) attachBlurTitleCase(instansi);
+
+    const pekerjaan = byId('pekerjaan_orang_tua_wali');
+    if (pekerjaan) attachBlurTitleCase(pekerjaan);
+
+    const nipWali = byId('nip_orang_tua_wali');
+    if (nipWali) attachBlurDigitsOnly(nipWali, { passLiteralDash: true });
 };
 
 const collectStep2Values = () => {
@@ -734,7 +816,7 @@ const saveDraft = async () => {
     renderForm();
 
     try {
-        const response = await apiFetch(`${API_PREFIX}/draft`, {
+        const response = await apiFetch(SKA_MAHASISWA_ENDPOINTS.draft, {
             method: 'POST',
             body: JSON.stringify(toPayload()),
         });
@@ -778,7 +860,7 @@ const submitApplication = async () => {
             return;
         }
 
-        const response = await apiFetch(`${API_PREFIX}/submit`, {
+        const response = await apiFetch(SKA_MAHASISWA_ENDPOINTS.submit, {
             method: 'POST',
         });
 
@@ -803,7 +885,7 @@ const submitApplication = async () => {
 
 const saveDraftSilently = async () => {
     try {
-        const response = await apiFetch(`${API_PREFIX}/draft`, {
+        const response = await apiFetch(SKA_MAHASISWA_ENDPOINTS.draft, {
             method: 'POST',
             body: JSON.stringify(toPayload()),
         });
@@ -823,7 +905,7 @@ const saveDraftSilently = async () => {
     }
 };
 
-const toPayload = () => ({
+const toPayload = () => createSkaDraftPayload({
     tempat_lahir: formData.tempat_lahir,
     tanggal_lahir: formData.tanggal_lahir,
     jenis_kelamin: formData.jenis_kelamin,
@@ -835,60 +917,66 @@ const toPayload = () => ({
     instansi_orang_tua_wali: formData.instansi_orang_tua_wali,
 });
 
-const renderDetailContent = (detailApplication: AktifApplication, viewProfile: ProfileViewData, origin: MahasiswaDetailOrigin) => `
+const renderDetailContent = (detailApplication: AktifApplication, viewProfile: ProfileViewData, origin: MahasiswaDetailOrigin) => {
+    const status = detailApplication.status;
+    return `
     <div class="max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <button id="btn-detail-back" type="button" class="inline-flex items-center gap-2 text-gray-700 hover:text-primary-teal font-semibold w-fit">
-                ${iconArrowLeft('20')}
-                <span>${backLabelForDetailOrigin(origin)}</span>
-            </button>
-            <span class="${statusBadgeClass(detailApplication.status)} px-4 py-1.5 rounded-full text-xs font-bold border w-fit">
-                ${escapeHtml(statusLabel(detailApplication.status))}
-            </span>
-        </div>
+        ${renderDetailHeaderCard({
+            backId: 'btn-detail-back',
+            backLabel: backLabelForDetailOrigin(origin),
+            title: 'Detail Pengajuan',
+            subtitle: 'Surat Keterangan Aktif',
+            statusLabel: statusLabel(status),
+            statusBadgeClass: statusBadgeClass(status),
+        })}
 
-        ${detailApplication.status === LETTER_WORKFLOW_STATUS.REVISION ? renderRevisionBanner(detailApplication.revision_note) : ''}
-        ${detailApplication.status === LETTER_WORKFLOW_STATUS.REJECTED ? renderRejectedBanner(detailApplication.rejection_reason) : ''}
+        ${status === LETTER_WORKFLOW_STATUS.REVISION ? renderRevisionBanner(detailApplication.revision_note) : ''}
+        ${status === LETTER_WORKFLOW_STATUS.REJECTED ? renderRejectedBanner(detailApplication.rejection_reason) : ''}
 
-        <section class="bg-white rounded-[24px] border border-gray-100 shadow-sm p-6 md:p-10 space-y-6">
-            <div>
-                <h2 class="text-2xl font-bold text-gray-800">Detail Pengajuan</h2>
-                <p class="text-sm text-gray-500 mt-2">Surat Keterangan Aktif</p>
+        ${renderDetailInfoCard('Informasi Surat', [
+            ['Jenis Surat', 'Surat Keterangan Aktif'],
+            ['Tanggal pengajuan', formatDetailDateTime(detailApplication.submitted_at || detailApplication.created_at)],
+            ['Status', statusLabel(status)],
+        ])}
+
+        ${renderDetailInfoCard('Pemohon', [
+            ['Nama', viewProfile.fullName],
+            ['NIM', viewProfile.nim],
+            ['Program Studi', viewProfile.studyProgram],
+            ['Fakultas', viewProfile.faculty],
+            ['Departemen', viewProfile.department],
+            ['Email Aktif', viewProfile.email],
+            ['No. Telepon', viewProfile.phone],
+        ])}
+
+        ${renderDetailInfoCard('Detail Pengajuan', [
+            ['Tempat, Tanggal Lahir', formatPlaceAndDate(detailApplication)],
+            ['Jenis Kelamin', valueOrEmpty(detailApplication.jenis_kelamin)],
+            ['Keperluan', valueOrEmpty(detailApplication.keperluan)],
+        ])}
+
+        ${renderDetailInfoCard('Data Orang Tua/Wali', [
+            ['Nama', valueOrEmpty(detailApplication.nama_orang_tua_wali)],
+            ['Pekerjaan', valueOrEmpty(detailApplication.pekerjaan_orang_tua_wali)],
+            ['NIP', valueOrEmpty(detailApplication.nip_orang_tua_wali)],
+            ['Pangkat/Gol', valueOrEmpty(detailApplication.pangkat_gol_orang_tua_wali)],
+            ['Instansi', valueOrEmpty(detailApplication.instansi_orang_tua_wali)],
+        ])}
+
+        ${renderDocumentReviewSection(detailApplication)}
+
+        ${renderTimeline(status)}
+
+        ${status === LETTER_WORKFLOW_STATUS.REVISION ? `
+            <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm p-6 md:p-7 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button id="btn-edit-revision" type="button" class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors">
+                    Perbaiki Pengajuan
+                </button>
             </div>
-
-            ${renderReviewSection('Profil SSO', [
-                ['Nama Lengkap', viewProfile.fullName],
-                ['NIM', viewProfile.nim],
-                ['Fakultas', viewProfile.faculty],
-                ['Program Studi', viewProfile.studyProgram],
-                ['Email Aktif', viewProfile.email],
-            ])}
-            ${renderReviewSection('Detail Profil & Pengajuan', [
-                ['Tempat, Tanggal Lahir', formatPlaceAndDate(detailApplication)],
-                ['Jenis Kelamin', valueOrEmpty(detailApplication.jenis_kelamin)],
-                ['Keperluan', valueOrEmpty(detailApplication.keperluan)],
-            ])}
-            ${renderReviewSection('Data Orang Tua/Wali', [
-                ['Nama', valueOrEmpty(detailApplication.nama_orang_tua_wali)],
-                ['Pekerjaan', valueOrEmpty(detailApplication.pekerjaan_orang_tua_wali)],
-                ['NIP', valueOrEmpty(detailApplication.nip_orang_tua_wali)],
-                ['Pangkat/Gol', valueOrEmpty(detailApplication.pangkat_gol_orang_tua_wali)],
-                ['Instansi', valueOrEmpty(detailApplication.instansi_orang_tua_wali)],
-            ])}
-
-            ${renderTimeline(detailApplication.status)}
-            ${renderDocumentReviewSection(detailApplication)}
-
-            <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                ${detailApplication.status === LETTER_WORKFLOW_STATUS.REVISION ? `
-                    <button id="btn-edit-revision" type="button" class="px-6 py-2.5 bg-primary-teal text-white font-bold rounded-xl hover:bg-teal-800 transition-colors">
-                        Perbaiki Pengajuan
-                    </button>
-                ` : ''}
-            </div>
-        </section>
+        ` : ''}
     </div>
 `;
+};
 
 const attachDetailEvents = (detailApplication: AktifApplication, origin: MahasiswaDetailOrigin) => {
     document.getElementById('btn-detail-back')?.addEventListener('click', () => goToMahasiswaDetailOrigin(origin));
@@ -909,8 +997,7 @@ const attachDetailEvents = (detailApplication: AktifApplication, origin: Mahasis
     // ArrayBuffer and renders via canvas — no iframe, no blob URL, no
     // legacy /preview dependency.
     if (
-        isStudentReviewStage(detailApplication.status)
-        || canDownloadDocument(detailApplication.status)
+        canPreviewFinalForMahasiswa(detailApplication.status, detailApplication.retention_summary)
     ) {
         cleanupGeneratedLetterPreview();
         revokeGeneratedLetterPreview = attachProtectedPdfViewer({
@@ -933,9 +1020,11 @@ const renderGeneratedLetterPreviewCard = (): string => renderProtectedPdfViewer(
 });
 
 const renderDocumentReviewSection = (detailApplication: AktifApplication) => {
+    const retention = resolveMahasiswaRetentionState(detailApplication.retention_summary);
+
     if (isStudentReviewStage(detailApplication.status)) {
         return `
-            <section class="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
+            <section class="bg-white border border-gray-100 rounded-[24px] shadow-sm p-6 md:p-7 space-y-5">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                         <h3 class="text-lg font-bold text-gray-800">Review Dokumen</h3>
@@ -953,9 +1042,21 @@ const renderDocumentReviewSection = (detailApplication: AktifApplication) => {
         `;
     }
 
-    if (canDownloadDocument(detailApplication.status)) {
+    if (detailApplication.status === LETTER_WORKFLOW_STATUS.COMPLETED) {
+        if (!retention.finalDownloadAvailable) {
+            return retention.noticeHtml ? `
+                <section class="bg-white border border-gray-100 rounded-[24px] shadow-sm p-6 md:p-7 space-y-5">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">Dokumen Selesai</h3>
+                        <p class="text-sm text-gray-600 mt-1">Pengajuan telah selesai.</p>
+                    </div>
+                    ${retention.noticeHtml}
+                </section>
+            ` : '';
+        }
+
         return `
-            <section class="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
+            <section class="bg-white border border-gray-100 rounded-[24px] shadow-sm p-6 md:p-7 space-y-5">
                 <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h3 class="text-lg font-bold text-gray-800">Dokumen Selesai</h3>
@@ -966,6 +1067,7 @@ const renderDocumentReviewSection = (detailApplication: AktifApplication) => {
                         <span>Unduh Dokumen Final</span>
                     </button>
                 </div>
+                ${retention.noticeHtml}
                 ${renderGeneratedLetterPreviewCard()}
             </section>
         `;
@@ -1004,8 +1106,8 @@ const completeApplication = async (detailApplication: AktifApplication, origin: 
 };
 
 const downloadCompletedDocument = async (detailApplication: AktifApplication) => {
-    if (!canDownloadDocument(detailApplication.status)) {
-        showWarning('Download dokumen hanya tersedia setelah pengajuan selesai.');
+    if (!canDownloadFinalForMahasiswa(detailApplication.status, detailApplication.retention_summary)) {
+        showWarning('Masa unduh surat resmi telah berakhir.');
         return;
     }
 
@@ -1058,9 +1160,11 @@ const renderTimeline = (status: string) => {
     ] as readonly string[];
 
     return `
-        <section class="bg-white border border-gray-100 rounded-2xl p-6">
-            <h3 class="text-lg font-bold text-gray-800 mb-5">Tahap Pengajuan</h3>
-            <ol class="space-y-4">
+        <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+            <div class="px-7 py-5 border-b border-gray-50">
+                <h3 class="text-base font-bold text-gray-800">Tahap Persetujuan</h3>
+            </div>
+            <ol class="px-7 py-6 space-y-4">
                 ${steps.map((step, index) => {
                     const done = index <= currentIndex && status !== LETTER_WORKFLOW_STATUS.REJECTED;
                     const active = index === currentIndex && !inactiveStatuses.includes(status);
@@ -1074,7 +1178,7 @@ const renderTimeline = (status: string) => {
                     `;
                 }).join('')}
             </ol>
-        </section>
+        </div>
     `;
 };
 
@@ -1208,17 +1312,11 @@ const downloadIdentifier = (detailApplication: AktifApplication) => {
     return identifier.replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '') || String(detailApplication.id);
 };
 
-const escapeHtml = (value: string | number | null | undefined) => String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-
-const escapeAttribute = escapeHtml;
+// Local escape names now delegate to the shared form primitives so the
+// duplicated implementation is gone while every existing call site is preserved.
+const escapeHtml = escapeFormHtml;
 
 const iconCheck = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 const iconChevronRight = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
-const iconArrowLeft = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>`;
 const iconAlert = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
 const iconDownload = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
