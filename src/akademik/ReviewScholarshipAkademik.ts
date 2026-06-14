@@ -1,16 +1,14 @@
 import { apiFetch } from '../shared/api-client';
 import {
-    renderReviewerShell,
-    type ReviewerShellAction,
-} from '../shared/reviewer-shell';
-import {
-    buildSkaReviewerView,
-    createSkaTextActions,
-    getSkaReviewerIdentity,
-    skaActionSummaryRows,
-    type SkaApplication,
-    type SkaReviewResponse,
-} from '../shared/ska-reviewer';
+    beasiswaActionSummaryRows,
+    beasiswaGeneratedPreviewEndpoint,
+    beasiswaReviewerEndpointPrefix,
+    buildBeasiswaReviewerView,
+    createBeasiswaTextActions,
+    getBeasiswaReviewerIdentity,
+    type BeasiswaReviewResponse,
+    type BeasiswaReviewerIdentity,
+} from '../shared/beasiswa-reviewer';
 import { getLetterStatusLabel, LETTER_WORKFLOW_STATUS } from '../shared/letter-workflow';
 import {
     activePageForReviewerOrigin,
@@ -18,10 +16,11 @@ import {
     resolveReviewerOrigin,
     type ReviewerNavigationOptions,
 } from '../shared/reviewer-navigation';
+import { renderReviewerShell, type ReviewerShellAction } from '../shared/reviewer-shell';
 
 type ReviewerStage = 'prodi' | 'department';
 
-export const renderReviewSuratKeteranganAktifAkademik = async (
+export const renderReviewScholarshipAkademik = async (
     applicationId: number,
     options?: ReviewerNavigationOptions,
 ): Promise<void> => {
@@ -31,42 +30,44 @@ export const renderReviewSuratKeteranganAktifAkademik = async (
     const isProdiReviewer = ['kaprodi', 'sekprodi'].includes(role) || ['kaprodi', 'sekprodi'].includes(subRole);
     const isDepartmentReviewer = ['kadep', 'sekdep'].includes(role) || ['kadep', 'sekdep'].includes(subRole);
 
-    await renderReviewerShell<SkaApplication>({
+    await renderReviewerShell<BeasiswaReviewResponse>({
         role,
         activePage: activePageForReviewerOrigin(origin),
-        loadApplication: () => loadSkaApplication(applicationId),
-        buildView: (app) => {
-            const identity = getSkaReviewerIdentity(app);
-            const endpointPrefix = `/api/akademik/surat-keterangan-aktif/${applicationId}`;
-            const reviewerStage = resolveReviewerStage(app, isProdiReviewer, isDepartmentReviewer);
+        loadApplication: () => loadBeasiswa(applicationId),
+        buildView: ({ application, student }) => {
+            const identity = getBeasiswaReviewerIdentity(application, student);
+            const endpointPrefix = beasiswaReviewerEndpointPrefix('akademik', applicationId);
+            const reviewerStage = resolveReviewerStage(application.status, isProdiReviewer, isDepartmentReviewer);
             const actions = reviewerStage
                 ? [
-                    ...createSkaTextActions({
+                    ...createBeasiswaTextActions({
                         audience: 'akademik',
-                        prefix: 'aktif-akademik',
+                        prefix: 'scholarship-akademik',
                         endpointPrefix,
                         identity,
                     }),
-                    createApproveAction(app, identity, endpointPrefix, reviewerStage),
+                    createApproveAction(identity, endpointPrefix, reviewerStage),
                 ]
                 : undefined;
 
-            return buildSkaReviewerView(app, {
+            return buildBeasiswaReviewerView(application, student, {
+                audience: 'akademik',
                 subtitle: isDepartmentReviewer
                     ? 'Data pengajuan ditampilkan untuk tanda tangan Kadep/Sekdep.'
                     : 'Data pengajuan ditampilkan untuk paraf Kaprodi/Sekprodi.',
                 statusContext: 'akademik-review',
                 backButtonId: 'back-to-akademik-dashboard',
                 backButtonLabel: 'Kembali ke dashboard akademik',
-                generatedPreviewRootId: 'aktif-akademik-generated-letter-preview',
-                generatedPreviewEndpointUrl: `${endpointPrefix}/generated-preview`,
+                supportingGalleryRootId: 'beasiswa-akademik-supporting-gallery',
+                generatedPreviewRootId: 'beasiswa-akademik-generated-letter-preview',
+                generatedPreviewEndpointUrl: beasiswaGeneratedPreviewEndpoint('akademik', applicationId),
                 actionTitle: 'Tindakan Persetujuan',
-                unavailableMessage: readOnlyMessage(app.status, isProdiReviewer, isDepartmentReviewer),
+                unavailableMessage: readOnlyMessage(application.status, isProdiReviewer, isDepartmentReviewer),
                 actions,
                 actionNote: reviewerStage
                     ? reviewerStage === 'department'
-                        ? 'Tindakan ini hanya untuk Kadep/Sekdep pada status Diparaf Kaprodi/Sekprodi.'
-                        : 'Tindakan ini hanya untuk Kaprodi/Sekprodi pada status Diverifikasi Tendik.'
+                        ? 'Tindakan ini akan membuat dokumen final dan meneruskan pengajuan ke tahap review mahasiswa.'
+                        : 'Tindakan ini memparaf pengajuan dan meneruskannya ke Kadep/Sekdep untuk tanda tangan akhir.'
                     : undefined,
             });
         },
@@ -74,34 +75,33 @@ export const renderReviewSuratKeteranganAktifAkademik = async (
     });
 };
 
-async function loadSkaApplication(applicationId: number): Promise<SkaApplication> {
-    const response = await apiFetch(`/api/akademik/surat-keterangan-aktif/${applicationId}`);
-    const data = await response.json() as SkaReviewResponse;
+async function loadBeasiswa(applicationId: number): Promise<BeasiswaReviewResponse> {
+    const response = await apiFetch(beasiswaReviewerEndpointPrefix('akademik', applicationId));
+    const data = await response.json() as BeasiswaReviewResponse;
     if (!response.ok) {
-        throw new Error(data.message || 'Gagal mengambil data pengajuan surat keterangan aktif');
+        throw new Error(data.message || 'Gagal mengambil data pengajuan beasiswa.');
     }
-    return data.application;
+    return data;
 }
 
 function resolveReviewerStage(
-    app: SkaApplication,
+    status: string | null | undefined,
     isProdiReviewer: boolean,
     isDepartmentReviewer: boolean,
 ): ReviewerStage | null {
-    if (isProdiReviewer && app.status === LETTER_WORKFLOW_STATUS.APPROVED_TENDIK) return 'prodi';
-    if (isDepartmentReviewer && app.status === LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI) return 'department';
+    if (isProdiReviewer && status === LETTER_WORKFLOW_STATUS.APPROVED_TENDIK) return 'prodi';
+    if (isDepartmentReviewer && status === LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI) return 'department';
     return null;
 }
 
 function createApproveAction(
-    app: SkaApplication,
-    identity: ReturnType<typeof getSkaReviewerIdentity>,
+    identity: BeasiswaReviewerIdentity,
     endpointPrefix: string,
     reviewerStage: ReviewerStage,
 ): ReviewerShellAction {
     const isDepartmentStage = reviewerStage === 'department';
     return {
-        buttonId: 'aktif-akademik-approve-btn',
+        buttonId: 'scholarship-akademik-approve-btn',
         buttonText: isDepartmentStage
             ? 'Tandatangani dan Selesaikan di Akademik'
             : 'Paraf dan Teruskan ke Kadep/Sekdep',
@@ -111,21 +111,21 @@ function createApproveAction(
             ? 'Pengajuan berhasil ditandatangani dan menunggu review mahasiswa.'
             : 'Pengajuan berhasil diparaf dan diteruskan ke Kadep/Sekdep.',
         modal: {
-            id: 'aktif-akademik-approval-modal',
+            id: 'scholarship-akademik-approval-modal',
             title: isDepartmentStage ? 'Konfirmasi Tanda Tangan' : 'Konfirmasi Paraf',
             headerClass: 'bg-[#115E59] text-white',
-            cancelId: 'aktif-akademik-cancel-approve',
-            confirmId: 'aktif-akademik-confirm-approve',
+            cancelId: 'scholarship-akademik-cancel-approve',
+            confirmId: 'scholarship-akademik-confirm-approve',
             confirmText: isDepartmentStage ? 'Ya, Tandatangani' : 'Ya, Paraf Pengajuan',
             confirmClass: 'bg-[#115E59] text-white hover:bg-[#0d4a46]',
             notices: [{
                 title: isDepartmentStage ? 'Pengajuan siap ditandatangani' : 'Pengajuan siap diparaf',
                 message: isDepartmentStage
-                    ? 'Anda akan memberi tanda tangan akhir dan meneruskan pengajuan ke tahap review mahasiswa.'
+                    ? 'Anda akan memberi tanda tangan akhir, membuat dokumen final, dan meneruskan pengajuan ke tahap review mahasiswa.'
                     : 'Anda akan memparaf pengajuan ini dan meneruskannya ke Kadep/Sekdep untuk tanda tangan akhir.',
                 classes: 'bg-amber-50 border border-amber-100 text-amber-900',
             }],
-            summaryRows: skaActionSummaryRows(app, identity),
+            summaryRows: beasiswaActionSummaryRows(identity),
         },
     };
 }
@@ -140,7 +140,7 @@ function readOnlyMessage(
         return `Pengajuan berada pada status ${label}, sehingga tindakan Kadep/Sekdep tidak tersedia.`;
     }
     if (isProdiReviewer) {
-        return `Pengajuan berada pada status ${label}, sehingga tindakan Prodi tidak tersedia.`;
+        return `Pengajuan berada pada status ${label}, sehingga tindakan Kaprodi/Sekprodi tidak tersedia.`;
     }
     return 'Anda tidak memiliki akses tindakan untuk tahap persetujuan pengajuan ini.';
 }
