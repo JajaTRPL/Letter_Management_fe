@@ -4,8 +4,10 @@ import { renderScholarshipForm } from './ScholarshipForm';
 import { renderSuratPengantarMagangForm } from './SuratPengantarMagangForm';
 import { renderSuratKeteranganAktifForm } from './SuratKeteranganAktifForm';
 import { renderProsesLuarNegeriForm } from './ProsesLuarNegeriForm';
+import { renderSuratTugasForm } from './SuratTugasForm';
 import Toastify from 'toastify-js';
 import { apiFetch } from '../shared/api-client';
+import { ADMINISTRASI_LETTER_CARDS, renderLetterCard } from '../shared/letter-presentation';
 
 export const renderAdministrasiSurat = () => {
     const content = `
@@ -22,76 +24,11 @@ export const renderAdministrasiSurat = () => {
                 </button>
             </div>
 
-            <!-- Jenis Surat Grid -->
+            <!-- Jenis Surat Grid. Each card's distinct accent + icon identity is
+                 presentation-only metadata in letter-presentation; the page keeps
+                 the card/duration ids and click → form dispatch below. -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                <!-- Surat Keterangan Aktif -->
-                <div id="card-aktif" class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
-                    <div class="w-12 h-12 bg-teal-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-teal-100 transition-colors">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0d9488" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                            <line x1="16" y1="13" x2="8" y2="13"></line>
-                            <line x1="16" y1="17" x2="8" y2="17"></line>
-                        </svg>
-                    </div>
-                    <h3 class="text-base font-bold text-gray-800 mb-1">Surat Keterangan Aktif</h3>
-                    <p class="text-sm text-gray-500 mb-4">Surat yang menerangkan bahwa Anda adalah mahasiswa aktif.</p>
-                    <span id="duration-aktif" class="inline-flex items-center gap-1 text-xs font-bold text-teal-600 bg-teal-50 px-3 py-1 rounded-full">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        1–3 Hari Kerja
-                    </span>
-                </div>
-
-                <!-- Surat Pengantar Magang -->
-                <div id="card-magang" class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
-                    <div class="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-100 transition-colors">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-                        </svg>
-                    </div>
-                    <h3 class="text-base font-bold text-gray-800 mb-1">Surat Pengantar Magang</h3>
-                    <p class="text-sm text-gray-500 mb-4">Surat pengantar untuk keperluan kerja praktik atau magang.</p>
-                    <span id="duration-magang" class="inline-flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        2–5 Hari Kerja
-                    </span>
-                </div>
-
-                <!-- Surat Permohonan Beasiswa -->
-                <div id="card-beasiswa" class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
-                    <div class="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-amber-100 transition-colors">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="8" r="6"></circle>
-                            <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"></path>
-                        </svg>
-                    </div>
-                    <h3 class="text-base font-bold text-gray-800 mb-1">Surat Permohonan Beasiswa</h3>
-                    <p class="text-sm text-gray-500 mb-4">Surat permohonan dari departemen untuk pengajuan beasiswa.</p>
-                    <span id="duration-beasiswa" class="inline-flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        3–7 Hari Kerja
-                    </span>
-                </div>
-
-                <!-- Surat Proses Luar Negeri -->
-                <div id="card-luar-negeri" class="doc-card bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer group">
-                    <div class="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-emerald-100 transition-colors">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="2" y1="12" x2="22" y2="12"></line>
-                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                        </svg>
-                    </div>
-                    <h3 class="text-base font-bold text-gray-800 mb-1">Proses Luar Negeri</h3>
-                    <p class="text-sm text-gray-500 mb-4">Surat pengantar untuk keperluan visa atau studi ke luar negeri.</p>
-                    <span id="duration-luar_negeri" class="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        2–4 Hari Kerja
-                    </span>
-                </div>
-
+                ${ADMINISTRASI_LETTER_CARDS.map(renderLetterCard).join('')}
             </div>
         </div>
     `;
@@ -152,6 +89,8 @@ export const renderAdministrasiSurat = () => {
                     handleCardClick(() => renderSuratKeteranganAktifForm());
                 } else if (card.id === 'card-luar-negeri') {
                     handleCardClick(() => renderProsesLuarNegeriForm());
+                } else if (card.id === 'card-surat-tugas') {
+                    handleCardClick(() => renderSuratTugasForm());
                 } else {
                     handleCardClick();
                 }

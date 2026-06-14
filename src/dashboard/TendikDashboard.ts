@@ -5,6 +5,7 @@ import { renderReviewScholarship } from '../tendik/ReviewScholarship';
 import { renderReviewProsesLuarNegeri } from '../tendik/ReviewProsesLuarNegeri';
 import { renderReviewSuratKeteranganAktif } from '../tendik/ReviewSuratKeteranganAktif';
 import { renderReviewSuratPengantarMagang } from '../tendik/ReviewSuratPengantarMagang';
+import { renderReviewSuratTugas } from '../tendik/ReviewSuratTugas';
 import {
     getAssignedTaskLabel,
     getLetterStatusLabel,
@@ -13,6 +14,7 @@ import {
     isLegacyBeasiswaFallback,
     isMagangLetter,
     isProsesLuarNegeriLetter,
+    isSuratTugasLetter,
     type TendikTaskRow,
 } from '../shared/letter-workflow';
 
@@ -29,6 +31,7 @@ const resolveTendikReviewRenderer = (letterType: string): TendikReviewRenderer |
     if (isMagangLetter(letterType)) return renderReviewSuratPengantarMagang;
     if (isAktifLetter(letterType)) return renderReviewSuratKeteranganAktif;
     if (isProsesLuarNegeriLetter(letterType)) return renderReviewProsesLuarNegeri;
+    if (isSuratTugasLetter(letterType)) return renderReviewSuratTugas;
     if (isLegacyBeasiswaFallback(letterType)) return renderReviewScholarship;
     return null;
 };

@@ -1,10 +1,11 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { getGreetingName } from '../utils/nameHelper';
 import { apiFetch } from '../shared/api-client';
-import { renderReviewScholarship } from '../tendik/ReviewScholarship';
+import { renderReviewScholarshipAkademik } from '../akademik/ReviewScholarshipAkademik';
 import { renderReviewProsesLuarNegeriAkademik } from '../akademik/ReviewProsesLuarNegeriAkademik';
 import { renderReviewSuratKeteranganAktifAkademik } from '../akademik/ReviewSuratKeteranganAktifAkademik';
 import { renderReviewSuratPengantarMagangAkademik } from '../akademik/ReviewSuratPengantarMagangAkademik';
+import { renderReviewSuratTugasAkademik } from '../akademik/ReviewSuratTugasAkademik';
 import {
     getAkademikQueueLabel,
     getLetterStatusLabel,
@@ -13,6 +14,7 @@ import {
     isLegacyBeasiswaFallback,
     isMagangLetter,
     isProsesLuarNegeriLetter,
+    isSuratTugasLetter,
     type TendikTaskRow,
 } from '../shared/letter-workflow';
 
@@ -335,9 +337,10 @@ type AkademikReviewRenderer = (id: number, options: { origin: 'dashboard' }) => 
 
 const resolveAkademikReviewRenderer = (letterType: string): AkademikReviewRenderer | null => {
     if (isMagangLetter(letterType)) return renderReviewSuratPengantarMagangAkademik;
+    if (isSuratTugasLetter(letterType)) return renderReviewSuratTugasAkademik;
     if (isAktifLetter(letterType)) return renderReviewSuratKeteranganAktifAkademik;
     if (isProsesLuarNegeriLetter(letterType)) return renderReviewProsesLuarNegeriAkademik;
-    if (isLegacyBeasiswaFallback(letterType)) return renderReviewScholarship;
+    if (isLegacyBeasiswaFallback(letterType)) return renderReviewScholarshipAkademik;
     return null;
 };
 
