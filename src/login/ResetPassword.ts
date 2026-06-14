@@ -1,5 +1,11 @@
-import { renderLogin } from './Login'
 import Toastify from 'toastify-js'
+
+// Navigate back to the Login page. Loaded lazily so ResetPassword does not
+// statically depend on Login (that page→page edge is part of the inherited
+// import cycle, C1). Same runtime behavior — both call sites are async/event-driven.
+const renderLogin = (): void => {
+  void import('./Login').then((mod) => mod.renderLogin())
+}
 
 declare global {
   interface Window {
