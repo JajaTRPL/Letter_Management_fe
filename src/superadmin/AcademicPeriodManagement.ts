@@ -3,9 +3,47 @@ import { listAcademicPeriods } from './academic-periods/api';
 import { renderAcademicPeriodTable } from './academic-periods/ui-utils';
 import { setupAcademicPeriodListeners } from './academic-periods/listeners';
 import type { AcademicPeriod } from './academic-periods/types';
+import { summarizeAcademicPeriods } from './academic-periods/state';
 import { showError } from '../shared/toast';
 
 let allPeriods: AcademicPeriod[] = [];
+
+/**
+ * Top banners that surface manual-operation pitfalls of the hybrid backend
+ * resolver (is_active=true AND today within start/end date). These are
+ * read-only awareness signals — no auto-fix actions.
+ */
+const renderTopBanners = (periods: AcademicPeriod[]): string => {
+    if (periods.length === 0) return '';
+    const summary = summarizeAcademicPeriods(periods);
+    const banners: string[] = [];
+
+    if (summary.hasNoCurrentToday) {
+        banners.push(`
+            <div role="alert" class="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4">
+                <svg class="shrink-0 mt-0.5 text-amber-600" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                <div>
+                    <p class="text-sm font-semibold text-amber-800">Tidak ada periode akademik berjalan hari ini</p>
+                    <p class="text-xs text-amber-700 mt-1 leading-relaxed">Pengajuan surat yang membutuhkan periode akademik (misal Surat Keterangan Aktif) dapat menampilkan nilai kosong. Pastikan ada satu periode dicentang <strong>Aktif</strong> dengan tanggal yang mencakup hari ini.</p>
+                </div>
+            </div>
+        `);
+    }
+
+    if (summary.hasMultipleActive) {
+        banners.push(`
+            <div role="alert" class="flex items-start gap-3 bg-rose-50 border border-rose-200 rounded-2xl px-5 py-4">
+                <svg class="shrink-0 mt-0.5 text-rose-600" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <div>
+                    <p class="text-sm font-semibold text-rose-800">Lebih dari satu periode berstatus Aktif terdeteksi</p>
+                    <p class="text-xs text-rose-700 mt-1 leading-relaxed">Sistem akan memakai periode yang memenuhi tanggal hari ini; jika lebih dari satu cocok, hasilnya dapat membingungkan. Mohon periksa kembali daftar di bawah.</p>
+                </div>
+            </div>
+        `);
+    }
+
+    return banners.join('');
+};
 
 export const renderAcademicPeriodManagement = async (): Promise<void> => {
     renderDashboardLayout(
@@ -30,6 +68,7 @@ export const renderAcademicPeriodManagement = async (): Promise<void> => {
 function renderContent(periods: AcademicPeriod[]): void {
     const content = `
         <div class="space-y-5 animate-fade-in pb-12">
+            ${renderTopBanners(periods)}
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-visible">
                 <div class="px-6 py-5 border-b border-gray-100">
                     <div class="flex items-center gap-3 mb-1">

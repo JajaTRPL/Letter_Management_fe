@@ -1,4 +1,11 @@
 import type { AcademicPeriod } from './types';
+import {
+    type PeriodDisplayState,
+    daysUntilEnd,
+    formatLocalDate,
+    isCurrentToday,
+    periodDisplayState,
+} from './state';
 
 const SEMESTER_LABELS: Record<string, string> = {
     ganjil: 'Ganjil',
@@ -8,10 +15,37 @@ const SEMESTER_LABELS: Record<string, string> = {
 export const semesterTypeLabel = (type: string): string =>
     SEMESTER_LABELS[type] ?? type;
 
-const activeBadge = (isActive: boolean): string =>
-    isActive
-        ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-100">Aktif</span>`
-        : `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500 border border-gray-200">Nonaktif</span>`;
+const STATUS_BADGE_STYLE: Record<PeriodDisplayState, { label: string; classes: string }> = {
+    'berjalan':         { label: 'Berjalan',            classes: 'bg-emerald-50 text-emerald-700 border border-emerald-100' },
+    'aktif-belum-mulai':{ label: 'Aktif – Belum Mulai', classes: 'bg-amber-50 text-amber-700 border border-amber-100' },
+    'aktif-berakhir':   { label: 'Aktif – Berakhir',    classes: 'bg-rose-50 text-rose-700 border border-rose-100' },
+    'nonaktif':         { label: 'Nonaktif',            classes: 'bg-gray-100 text-gray-500 border border-gray-200' },
+};
+
+const statusBadge = (period: AcademicPeriod): string => {
+    const state = periodDisplayState(period);
+    const { label, classes } = STATUS_BADGE_STYLE[state];
+    return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${classes}">${label}</span>`;
+};
+
+/** Small amber chip shown next to the date when current period is ending within 14 days. */
+const expirySoonChip = (period: AcademicPeriod): string => {
+    if (!isCurrentToday(period)) return '';
+    const days = daysUntilEnd(period);
+    if (!Number.isFinite(days) || days < 0 || days > 14) return '';
+    const text = days === 0 ? 'Berakhir hari ini' : `Berakhir ${days} hari lagi`;
+    return `<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-100" title="Tanggal selesai semakin dekat">${text}</span>`;
+};
+
+const dateRangeCell = (period: AcademicPeriod): string => {
+    const start = formatLocalDate(period.start_date);
+    const end = formatLocalDate(period.end_date);
+    const rawTitle = `${period.start_date} → ${period.end_date}`;
+    return `
+        <span class="text-sm text-gray-600" title="${rawTitle}">${start} – ${end}</span>
+        ${expirySoonChip(period)}
+    `;
+};
 
 export const renderAcademicPeriodRow = (period: AcademicPeriod): string => `
     <tr class="hover:bg-gray-50 transition-colors" data-id="${period.id}">
@@ -22,10 +56,10 @@ export const renderAcademicPeriodRow = (period: AcademicPeriod): string => `
             <span class="text-sm text-gray-700">${semesterTypeLabel(period.semester_type)}</span>
         </td>
         <td class="px-4 py-3.5 border-b border-gray-50">
-            <span class="text-sm text-gray-600">${period.start_date} &rarr; ${period.end_date}</span>
+            ${dateRangeCell(period)}
         </td>
         <td class="px-4 py-3.5 border-b border-gray-50">
-            ${activeBadge(period.is_active)}
+            ${statusBadge(period)}
         </td>
         <td class="px-4 py-3.5 border-b border-gray-50 text-right sticky right-0 bg-white shadow-[-4px_0_12px_rgba(0,0,0,0.03)]">
             <div class="flex items-center justify-end gap-2">

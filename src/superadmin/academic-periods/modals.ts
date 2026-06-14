@@ -48,9 +48,12 @@ export const renderAcademicPeriodModal = (
                     <div class="flex items-start gap-3 p-3 bg-amber-50 border border-amber-100 rounded-xl">
                         <input type="checkbox" id="ap-is-active" name="is_active" ${(isEdit ? period?.is_active : false) ? 'checked' : ''}
                             class="mt-0.5 w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer shrink-0">
-                        <div>
+                        <div class="space-y-1.5">
                             <label for="ap-is-active" class="text-sm text-gray-700 font-medium cursor-pointer">Aktif</label>
-                            <p class="text-xs text-amber-700 mt-0.5">Hanya satu periode yang boleh aktif. Mengaktifkan periode ini otomatis menonaktifkan periode aktif lainnya. Periode aktif digunakan untuk menghitung semester mahasiswa pada pengajuan baru.</p>
+                            <ul class="text-xs text-amber-700 list-disc pl-4 space-y-1 leading-relaxed">
+                                <li>Hanya satu periode yang boleh aktif. Mengaktifkan periode ini otomatis menonaktifkan periode aktif lainnya.</li>
+                                <li>Periode dianggap <strong>berjalan</strong> jika dicentang Aktif <strong>dan</strong> tanggal hari ini berada di antara Tanggal Mulai dan Tanggal Selesai. Mencentang Aktif saja tidak cukup jika tanggal hari ini di luar rentang.</li>
+                            </ul>
                         </div>
                     </div>
                     <div class="mt-8 flex gap-3 justify-end pt-4 border-t border-gray-100">
