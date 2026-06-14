@@ -16,6 +16,7 @@ export const LETTER_TYPES = {
     SURAT_PERMOHONAN_BEASISWA: 'surat-permohonan-beasiswa',
     SURAT_KETERANGAN_AKTIF: 'surat-keterangan-aktif',
     PROSES_LUAR_NEGERI: 'proses-luar-negeri',
+    SURAT_TUGAS: 'surat-tugas',
 } as const;
 
 export type LetterType = typeof LETTER_TYPES[keyof typeof LETTER_TYPES];
@@ -29,7 +30,6 @@ export interface TendikTaskRow {
     student_name?: string | null;
     nim?: string | null;
     is_overdue?: boolean;
-    docx_url?: string | null;
     assigned_to?: number | null;
     assigned_tendik_name?: string | null;
     nomor_surat?: string | null;
@@ -138,6 +138,7 @@ const ASSIGNED_TASK_LABELS: Record<string, string> = {
     [LETTER_TYPES.SURAT_PERMOHONAN_BEASISWA]: 'Surat Permohonan Beasiswa',
     luar_negeri: 'Proses Luar Negeri',
     [LETTER_TYPES.PROSES_LUAR_NEGERI]: 'Proses Luar Negeri',
+    [LETTER_TYPES.SURAT_TUGAS]: 'Surat Tugas',
 };
 
 const normalizeKey = (value?: string | null): string => String(value ?? '').trim();
@@ -245,6 +246,11 @@ export const isAktifLetter = (letterType?: string | null): boolean => {
 export const isProsesLuarNegeriLetter = (letterType?: string | null): boolean => {
     const key = normalizeKey(letterType);
     return key === LETTER_TYPES.PROSES_LUAR_NEGERI || key === 'luar_negeri';
+};
+
+export const isSuratTugasLetter = (letterType?: string | null): boolean => {
+    const key = normalizeKey(letterType);
+    return key === LETTER_TYPES.SURAT_TUGAS;
 };
 
 export const isStudentReviewStage = (status?: string | null): boolean => (
