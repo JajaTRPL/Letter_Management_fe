@@ -43,9 +43,10 @@ import {
     closeRoomFormModal,
     openRoomFormModal,
 } from '../shared/room-management/room-form';
+import { renderFacilityMaster } from '../shared/room-management/facility-master';
 import type { ManagedRoom } from '../shared/room-management/types';
 
-type ActiveTab = 'rooms' | 'monitoring';
+type ActiveTab = 'rooms' | 'facilities' | 'monitoring';
 
 const PER_PAGE = 10;
 const EMPTY_META: PaginationMeta = {
@@ -147,11 +148,16 @@ const pageContent = (): string => `
             </div>
             <div class="mt-5 flex flex-wrap gap-2" role="tablist" aria-label="Bagian Peminjaman Ruangan">
                 <button id="admin-peminjaman-tab-rooms" type="button" role="tab" aria-selected="${activeTab === 'rooms'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'rooms' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Master Ruangan</button>
+                <button id="admin-peminjaman-tab-facilities" type="button" role="tab" aria-selected="${activeTab === 'facilities'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'facilities' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Master Fasilitas</button>
                 <button id="admin-peminjaman-tab-monitoring" type="button" role="tab" aria-selected="${activeTab === 'monitoring'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'monitoring' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Monitoring Pengajuan</button>
             </div>
         </section>
         <div id="admin-peminjaman-tab-content">
-            ${activeTab === 'rooms' ? renderRoomManagement() : renderMonitoring()}
+            ${activeTab === 'rooms'
+                ? renderRoomManagement()
+                : activeTab === 'facilities'
+                    ? '<div id="admin-facility-master-root"></div>'
+                    : renderMonitoring()}
         </div>
     </div>
 `;
@@ -402,12 +408,34 @@ const attachPageListeners = (): void => {
         activeTab = 'rooms';
         renderPage();
     });
+    document.getElementById('admin-peminjaman-tab-facilities')?.addEventListener('click', () => {
+        activeTab = 'facilities';
+        renderPage();
+    });
     document.getElementById('admin-peminjaman-tab-monitoring')?.addEventListener('click', () => {
         activeTab = 'monitoring';
         renderPage();
     });
     attachRoomListeners();
     attachBookingListeners();
+
+    const facilityHost = document.getElementById('admin-facility-master-root');
+    if (facilityHost) void renderFacilityMaster(facilityHost, { onOpenRoom: openRoomFromFacilityUsage });
+};
+
+/**
+ * Jump from the Master Fasilitas usage drawer straight to a room's Kelola
+ * Ruangan drawer: switch to the Master Ruangan tab and open the drawer on the
+ * Fasilitas tab (the context the user came from). The drawer loads the room by
+ * id, so it works even when the room is filtered out of the current list, and
+ * surfaces its own error state if the room cannot be fetched.
+ */
+const openRoomFromFacilityUsage = (roomId: number): void => {
+    if (activeTab !== 'rooms') {
+        activeTab = 'rooms';
+        renderPage();
+    }
+    void openRoomManagementDrawer(roomId, { ...roomDrawerOptions(), initialTab: 'fasilitas' });
 };
 
 const attachRoomListeners = (): void => {

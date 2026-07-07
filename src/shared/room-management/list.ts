@@ -93,6 +93,7 @@ export const hydrateRoomTableCovers = (
             const image = document.createElement('img');
             image.src = objectUrl;
             image.alt = 'Foto ruangan';
+            image.loading = 'lazy';
             image.className = 'h-full w-full object-cover';
             cell.replaceChildren(image);
         };

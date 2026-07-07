@@ -18,6 +18,7 @@ const m = vi.hoisted(() => ({
     listPhotos: vi.fn(),
     listFacilities: vi.fn(),
     listFacilityTypes: vi.fn(),
+    getFacilityUsage: vi.fn(),
     listTemplates: vi.fn(),
     listAudit: vi.fn(),
     fetchPhoto: vi.fn(),
@@ -77,6 +78,9 @@ vi.mock('../../../shared/room-management/api', () => ({
     fetchRoomPhotoObjectUrl: m.fetchPhoto,
     listFacilityTypes: m.listFacilityTypes,
     createFacilityType: vi.fn(),
+    updateFacilityType: vi.fn(),
+    deleteFacilityType: vi.fn(),
+    getFacilityUsage: m.getFacilityUsage,
     getRoomFacilities: m.listFacilities,
     syncRoomFacilities: vi.fn(),
     listRoomTemplates: m.listTemplates,
@@ -229,6 +233,11 @@ beforeEach(() => {
     m.listPhotos.mockResolvedValue([]);
     m.listFacilities.mockResolvedValue([]);
     m.listFacilityTypes.mockResolvedValue([]);
+    m.getFacilityUsage.mockResolvedValue({
+        facility_type: { id: 1, name: 'Proyektor', slug: 'proyektor', is_predefined: true, is_active: true, usage_count: 0 },
+        summary: { total: 0, classroom: 0, laboratory: 0, other: 0 },
+        rooms: [],
+    });
     m.listTemplates.mockResolvedValue([]);
     m.listAudit.mockResolvedValue([]);
     m.attachViewer.mockReturnValue(() => {});
@@ -371,6 +380,68 @@ describe('Super Admin room master management', () => {
         await flush();
 
         expect(m.updateRoom).toHaveBeenCalledWith(12, expect.objectContaining({ name: 'Nama Diperbarui' }));
+    });
+
+    it('mounts the Master Fasilitas tab and loads facility types', async () => {
+        m.listFacilityTypes.mockResolvedValue([
+            { id: 1, name: 'Proyektor', slug: 'proyektor', is_predefined: true, is_active: true, usage_count: 2 },
+        ]);
+        await renderPeminjamanRuanganAdmin();
+        document.getElementById('admin-peminjaman-tab-facilities')?.click();
+        await flush();
+
+        expect(document.getElementById('admin-facility-master-root')).not.toBeNull();
+        expect(document.body.textContent).toContain('Master Fasilitas');
+        expect(document.body.textContent).toContain('Proyektor');
+        expect(document.body.textContent).toContain('2 ruangan');
+    });
+
+    const openUsageDrawerFromFacilities = async (): Promise<void> => {
+        m.listFacilityTypes.mockResolvedValue([
+            { id: 1, name: 'Proyektor', slug: 'proyektor', is_predefined: true, is_active: true, usage_count: 1 },
+        ]);
+        m.getFacilityUsage.mockResolvedValue({
+            facility_type: { id: 1, name: 'Proyektor', slug: 'proyektor', is_predefined: true, is_active: true, usage_count: 1 },
+            summary: { total: 1, classroom: 1, laboratory: 0, other: 0 },
+            rooms: [{ id: 12, code: 'CU101', name: 'Ruang CU101', type: 'classroom', is_active: true, owning_laboratory: null, quantity: 3, condition: 'baik' }],
+        });
+        await renderPeminjamanRuanganAdmin();
+        document.getElementById('admin-peminjaman-tab-facilities')?.click();
+        await flush();
+        document.querySelector<HTMLElement>('[data-facility-menu="1"]')?.click();
+        document.querySelector<HTMLElement>('[data-facility-usage="1"]')?.click();
+        await flush();
+    };
+
+    it('jumps from facility usage to the room Kelola drawer on the Fasilitas tab', async () => {
+        await openUsageDrawerFromFacilities();
+
+        // Usage drawer shows the room with a "Kelola Ruangan" CTA.
+        expect(document.getElementById('facility-usage-drawer-root')).not.toBeNull();
+        const cta = document.querySelector<HTMLElement>('[data-usage-open-room="12"]');
+        expect(cta).not.toBeNull();
+        expect(cta?.textContent).toContain('Kelola Ruangan');
+
+        cta?.click();
+        await flush();
+
+        // Usage drawer closed; Master Ruangan tab active; room drawer open on Fasilitas.
+        expect(document.getElementById('facility-usage-drawer-root')).toBeNull();
+        expect(document.getElementById('admin-peminjaman-tab-rooms')?.getAttribute('aria-selected')).toBe('true');
+        expect(document.getElementById('room-management-drawer-root')).not.toBeNull();
+        expect(m.getRoom).toHaveBeenCalledWith(12);
+        expect(document.querySelector('[data-room-mgmt-tab="fasilitas"][aria-selected="true"]')).not.toBeNull();
+    });
+
+    it('surfaces the drawer error state when the jumped-to room cannot be fetched', async () => {
+        await openUsageDrawerFromFacilities();
+        m.getRoom.mockRejectedValueOnce(new PeminjamanApiError('Not found', 404));
+
+        document.querySelector<HTMLElement>('[data-usage-open-room="12"]')?.click();
+        await flush();
+
+        expect(document.getElementById('room-management-drawer-root')).not.toBeNull();
+        expect(document.body.textContent).toContain('Detail ruangan tidak tersedia');
     });
 
     it('activates and deactivates through the drawer Info tab', async () => {

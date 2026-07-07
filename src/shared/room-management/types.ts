@@ -50,6 +50,34 @@ export interface FacilityTypeOption {
     name: string;
     slug: string;
     is_predefined: boolean;
+    // Present on the master view; absent on legacy/active-filtered responses.
+    is_active?: boolean;
+    usage_count?: number;
+}
+
+/** One room using a facility type (Master Fasilitas "Lihat Penggunaan"). */
+export interface FacilityUsageRoom {
+    id: number;
+    code: string;
+    name: string;
+    type: ManagedRoomType;
+    is_active: boolean;
+    owning_laboratory: ManagedLaboratory | null;
+    quantity?: number | null;
+    condition?: RoomFacilityCondition | string | null;
+}
+
+export interface FacilityUsageSummary {
+    total: number;
+    classroom: number;
+    laboratory: number;
+    other: number;
+}
+
+export interface FacilityUsage {
+    facility_type: FacilityTypeOption;
+    summary: FacilityUsageSummary;
+    rooms: FacilityUsageRoom[];
 }
 
 export interface ManagedRoomTemplate {

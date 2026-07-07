@@ -140,7 +140,13 @@ describe('room management drawer — Info tab', () => {
 });
 
 describe('room management drawer — Foto tab', () => {
-    it('uploads a photo and refreshes the list', async () => {
+    const selectPhotos = (files: File[]): void => {
+        const input = document.getElementById('room-photo-input') as HTMLInputElement;
+        Object.defineProperty(input, 'files', { value: files, configurable: true });
+        input.dispatchEvent(new Event('change'));
+    };
+
+    it('uploads a photo, refreshes the list, and resets the upload control', async () => {
         m.uploadPhoto.mockResolvedValue({ id: 1 });
         m.listPhotos
             .mockResolvedValueOnce([])
@@ -149,14 +155,85 @@ describe('room management drawer — Foto tab', () => {
         await flush();
         await openTab('foto');
 
-        const input = document.getElementById('room-photo-input') as HTMLInputElement;
         const file = new File([new Uint8Array([1])], 'f.jpg', { type: 'image/jpeg' });
-        Object.defineProperty(input, 'files', { value: [file], configurable: true });
-        input.dispatchEvent(new Event('change'));
+        selectPhotos([file]);
         await flush();
 
         expect(m.uploadPhoto).toHaveBeenCalledWith(9, file);
-        expect(m.toasts).toContain('Foto berhasil diunggah.');
+        expect(m.toasts).toContain('1 foto berhasil diunggah.');
+        // Regression: the button must reset (not stay "Mengunggah...") and re-enable.
+        const label = document.querySelector('label[for="room-photo-input"]');
+        expect(label?.textContent?.trim()).toBe('Unggah Foto');
+        expect((document.getElementById('room-photo-input') as HTMLInputElement).disabled).toBe(false);
+    });
+
+    it('uploads multiple selected photos sequentially through the single endpoint', async () => {
+        m.uploadPhoto.mockResolvedValue({ id: 1 });
+        m.listPhotos.mockResolvedValue([]);
+        await openRoomManagementDrawer(9, { laboratories: [] });
+        await flush();
+        await openTab('foto');
+
+        const files = [
+            new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' }),
+            new File([new Uint8Array([2])], 'b.png', { type: 'image/png' }),
+            new File([new Uint8Array([3])], 'c.webp', { type: 'image/webp' }),
+        ];
+        selectPhotos(files);
+        await flush();
+
+        expect(m.uploadPhoto).toHaveBeenCalledTimes(3);
+        expect(m.toasts).toContain('3 foto berhasil diunggah.');
+    });
+
+    it('rejects an invalid type before uploading and keeps the control usable', async () => {
+        m.listPhotos.mockResolvedValue([]);
+        await openRoomManagementDrawer(9, { laboratories: [] });
+        await flush();
+        await openTab('foto');
+
+        selectPhotos([new File(['x'], 'notes.pdf', { type: 'application/pdf' })]);
+        await flush();
+
+        expect(m.uploadPhoto).not.toHaveBeenCalled();
+        expect(m.toasts.some((t) => t.includes('format harus JPG, PNG, atau WebP'))).toBe(true);
+        expect((document.getElementById('room-photo-input') as HTMLInputElement).disabled).toBe(false);
+    });
+
+    it('rejects a photo larger than 5 MB before uploading', async () => {
+        m.listPhotos.mockResolvedValue([]);
+        await openRoomManagementDrawer(9, { laboratories: [] });
+        await flush();
+        await openTab('foto');
+
+        const big = new File(['x'], 'besar.jpg', { type: 'image/jpeg' });
+        Object.defineProperty(big, 'size', { value: 5 * 1024 * 1024 + 1, configurable: true });
+        selectPhotos([big]);
+        await flush();
+
+        expect(m.uploadPhoto).not.toHaveBeenCalled();
+        expect(m.toasts.some((t) => t.includes('melebihi 5 MB'))).toBe(true);
+    });
+
+    it('enforces the max photo cap and skips the overflow', async () => {
+        // Seven existing photos → only one more slot; selecting two skips one.
+        const existing = Array.from({ length: 7 }, (_, i) => ({
+            id: i + 1, thumb_url: `/api/rooms/9/photos/${i + 1}/thumb`, is_cover: i === 0, sort_order: i + 1,
+        }));
+        m.uploadPhoto.mockResolvedValue({ id: 8 });
+        m.listPhotos.mockResolvedValue(existing);
+        await openRoomManagementDrawer(9, { laboratories: [] });
+        await flush();
+        await openTab('foto');
+
+        selectPhotos([
+            new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' }),
+            new File([new Uint8Array([2])], 'b.jpg', { type: 'image/jpeg' }),
+        ]);
+        await flush();
+
+        expect(m.uploadPhoto).toHaveBeenCalledTimes(1);
+        expect(m.toasts.some((t) => t.includes('dilewati karena melebihi batas'))).toBe(true);
     });
 
     it('shows an empty state and hides upload when media management is denied', async () => {
@@ -196,11 +273,63 @@ describe('room management drawer — Fasilitas tab', () => {
         await openTab('fasilitas');
         document.getElementById('room-facility-add')?.click();
         await flush();
+        // Empty new row makes the tab dirty, so the save button is enabled.
+        expect((document.getElementById('room-facility-save') as HTMLButtonElement).disabled).toBe(false);
         document.getElementById('room-facility-save')?.click();
         await flush();
 
         expect(m.syncFacilities).not.toHaveBeenCalled();
         expect(m.toasts).toContain('Lengkapi jenis fasilitas pada setiap baris.');
+    });
+
+    it('marks a persisted facility "Tersimpan" with the save button idle, and flips to unsaved on edit', async () => {
+        m.getFacilities.mockResolvedValue([
+            { facility_type_id: 1, name: 'Proyektor', slug: 'proyektor', quantity: 1, condition: 'baik', notes: null },
+        ]);
+        await openRoomManagementDrawer(9, { laboratories: [] });
+        await flush();
+        await openTab('fasilitas');
+
+        // A persisted row shows "Tersimpan" and the save button is disabled (nothing dirty).
+        expect(document.body.textContent).toContain('Tersimpan');
+        expect(document.body.textContent).not.toContain('Belum disimpan');
+        const save = document.getElementById('room-facility-save') as HTMLButtonElement;
+        expect(save.disabled).toBe(true);
+        expect(save.textContent?.trim()).toBe('Tersimpan');
+
+        // Editing a field flips the row to "Belum disimpan" and enables save.
+        const qty = document.querySelector('[data-facility-qty="0"]') as HTMLInputElement;
+        qty.value = '5';
+        qty.dispatchEvent(new Event('change'));
+        await flush();
+
+        expect(document.body.textContent).toContain('Belum disimpan');
+        expect(document.body.textContent).toContain('Ada perubahan fasilitas yang belum disimpan.');
+        const saveAfter = document.getElementById('room-facility-save') as HTMLButtonElement;
+        expect(saveAfter.disabled).toBe(false);
+        expect(saveAfter.textContent?.trim()).toBe('Simpan Perubahan');
+    });
+
+    it('disables an already-assigned facility type in other rows (no duplicate)', async () => {
+        m.getFacilities.mockResolvedValue([
+            { facility_type_id: 1, name: 'Proyektor', slug: 'proyektor', quantity: 1, condition: 'baik', notes: null },
+        ]);
+        m.listFacilityTypes.mockResolvedValue([
+            { id: 1, name: 'Proyektor', slug: 'proyektor', is_predefined: true },
+            { id: 2, name: 'Kursi', slug: 'kursi', is_predefined: true },
+        ]);
+        await openRoomManagementDrawer(9, { laboratories: [] });
+        await flush();
+        await openTab('fasilitas');
+        document.getElementById('room-facility-add')?.click();
+        await flush();
+
+        // Row 1's dropdown must disable Proyektor (already used by row 0).
+        const optionProyektorInRow1 = document.querySelector(
+            '[data-facility-type="1"] option[value="1"]',
+        ) as HTMLOptionElement;
+        expect(optionProyektorInRow1.disabled).toBe(true);
+        expect(optionProyektorInRow1.textContent).toContain('sudah dipilih');
     });
 });
 
