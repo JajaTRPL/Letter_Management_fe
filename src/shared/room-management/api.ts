@@ -71,6 +71,25 @@ export async function getManagedRoom(roomId: number): Promise<ManagedRoomDetail>
     );
 }
 
+export interface RoomBulkDeleteResult {
+    deleted: { id: number; code: string }[];
+    archived: { id: number; code: string; reason: string }[];
+    summary: { deleted: number; archived: number; total: number };
+}
+
+/**
+ * Bulk remove selected rooms. The backend hard-deletes rooms with no booking
+ * history and archives (deactivates) rooms that have bookings, preserving
+ * historical data + FK integrity. Returns a per-outcome summary.
+ */
+export async function bulkDeleteRooms(roomIds: number[]): Promise<RoomBulkDeleteResult> {
+    const response = await apiFetch(`${BASE}/rooms/bulk`, {
+        method: 'DELETE',
+        body: JSON.stringify({ room_ids: roomIds }),
+    });
+    return (await readJson<Envelope<RoomBulkDeleteResult>>(response, 'Gagal menghapus ruangan.')).data;
+}
+
 export async function createManagedRoom(payload: RoomInfoPayload): Promise<ManagedRoom> {
     const response = await apiFetch(`${BASE}/rooms`, {
         method: 'POST',

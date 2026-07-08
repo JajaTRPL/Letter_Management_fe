@@ -23,11 +23,27 @@ const healthBadge = (label: string): string =>
 
 const PLACEHOLDER = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg>';
 
-export const renderRoomManagementTable = (rooms: ManagedRoom[]): string => `
+export interface RoomTableOptions {
+    // Opt-in checkbox column for bulk selection (SuperAdmin master + Sarpras).
+    selectable?: boolean;
+    selectedIds?: Set<number>;
+    // Per-row gate: when provided, only rooms passing it get a checkbox (others
+    // render an empty cell). Drives role parity from backend flags, e.g.
+    // (room) => room.management_flags.can_deactivate. Omit to allow every row.
+    canSelect?: (room: ManagedRoom) => boolean;
+}
+
+export const renderRoomManagementTable = (rooms: ManagedRoom[], options: RoomTableOptions = {}): string => {
+    const selectable = options.selectable === true;
+    const selected = options.selectedIds ?? new Set<number>();
+    const rowSelectable = (room: ManagedRoom): boolean => !options.canSelect || options.canSelect(room);
+    const checkboxClass = 'h-4 w-4 cursor-pointer rounded border-gray-300 text-teal-600 focus:ring-teal-500';
+    return `
     <div class="overflow-x-auto" data-room-mgmt-table>
         <table class="min-w-[820px] w-full text-left">
             <thead class="bg-gray-50 text-xs font-bold uppercase tracking-wide text-gray-500">
                 <tr>
+                    ${selectable ? `<th class="px-5 py-4 w-10"><input type="checkbox" data-room-select-all aria-label="Pilih semua ruangan" class="${checkboxClass}"></th>` : ''}
                     <th class="px-5 py-4">Ruangan</th>
                     <th class="px-5 py-4">Jenis</th>
                     <th class="px-5 py-4">Kapasitas</th>
@@ -40,7 +56,10 @@ export const renderRoomManagementTable = (rooms: ManagedRoom[]): string => `
                 ${rooms.map((room) => {
                     const coverUrl = room.cover_photo?.thumb_url ?? room.cover_photo?.display_url ?? null;
                     return `
-                    <tr class="border-b border-gray-100 last:border-0">
+                    <tr class="border-b border-gray-100 last:border-0" data-room-row="${room.id}">
+                        ${selectable ? (rowSelectable(room)
+                            ? `<td class="px-5 py-4 align-top"><input type="checkbox" class="room-checkbox ${checkboxClass}" data-room-id="${room.id}" aria-label="Pilih ruangan ${escapeHtml(room.code)}"${selected.has(room.id) ? ' checked' : ''}></td>`
+                            : '<td class="px-5 py-4"></td>') : ''}
                         <td class="px-5 py-4 align-top">
                             <div class="flex items-start gap-3">
                                 <div data-room-cover${coverUrl ? ` data-cover-url="${escapeHtml(coverUrl)}"` : ''} class="flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100 text-gray-300">${PLACEHOLDER}</div>
@@ -74,6 +93,30 @@ export const renderRoomManagementTable = (rooms: ManagedRoom[]): string => `
         </table>
     </div>
 `;
+};
+
+/**
+ * Attach bulk-selection listeners to a rendered selectable room table. The
+ * select-all header toggles every visible row; row checkboxes toggle one. The
+ * caller owns the selection set and reacts via the callbacks.
+ */
+export const attachRoomSelectionListeners = (
+    container: ParentNode,
+    handlers: {
+        onToggleRow: (roomId: number, checked: boolean) => void;
+        onToggleAll: (checked: boolean) => void;
+    },
+): void => {
+    container.querySelector<HTMLInputElement>('[data-room-select-all]')?.addEventListener('change', (event) => {
+        handlers.onToggleAll((event.target as HTMLInputElement).checked);
+    });
+    container.querySelectorAll<HTMLInputElement>('.room-checkbox').forEach((checkbox) => {
+        checkbox.addEventListener('change', () => {
+            const id = Number(checkbox.dataset.roomId);
+            if (Number.isInteger(id) && id > 0) handlers.onToggleRow(id, checkbox.checked);
+        });
+    });
+};
 
 /**
  * Hydrate list cover thumbnails after the table is in the DOM. Object URLs are

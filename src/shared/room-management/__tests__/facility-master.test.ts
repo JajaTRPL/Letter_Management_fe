@@ -149,6 +149,40 @@ describe('Master Fasilitas', () => {
         expect(host.querySelector('#facility-action-menu')).toBeNull();
     });
 
+    it('toggles the menu closed when the same Kelola trigger is clicked again', async () => {
+        await renderFacilityMaster(host);
+        await flush();
+
+        const trigger = () => host.querySelector('[data-facility-menu="1"]');
+        openMenu(1);
+        expect(host.querySelector('#facility-action-menu')).not.toBeNull();
+        expect(trigger()?.getAttribute('aria-expanded')).toBe('true');
+
+        openMenu(1); // same trigger again → closes
+        expect(host.querySelector('#facility-action-menu')).toBeNull();
+        expect(trigger()?.getAttribute('aria-expanded')).toBe('false');
+
+        openMenu(1); // and re-opens on a third click
+        expect(host.querySelector('#facility-action-menu')).not.toBeNull();
+        expect(trigger()?.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('switches the open menu when a different Kelola trigger is clicked', async () => {
+        await renderFacilityMaster(host);
+        await flush();
+
+        openMenu(1);
+        expect(host.querySelector('[data-facility-menu="1"]')?.getAttribute('aria-expanded')).toBe('true');
+
+        openMenu(3);
+        // Only one menu is ever open; ARIA moves to the new row.
+        expect(host.querySelectorAll('#facility-action-menu').length).toBe(1);
+        expect(host.querySelector('[data-facility-menu="1"]')?.getAttribute('aria-expanded')).toBe('false');
+        expect(host.querySelector('[data-facility-menu="3"]')?.getAttribute('aria-expanded')).toBe('true');
+        // The open menu belongs to row 3 (unused → Hapus item present).
+        expect(host.querySelector('[data-facility-delete="3"]')).not.toBeNull();
+    });
+
     it('menu shows "Lihat Penggunaan" and opens the usage drawer with confirm callbacks', async () => {
         await renderFacilityMaster(host);
         await flush();

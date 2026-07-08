@@ -13,6 +13,7 @@ const m = vi.hoisted(() => ({
     renderLayout: vi.fn(),
     // shared room-management api
     listRooms: vi.fn(),
+    bulkDelete: vi.fn(),
     getRoom: vi.fn(),
     createRoom: vi.fn(),
     listPhotos: vi.fn(),
@@ -85,6 +86,7 @@ vi.mock('../../shared/protected-pdf-viewer', () => ({
 
 vi.mock('../../shared/room-management/api', () => ({
     listManagedRooms: m.listRooms,
+    bulkDeleteRooms: m.bulkDelete,
     getManagedRoom: m.getRoom,
     createManagedRoom: m.createRoom,
     updateManagedRoom: vi.fn(),
@@ -256,6 +258,7 @@ beforeEach(() => {
     m.revise.mockResolvedValue(booking({ status: 'revision_requested' }));
     m.reject.mockResolvedValue(booking({ status: 'rejected' }));
     m.listRooms.mockResolvedValue([managedRoom()]);
+    m.bulkDelete.mockResolvedValue({ deleted: [], archived: [], summary: { deleted: 0, archived: 0, total: 0 } });
     m.getRoom.mockResolvedValue(managedRoom());
     m.createRoom.mockResolvedValue(managedRoom());
     m.listPhotos.mockResolvedValue([]);
@@ -598,5 +601,116 @@ describe('Tendik "Kelola Ruangan" management tab', () => {
         expect(document.body.textContent).toContain('Ruang <img src=x onerror=unsafe()>');
         expect(document.querySelector('img[src="x"]')).toBeNull();
         expect(document.body.textContent).toContain('Belum ada foto');
+    });
+});
+
+describe('Tendik room bulk selection (backend-flag gated)', () => {
+    // A room the backend says this reviewer may remove (can_deactivate=true) —
+    // e.g. a classroom for Sarpras.
+    const deletable = (over: Partial<ManagedRoom> = {}): ManagedRoom => managedRoom({
+        ...over,
+        management_flags: {
+            can_edit_info: true, can_manage_media: true, can_manage_facilities: true,
+            can_manage_templates: true, can_create: false, can_deactivate: true, can_activate: true,
+        },
+    });
+
+    const rowCheckbox = (id: number): HTMLInputElement =>
+        document.querySelector(`.room-checkbox[data-room-id="${id}"]`) as HTMLInputElement;
+
+    const check = (element: HTMLInputElement, value = true): void => {
+        element.checked = value;
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    const barHidden = (): boolean =>
+        document.getElementById('room-bulk-bar')?.classList.contains('hidden') ?? true;
+
+    it('Sarpras sees a checkbox column and can bulk-delete classrooms', async () => {
+        m.getProfile.mockResolvedValue(profile('sarpras'));
+        m.listRooms.mockResolvedValue([deletable({ id: 9, code: 'KLS-09' })]);
+        m.bulkDelete.mockResolvedValue({
+            deleted: [{ id: 9, code: 'KLS-09' }], archived: [], summary: { deleted: 1, archived: 0, total: 1 },
+        });
+        await renderPeminjamanRuanganTendik();
+        await flush();
+        await openRoomsTab();
+
+        expect(document.querySelector('[data-room-select-all]')).not.toBeNull();
+        expect(rowCheckbox(9)).not.toBeNull();
+        expect(barHidden()).toBe(true);
+
+        check(rowCheckbox(9));
+        expect(barHidden()).toBe(false);
+        expect(document.getElementById('room-bulk-count')?.textContent).toContain('1 ruangan dipilih');
+
+        document.getElementById('room-bulk-delete')?.click();
+        expect(document.getElementById('room-bulk-confirm-root')).not.toBeNull();
+        expect(document.body.textContent).toContain('Hapus Ruangan Terpilih?');
+        expect(document.body.textContent).toContain('diarsipkan');
+
+        const callsBefore = m.listRooms.mock.calls.length;
+        document.getElementById('room-bulk-confirm-ok')?.click();
+        await flush();
+
+        expect(m.bulkDelete).toHaveBeenCalledWith([9]);
+        expect(m.toasts.some((t) => t.includes('1 ruangan berhasil dihapus'))).toBe(true);
+        expect(m.listRooms.mock.calls.length).toBeGreaterThan(callsBefore);
+    });
+
+    it('select-all picks every selectable classroom for Sarpras', async () => {
+        m.getProfile.mockResolvedValue(profile('sarpras'));
+        m.listRooms.mockResolvedValue([deletable({ id: 9, code: 'KLS-09' }), deletable({ id: 10, code: 'KLS-10' })]);
+        await renderPeminjamanRuanganTendik();
+        await flush();
+        await openRoomsTab();
+
+        const selectAll = document.querySelector('[data-room-select-all]') as HTMLInputElement;
+        check(selectAll);
+        expect(document.getElementById('room-bulk-count')?.textContent).toContain('2 ruangan dipilih');
+        expect(rowCheckbox(9).checked).toBe(true);
+        expect(rowCheckbox(10).checked).toBe(true);
+    });
+
+    it('Kepala Lab sees bulk controls for own-lab rooms and can bulk-delete', async () => {
+        // Backend now returns can_deactivate=true for a Kepala Lab's own-lab
+        // rooms, so the flag-driven UI surfaces checkboxes automatically.
+        m.getProfile.mockResolvedValue(profile('kepala_lab'));
+        m.listRooms.mockResolvedValue([deletable({
+            id: 30, code: 'LAB-30', type: 'laboratory', owning_laboratory: { id: 1, code: 'RPL', name: 'Lab RPL' },
+        })]);
+        m.bulkDelete.mockResolvedValue({
+            deleted: [{ id: 30, code: 'LAB-30' }], archived: [], summary: { deleted: 1, archived: 0, total: 1 },
+        });
+        await renderPeminjamanRuanganTendik();
+        await flush();
+        await openRoomsTab();
+
+        expect(document.querySelector('[data-room-select-all]')).not.toBeNull();
+        expect(rowCheckbox(30)).not.toBeNull();
+
+        check(rowCheckbox(30));
+        expect(barHidden()).toBe(false);
+        document.getElementById('room-bulk-delete')?.click();
+        document.getElementById('room-bulk-confirm-ok')?.click();
+        await flush();
+
+        expect(m.bulkDelete).toHaveBeenCalledWith([30]);
+        expect(m.toasts.some((t) => t.includes('1 ruangan berhasil dihapus'))).toBe(true);
+    });
+
+    it('Laboran gets no bulk controls (flag false → hidden)', async () => {
+        m.getProfile.mockResolvedValue(profile('laboran'));
+        m.listRooms.mockResolvedValue([managedRoom({
+            id: 31, code: 'LAB-31', type: 'laboratory', owning_laboratory: { id: 2, code: 'NET', name: 'Lab Jaringan' },
+        })]);
+        await renderPeminjamanRuanganTendik();
+        await flush();
+        await openRoomsTab();
+
+        expect(document.querySelector('[data-tendik-rooms-state="success"]')).not.toBeNull();
+        expect(document.querySelector('[data-room-select-all]')).toBeNull();
+        expect(document.querySelector('.room-checkbox')).toBeNull();
+        expect(document.getElementById('room-bulk-bar')).toBeNull();
     });
 });

@@ -31,8 +31,9 @@ import {
     getBookingStatusTone,
     getRoomTypeLabel,
 } from '../shared/peminjaman-calendar';
-import { listManagedRooms } from '../shared/room-management/api';
+import { bulkDeleteRooms, listManagedRooms } from '../shared/room-management/api';
 import {
+    attachRoomSelectionListeners,
     attachRoomTableListeners,
     hydrateRoomTableCovers,
     renderRoomManagementTable,
@@ -80,6 +81,16 @@ let managedRoomsLoaded = false;
 let managedRoomsLoading = false;
 let managedRoomsError: string | null = null;
 const roomCoverCache = new Map<string, string>();
+// Bulk room selection — only rooms the backend says this reviewer may remove
+// (management_flags.can_deactivate) are selectable. For Sarpras that is every
+// classroom in scope; Kepala Lab / Laboran get no selectable rows at all.
+const roomSelection = new Set<number>();
+let bulkConfirmEscape: ((event: KeyboardEvent) => void) | null = null;
+
+const canBulkDelete = (room: ManagedRoom): boolean => room.management_flags?.can_deactivate === true;
+const bulkSelectableRooms = (): ManagedRoom[] => managedRooms.filter(canBulkDelete);
+const roomsAreBulkSelectable = (): boolean => bulkSelectableRooms().length > 0;
+const clearRoomSelection = (): void => { roomSelection.clear(); };
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -411,8 +422,24 @@ const renderRoomsTabState = (): string => {
             </div>
         `;
     }
-    return `<div data-tendik-rooms-state="success">${renderRoomManagementTable(managedRooms)}</div>`;
+    return `<div data-tendik-rooms-state="success">${renderRoomManagementTable(managedRooms, {
+        selectable: roomsAreBulkSelectable(),
+        selectedIds: roomSelection,
+        canSelect: canBulkDelete,
+    })}</div>`;
 };
+
+// Bulk-selection toolbar (mirrors the SuperAdmin master pattern). Only rendered
+// when at least one visible room is removable; hidden until a row is selected.
+const renderRoomBulkBar = (): string => `
+    <div id="room-bulk-bar" class="hidden flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-teal-50/40 px-5 py-3">
+        <span id="room-bulk-count" class="text-sm font-semibold text-teal-800">0 ruangan dipilih</span>
+        <div class="flex items-center gap-2">
+            <button id="room-bulk-cancel" type="button" class="rounded-xl border border-gray-200 bg-white px-4 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-50">Batal</button>
+            <button id="room-bulk-delete" type="button" class="rounded-xl bg-red-500 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-600">Hapus</button>
+        </div>
+    </div>
+`;
 
 const renderRoomsTab = (): string => {
     const canCreate = allowedCreateTypes().length > 0;
@@ -431,6 +458,7 @@ const renderRoomsTab = (): string => {
                     </div>
                     ${canCreate ? '<button id="tendik-rooms-add" type="button" class="rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800">Tambah Ruang Kelas</button>' : ''}
                 </div>
+                ${roomsAreBulkSelectable() ? renderRoomBulkBar() : ''}
                 ${renderRoomsTabState()}
             </section>
         </div>
@@ -458,6 +486,7 @@ const attachTabListeners = (): void => {
             const tab = button.dataset.tendikTab as TendikTab;
             if (tab === activeTab) return;
             activeTab = tab;
+            clearRoomSelection();
             renderMainState();
             if (tab === 'rooms' && !managedRoomsLoaded) void loadManagedRooms();
         });
@@ -486,11 +515,111 @@ const attachRoomsListeners = (): void => {
         attachRoomTableListeners(tableRoot, (id) => {
             void openRoomManagementDrawer(id, roomDrawerOptions());
         });
+        attachRoomSelectionListeners(tableRoot, {
+            onToggleRow: (id, checked) => {
+                if (checked) roomSelection.add(id);
+                else roomSelection.delete(id);
+                updateRoomBulkBar();
+            },
+            onToggleAll: (checked) => {
+                bulkSelectableRooms().forEach((room) => {
+                    if (checked) roomSelection.add(room.id);
+                    else roomSelection.delete(room.id);
+                });
+                document.querySelectorAll<HTMLInputElement>('.room-checkbox')
+                    .forEach((checkbox) => { checkbox.checked = checked; });
+                updateRoomBulkBar();
+            },
+        });
         hydrateRoomTableCovers(tableRoot, roomCoverCache, () => activeTab === 'rooms');
+    }
+
+    document.getElementById('room-bulk-cancel')?.addEventListener('click', () => {
+        roomSelection.clear();
+        document.querySelectorAll<HTMLInputElement>('.room-checkbox').forEach((checkbox) => { checkbox.checked = false; });
+        updateRoomBulkBar();
+    });
+    document.getElementById('room-bulk-delete')?.addEventListener('click', () => openRoomBulkConfirm());
+    updateRoomBulkBar();
+};
+
+/** Show/hide the bulk bar and sync the select-all header from roomSelection. */
+const updateRoomBulkBar = (): void => {
+    const bar = document.getElementById('room-bulk-bar');
+    if (!bar) return;
+    const count = roomSelection.size;
+    if (count > 0) {
+        bar.classList.remove('hidden');
+        const label = document.getElementById('room-bulk-count');
+        if (label) label.textContent = `${count} ruangan dipilih`;
+    } else {
+        bar.classList.add('hidden');
+    }
+    const selectAll = document.querySelector<HTMLInputElement>('[data-room-select-all]');
+    if (selectAll) {
+        const ids = bulkSelectableRooms().map((room) => room.id);
+        selectAll.checked = ids.length > 0 && ids.every((id) => roomSelection.has(id));
+    }
+};
+
+const openRoomBulkConfirm = (): void => {
+    const count = roomSelection.size;
+    if (count === 0) return;
+    document.getElementById('room-bulk-confirm-root')?.remove();
+
+    const root = document.createElement('div');
+    root.id = 'room-bulk-confirm-root';
+    root.innerHTML = `
+        <div data-room-bulk-overlay class="fixed inset-0 z-[240] bg-black/50"></div>
+        <section role="alertdialog" aria-modal="true" aria-labelledby="room-bulk-confirm-title" class="fixed left-1/2 top-1/2 z-[241] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 id="room-bulk-confirm-title" class="text-lg font-bold text-gray-900">Hapus Ruangan Terpilih?</h2>
+            <p class="mt-3 text-sm text-gray-600">Anda akan menghapus <strong>${count}</strong> ruangan terpilih. Foto dan data fasilitas ruangan akan ikut terhapus. Ruangan yang memiliki riwayat peminjaman <strong>tidak dihapus permanen</strong> — ruangan tersebut diarsipkan (dinonaktifkan) agar tidak muncul di katalog, sementara data peminjaman tetap tersimpan. Tindakan ini tidak dapat dibatalkan.</p>
+            <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button id="room-bulk-confirm-cancel" type="button" class="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-50">Batal</button>
+                <button id="room-bulk-confirm-ok" type="button" class="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-red-700">Hapus</button>
+            </div>
+        </section>
+    `;
+    document.body.appendChild(root);
+
+    const close = (): void => {
+        root.remove();
+        if (bulkConfirmEscape) { document.removeEventListener('keydown', bulkConfirmEscape); bulkConfirmEscape = null; }
+    };
+    bulkConfirmEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    document.addEventListener('keydown', bulkConfirmEscape);
+    root.querySelector('[data-room-bulk-overlay]')?.addEventListener('click', close);
+    root.querySelector('#room-bulk-confirm-cancel')?.addEventListener('click', close);
+    root.querySelector('#room-bulk-confirm-ok')?.addEventListener('click', () => { close(); void performBulkDelete(); });
+    root.querySelector<HTMLButtonElement>('#room-bulk-confirm-ok')?.focus();
+};
+
+const performBulkDelete = async (): Promise<void> => {
+    const ids = [...roomSelection];
+    if (ids.length === 0) return;
+    try {
+        const result = await bulkDeleteRooms(ids);
+        const { deleted, archived } = result.summary;
+        const message = deleted > 0 && archived > 0
+            ? `${deleted} ruangan dihapus, ${archived} diarsipkan (memiliki riwayat peminjaman).`
+            : archived > 0
+                ? `${archived} ruangan diarsipkan karena memiliki riwayat peminjaman.`
+                : `${deleted} ruangan berhasil dihapus.`;
+        showToast(message, true);
+        roomSelection.clear();
+        // A deleted/archived room's detail drawer must not linger.
+        closeRoomManagementDrawer();
+        await loadManagedRooms();
+    } catch (error) {
+        // Keep the selection so the user can see the failed rows and retry.
+        showToast(errorMessage(error, 'Gagal menghapus ruangan.'), false);
     }
 };
 
 const loadManagedRooms = async (): Promise<void> => {
+    // A reload (retry / post-create / post-delete) drops the selection so we
+    // never act on rows that are no longer visible.
+    clearRoomSelection();
     managedRoomsLoading = true;
     managedRoomsError = null;
     if (activeTab === 'rooms') renderMainState();
@@ -978,6 +1107,8 @@ export const renderPeminjamanRuanganTendik = async (role = 'tendik'): Promise<vo
     managedRoomsError = null;
     roomCoverCache.forEach((url) => URL.revokeObjectURL(url));
     roomCoverCache.clear();
+    clearRoomSelection();
+    document.getElementById('room-bulk-confirm-root')?.remove();
     closeActionDialog();
     closeDrawer();
     closeRoomManagementDrawer();

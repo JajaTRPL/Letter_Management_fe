@@ -10,6 +10,7 @@ const m = vi.hoisted(() => ({
     renderLayout: vi.fn(),
     // shared room-management api
     listRooms: vi.fn(),
+    bulkDelete: vi.fn(),
     getRoom: vi.fn(),
     createRoom: vi.fn(),
     updateRoom: vi.fn(),
@@ -65,6 +66,7 @@ vi.mock('../../../mahasiswa/peminjaman/api', () => {
 
 vi.mock('../../../shared/room-management/api', () => ({
     listManagedRooms: m.listRooms,
+    bulkDeleteRooms: m.bulkDelete,
     getManagedRoom: m.getRoom,
     createManagedRoom: m.createRoom,
     updateManagedRoom: m.updateRoom,
@@ -225,6 +227,7 @@ beforeEach(() => {
     m.toasts = [];
     m.getLabs.mockResolvedValue(labs);
     m.listRooms.mockResolvedValue([managedRoom()]);
+    m.bulkDelete.mockResolvedValue({ deleted: [], archived: [], summary: { deleted: 0, archived: 0, total: 0 } });
     m.getRoom.mockResolvedValue(managedRoom());
     m.createRoom.mockResolvedValue(managedRoom());
     m.updateRoom.mockResolvedValue(managedRoom());
@@ -461,6 +464,115 @@ describe('Super Admin room master management', () => {
         document.getElementById('room-mgmt-confirm-ok')?.click();
         await flush();
         expect(m.activateRoom).toHaveBeenCalledWith(12);
+    });
+});
+
+describe('Super Admin bulk room selection and delete', () => {
+    const rowCheckbox = (id: number): HTMLInputElement =>
+        document.querySelector(`.room-checkbox[data-room-id="${id}"]`) as HTMLInputElement;
+
+    const check = (element: HTMLInputElement, value = true): void => {
+        element.checked = value;
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    const barHidden = (): boolean =>
+        document.getElementById('room-bulk-bar')?.classList.contains('hidden') ?? true;
+
+    it('shows a checkbox per room and reveals the bulk bar on selection', async () => {
+        await renderPeminjamanRuanganAdmin();
+
+        expect(rowCheckbox(12)).not.toBeNull();
+        expect(barHidden()).toBe(true);
+
+        check(rowCheckbox(12));
+        expect(barHidden()).toBe(false);
+        expect(document.getElementById('room-bulk-count')?.textContent).toContain('1 ruangan dipilih');
+    });
+
+    it('select-all toggles every visible room', async () => {
+        m.listRooms.mockResolvedValue([managedRoom({ id: 12 }), managedRoom({ id: 13, code: 'ROOM-13' })]);
+        await renderPeminjamanRuanganAdmin();
+
+        const selectAll = document.querySelector('[data-room-select-all]') as HTMLInputElement;
+        check(selectAll);
+
+        expect(document.getElementById('room-bulk-count')?.textContent).toContain('2 ruangan dipilih');
+        expect(rowCheckbox(12).checked).toBe(true);
+        expect(rowCheckbox(13).checked).toBe(true);
+
+        check(selectAll, false);
+        expect(barHidden()).toBe(true);
+        expect(rowCheckbox(12).checked).toBe(false);
+    });
+
+    it('Batal clears the current selection', async () => {
+        await renderPeminjamanRuanganAdmin();
+        check(rowCheckbox(12));
+        expect(barHidden()).toBe(false);
+
+        document.getElementById('room-bulk-cancel')?.click();
+        expect(barHidden()).toBe(true);
+        expect(rowCheckbox(12).checked).toBe(false);
+    });
+
+    it('confirms then bulk-deletes the selected rooms and refreshes', async () => {
+        m.bulkDelete.mockResolvedValue({
+            deleted: [{ id: 12, code: 'ROOM-12' }], archived: [], summary: { deleted: 1, archived: 0, total: 1 },
+        });
+        await renderPeminjamanRuanganAdmin();
+        check(rowCheckbox(12));
+
+        document.getElementById('room-bulk-delete')?.click();
+        expect(document.getElementById('room-bulk-confirm-root')).not.toBeNull();
+        expect(document.body.textContent).toContain('Hapus Ruangan Terpilih?');
+        expect(document.body.textContent).toContain('diarsipkan');
+
+        const callsBefore = m.listRooms.mock.calls.length;
+        document.getElementById('room-bulk-confirm-ok')?.click();
+        await flush();
+
+        expect(m.bulkDelete).toHaveBeenCalledWith([12]);
+        expect(m.toasts.some((t) => t.includes('1 ruangan berhasil dihapus'))).toBe(true);
+        expect(m.listRooms.mock.calls.length).toBeGreaterThan(callsBefore); // list refreshed
+        expect(document.getElementById('room-bulk-confirm-root')).toBeNull();
+        expect(barHidden()).toBe(true);
+    });
+
+    it('reports an archived-only outcome with a booking-history message', async () => {
+        m.bulkDelete.mockResolvedValue({
+            deleted: [], archived: [{ id: 12, code: 'ROOM-12', reason: 'Memiliki riwayat peminjaman' }],
+            summary: { deleted: 0, archived: 1, total: 1 },
+        });
+        await renderPeminjamanRuanganAdmin();
+        check(rowCheckbox(12));
+        document.getElementById('room-bulk-delete')?.click();
+        document.getElementById('room-bulk-confirm-ok')?.click();
+        await flush();
+
+        expect(m.toasts.some((t) => t.includes('diarsipkan karena memiliki riwayat peminjaman'))).toBe(true);
+    });
+
+    it('cancelling the confirm modal performs no deletion', async () => {
+        await renderPeminjamanRuanganAdmin();
+        check(rowCheckbox(12));
+        document.getElementById('room-bulk-delete')?.click();
+        document.getElementById('room-bulk-confirm-cancel')?.click();
+
+        expect(document.getElementById('room-bulk-confirm-root')).toBeNull();
+        expect(m.bulkDelete).not.toHaveBeenCalled();
+        expect(barHidden()).toBe(false); // selection preserved
+    });
+
+    it('keeps the selection when the bulk delete fails', async () => {
+        m.bulkDelete.mockRejectedValueOnce(new PeminjamanApiError('Server error', 500));
+        await renderPeminjamanRuanganAdmin();
+        check(rowCheckbox(12));
+        document.getElementById('room-bulk-delete')?.click();
+        document.getElementById('room-bulk-confirm-ok')?.click();
+        await flush();
+
+        expect(barHidden()).toBe(false); // still selected for retry
     });
 });
 

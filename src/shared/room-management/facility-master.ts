@@ -261,7 +261,14 @@ const rebindRowListeners = (): void => {
     // (usage/rename/activate/archive/delete) are wired in openFacilityMenu.
     root.querySelectorAll<HTMLElement>('[data-facility-menu]').forEach((button) => {
         button.addEventListener('click', (event) => {
+            // stopPropagation keeps this click from reaching the outside-click
+            // handler, so the toggle below is the single source of truth.
             event.stopPropagation();
+            // Toggle: clicking the already-open row's trigger closes its menu.
+            if (button.getAttribute('aria-expanded') === 'true') {
+                closeFacilityMenu();
+                return;
+            }
             openFacilityMenu(Number(button.dataset.facilityMenu), button);
         });
     });
