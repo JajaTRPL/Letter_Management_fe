@@ -109,11 +109,30 @@ describe('DashboardLayout responsive sidebar drawer', () => {
         ['mahasiswa', ['Dashboard', 'Administrasi Surat', 'Peminjaman Ruangan', 'Riwayat Pengajuan']],
         ['tendik', ['Dashboard', 'Dokumen', 'Riwayat']],
         ['akademik', ['Dashboard', 'Dokumen', 'Riwayat']],
-        ['super_admin', ['Dashboard', 'Manajemen Akun', 'Monitoring Surat', 'Template Dokumen']],
+        ['super_admin', ['Dashboard', 'Peminjaman Ruangan', 'Monitoring Surat', 'Manajemen Akun', 'Template Dokumen', 'Periode Akademik', 'Retensi & Arsip Surat', 'Riwayat Aktivitas']],
     ])('preserves role-specific navigation labels for %s', (role, labels) => {
         setViewportWidth(1280);
         renderDashboardLayout('Dashboard', '<p>Content</p>', role);
         labels.forEach((label) => expect(document.body.textContent).toContain(label));
+    });
+
+    it('orders Super Admin navigation by current operational IA', () => {
+        setViewportWidth(1280);
+        renderDashboardLayout('Dashboard', '<p>Content</p>', 'super_admin');
+
+        const labels = Array.from(document.querySelectorAll('#dashboard-sidebar nav a span'))
+            .map((item) => item.textContent?.trim());
+
+        expect(labels).toEqual([
+            'Dashboard',
+            'Peminjaman Ruangan',
+            'Monitoring Surat',
+            'Manajemen Akun',
+            'Template Dokumen',
+            'Periode Akademik',
+            'Retensi & Arsip Surat',
+            'Riwayat Aktivitas',
+        ]);
     });
 
     it('preserves existing route dispatch imports and adds no unsafe file-opening surface', () => {
