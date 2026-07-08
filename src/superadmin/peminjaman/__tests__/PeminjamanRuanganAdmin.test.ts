@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const m = vi.hoisted(() => ({
     getLabs: vi.fn(),
     getBookings: vi.fn(),
+    getCalendar: vi.fn(),
     getBooking: vi.fn(),
     downloadSurat: vi.fn(),
     attachViewer: vi.fn(() => () => {}),
@@ -48,6 +49,7 @@ vi.mock('../../../mahasiswa/peminjaman/api', () => {
     return {
         getSuperAdminLaboratories: m.getLabs,
         getSuperAdminBookings: m.getBookings,
+        getSuperAdminBookingCalendar: m.getCalendar,
         getSuperAdminBooking: m.getBooking,
         downloadSuratPeminjamanPdf: m.downloadSurat,
         // transitive requester exports pulled via shared booking modules
@@ -181,6 +183,50 @@ const bookingEnvelope = (items: SuperAdminBooking[] = [booking()]) => ({
     meta: { current_page: 1, per_page: 10, total: items.length, last_page: 1 },
 });
 
+const currentMonthKey = (): string => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const calendarItem = (overrides = {}) => ({
+    id: 44,
+    room_id: 12,
+    room_code: 'ROOM-12',
+    room_name: 'Ruang Booking',
+    room_type: 'classroom' as const,
+    laboratory_id: null,
+    laboratory_name: null,
+    requester_name: 'Pemohon Kalender',
+    requester_identifier: 'pemohon@example.test',
+    activity_name: 'Kegiatan Kalender',
+    purpose: 'Tujuan kalender aman.',
+    status: 'submitted' as const,
+    start_at: `${currentMonthKey()}-15T09:00:00+07:00`,
+    end_at: `${currentMonthKey()}-15T11:00:00+07:00`,
+    can_view: true,
+    can_review: false,
+    can_approve: false,
+    can_reject: false,
+    can_request_revision: false,
+    can_cancel: false,
+    can_manage_room: true,
+    ...overrides,
+});
+
+const calendarEnvelope = (items = [calendarItem()]) => ({
+    message: 'ok',
+    month: currentMonthKey(),
+    range: { start: `${currentMonthKey()}-01`, end: `${currentMonthKey()}-31` },
+    items,
+    summary: {
+        total: items.length,
+        counts_by_status: items.reduce<Record<string, number>>((counts, item) => {
+            counts[item.status] = (counts[item.status] ?? 0) + 1;
+            return counts;
+        }, {}),
+    },
+});
+
 const flush = async (): Promise<void> => {
     await Promise.resolve();
     await Promise.resolve();
@@ -219,6 +265,10 @@ const openMonitoring = (): void => {
     document.getElementById('admin-peminjaman-tab-monitoring')?.click();
 };
 
+const openCalendar = (): void => {
+    document.getElementById('admin-peminjaman-tab-calendar')?.click();
+};
+
 beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
     Object.values(m).forEach((value) => {
@@ -245,6 +295,7 @@ beforeEach(() => {
     m.listAudit.mockResolvedValue([]);
     m.attachViewer.mockReturnValue(() => {});
     m.getBookings.mockResolvedValue(bookingEnvelope());
+    m.getCalendar.mockResolvedValue(calendarEnvelope());
     m.getBooking.mockResolvedValue(booking());
 });
 
@@ -573,6 +624,122 @@ describe('Super Admin bulk room selection and delete', () => {
         await flush();
 
         expect(barHidden()).toBe(false); // still selected for retry
+    });
+});
+
+describe('Super Admin calendar monitoring', () => {
+    it('adds the calendar tab in the required order and renders calendar copy', async () => {
+        await renderPeminjamanRuanganAdmin();
+
+        const tabs = Array.from(document.querySelectorAll('[role="tab"]')).map((tab) => tab.textContent);
+        expect(tabs).toEqual([
+            'Master Ruangan',
+            'Master Fasilitas',
+            'Monitoring Pengajuan',
+            'Kalender Peminjaman',
+        ]);
+
+        openCalendar();
+        await flush();
+
+        expect(m.getCalendar).toHaveBeenCalledWith(expect.objectContaining({
+            month: expect.stringMatching(/^\d{4}-\d{2}$/),
+        }));
+        expect(document.body.textContent).toContain('Kalender Peminjaman Ruangan');
+        expect(document.body.textContent).toContain('Pantau pengajuan dan jadwal ruangan berdasarkan tanggal, status, jenis ruangan, dan laboratorium.');
+        expect(document.body.textContent).toContain('Peminjaman Terdekat');
+        expect(document.body.textContent).toContain('Mengikuti filter aktif.');
+        expect(document.body.textContent).not.toContain('Kalender Peminjaman Disetujui');
+        expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
+    });
+
+    it('loads calendar filters for room type, status, laboratory, room, and month navigation', async () => {
+        m.listRooms.mockResolvedValue([
+            managedRoom(),
+            managedRoom({
+                id: 13,
+                code: 'LAB-13',
+                name: 'Lab Uji',
+                type: 'laboratory',
+                owning_laboratory: { id: 7, code: 'LAB-UJI', name: 'Laboratorium Uji' },
+            }),
+        ]);
+        await renderPeminjamanRuanganAdmin();
+        openCalendar();
+        await flush();
+
+        document.querySelector<HTMLElement>('[data-admin-calendar-room-type="laboratory"]')?.click();
+        await flush();
+        expect(m.getCalendar).toHaveBeenLastCalledWith(expect.objectContaining({
+            roomType: 'laboratory',
+        }));
+
+        document.querySelector<HTMLElement>('[data-admin-calendar-status="approved"]')?.click();
+        await flush();
+        expect(m.getCalendar).toHaveBeenLastCalledWith(expect.objectContaining({
+            roomType: 'laboratory',
+            status: 'approved',
+        }));
+
+        changeValue('admin-calendar-laboratory', '7');
+        await flush();
+        expect(m.getCalendar).toHaveBeenLastCalledWith(expect.objectContaining({
+            laboratoryId: 7,
+        }));
+
+        changeValue('admin-calendar-room', '13');
+        await flush();
+        expect(m.getCalendar).toHaveBeenLastCalledWith(expect.objectContaining({
+            roomId: 13,
+        }));
+
+        const beforePrev = m.getCalendar.mock.calls.at(-1)?.[0].month;
+        document.getElementById('admin-calendar-prev-month')?.click();
+        await flush();
+        expect(m.getCalendar.mock.calls.at(-1)?.[0].month).not.toBe(beforePrev);
+    });
+
+    it('selects a date, shows matching bookings, and opens the existing monitoring detail drawer', async () => {
+        await renderPeminjamanRuanganAdmin();
+        openCalendar();
+        await flush();
+
+        document
+            .querySelector<HTMLElement>(`[data-admin-calendar-date="${currentMonthKey()}-15"]`)
+            ?.click();
+
+        expect(document.getElementById('admin-calendar-day-drawer-root')).not.toBeNull();
+        expect(document.body.textContent).toContain('Kegiatan Kalender');
+        expect(document.body.textContent).toContain('Pemohon Kalender');
+        expect(document.body.textContent).toContain('Diajukan');
+
+        document
+            .querySelector<HTMLElement>('#admin-calendar-day-drawer-root [data-admin-calendar-detail="44"]')
+            ?.click();
+        await flush();
+
+        expect(m.getBooking).toHaveBeenCalledWith(44);
+        expect(document.getElementById('admin-peminjaman-drawer-root')).not.toBeNull();
+        expect(document.body.textContent).toContain('Monitoring saja');
+        expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
+    });
+
+    it('renders clear empty states for month and selected date', async () => {
+        m.getCalendar.mockResolvedValue(calendarEnvelope([]));
+        await renderPeminjamanRuanganAdmin();
+        openCalendar();
+        await flush();
+
+        expect(document.body.textContent).toContain('Belum ada peminjaman untuk bulan dan filter ini.');
+
+        document
+            .querySelector<HTMLElement>(`[data-admin-calendar-date="${currentMonthKey()}-15"]`)
+            ?.click();
+
+        expect(document.body.textContent).toContain('Belum ada peminjaman pada tanggal ini untuk filter aktif.');
     });
 });
 

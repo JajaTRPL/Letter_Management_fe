@@ -182,6 +182,44 @@ export interface SuperAdminBookingListEnvelope extends ApiEnvelope<SuperAdminBoo
     meta: PaginationMeta;
 }
 
+export interface SuperAdminCalendarItem {
+    id: number;
+    room_id: number;
+    room_code: string;
+    room_name: string;
+    room_type: RoomType;
+    laboratory_id: number | null;
+    laboratory_name: string | null;
+    requester_name: string | null;
+    requester_identifier: string | null;
+    activity_name: string;
+    purpose: string;
+    status: BookingStatus;
+    start_at: string;
+    end_at: string;
+    can_view: boolean;
+    can_review: boolean;
+    can_approve: boolean;
+    can_reject: boolean;
+    can_request_revision: boolean;
+    can_cancel: boolean;
+    can_manage_room: boolean;
+}
+
+export interface SuperAdminCalendarEnvelope {
+    message: string;
+    month: string;
+    range: {
+        start: string;
+        end: string;
+    };
+    items: SuperAdminCalendarItem[];
+    summary: {
+        total: number;
+        counts_by_status: Partial<Record<BookingStatus, number>>;
+    };
+}
+
 export interface TendikBookingFilters {
     status?: BookingStatus;
     roomType?: RoomType;
@@ -193,6 +231,16 @@ export interface TendikBookingFilters {
 }
 
 export type SuperAdminBookingFilters = TendikBookingFilters;
+
+export interface SuperAdminCalendarFilters {
+    month?: string;
+    from?: string;
+    to?: string;
+    status?: BookingStatus;
+    roomType?: RoomType;
+    roomId?: number;
+    laboratoryId?: number;
+}
 
 export interface SuperAdminRoomFilters {
     type?: RoomType;

@@ -13,6 +13,7 @@ import {
     createSuperAdminRoom,
     deactivateSuperAdminRoom,
     getSuperAdminBooking,
+    getSuperAdminBookingCalendar,
     getSuperAdminBookings,
     getSuperAdminLaboratories,
     getSuperAdminRoom,
@@ -124,6 +125,20 @@ describe('Peminjaman Super Admin API module', () => {
             ['/api/super-admin/peminjaman-ruangan/requests?status=approved&room_type=classroom&room_id=12&date_from=2026-06-20&date_to=2026-06-30&page=2&per_page=25'],
             ['/api/super-admin/peminjaman-ruangan/requests/44'],
         ]);
+    });
+
+    it('builds calendar monitoring filters using the backend query names', async () => {
+        await getSuperAdminBookingCalendar({
+            month: '2026-07',
+            status: 'submitted',
+            roomType: 'laboratory',
+            roomId: 13,
+            laboratoryId: 7,
+        });
+
+        expect(m.apiFetch).toHaveBeenCalledWith(
+            '/api/super-admin/peminjaman-ruangan/calendar?month=2026-07&status=submitted&room_type=laboratory&room_id=13&laboratory_id=7',
+        );
     });
 
     it.each([403, 404, 409, 422])(

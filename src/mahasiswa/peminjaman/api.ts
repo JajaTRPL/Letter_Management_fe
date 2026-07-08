@@ -12,6 +12,8 @@ import type {
     RoomTemplateInfo,
     RoomType,
     SuperAdminBooking,
+    SuperAdminCalendarEnvelope,
+    SuperAdminCalendarFilters,
     SuperAdminBookingFilters,
     SuperAdminBookingListEnvelope,
     SuperAdminRoomFilters,
@@ -494,6 +496,28 @@ export async function getSuperAdminBookings(
     return readJson<SuperAdminBookingListEnvelope>(
         response,
         'Gagal memuat monitoring peminjaman.',
+    );
+}
+
+export async function getSuperAdminBookingCalendar(
+    filters: SuperAdminCalendarFilters = {},
+): Promise<SuperAdminCalendarEnvelope> {
+    const params = new URLSearchParams();
+    if (filters.month !== undefined) params.set('month', filters.month);
+    if (filters.from !== undefined) params.set('from', filters.from);
+    if (filters.to !== undefined) params.set('to', filters.to);
+    if (filters.status !== undefined) params.set('status', filters.status);
+    if (filters.roomType !== undefined) params.set('room_type', filters.roomType);
+    if (filters.roomId !== undefined) params.set('room_id', String(filters.roomId));
+    if (filters.laboratoryId !== undefined) {
+        params.set('laboratory_id', String(filters.laboratoryId));
+    }
+
+    const query = params.toString();
+    const response = await apiFetch(`${SUPER_ADMIN_BASE}/calendar${query ? `?${query}` : ''}`);
+    return readJson<SuperAdminCalendarEnvelope>(
+        response,
+        'Gagal memuat kalender peminjaman.',
     );
 }
 
