@@ -10,7 +10,23 @@ interface ApiCall {
 const m = vi.hoisted(() => ({
     apiCalls: [] as ApiCall[],
     toasts: [] as string[],
+    automation: null as Record<string, unknown> | null,
 }));
+
+const defaultAutomation = (): Record<string, unknown> => ({
+    enabled: false,
+    schema_ready: true,
+    updated_by: null,
+    enabled_at: null,
+    disabled_at: null,
+    last_checked_at: null,
+    last_run_at: null,
+    last_success_at: null,
+    last_failure_at: null,
+    last_failure_message: null,
+    schedule_registered: true,
+    health_status: 'disabled',
+});
 
 const policyValues = {
     supporting_document_retention_days: 14,
@@ -79,7 +95,17 @@ const jsonResponse = (payload: unknown, status = 200): Response => new Response(
     headers: { 'Content-Type': 'application/json' },
 });
 
-const routePayload = (url: string, method: string): Response => {
+const routePayload = (url: string, method: string, body?: unknown): Response => {
+    if (url.startsWith('/api/super-admin/retention/automation')) {
+        const current = m.automation ?? defaultAutomation();
+        if (method === 'PATCH') {
+            const parsed = JSON.parse(String(body ?? '{}')) as { enabled?: boolean };
+            const enabled = parsed.enabled === true;
+            m.automation = { ...current, enabled, health_status: enabled ? 'enabled_waiting_first_run' : 'disabled' };
+            return jsonResponse({ data: m.automation });
+        }
+        return jsonResponse({ data: current });
+    }
     if (url.startsWith('/api/super-admin/retention/overview')) {
         return jsonResponse({
             data: {
@@ -163,7 +189,7 @@ vi.mock('../../../shared/api-client', () => ({
     apiFetch: vi.fn(async (url: string, options: { method?: string; body?: unknown } = {}) => {
         const method = options.method ?? 'GET';
         m.apiCalls.push({ url, method, body: options.body });
-        return routePayload(url, method);
+        return routePayload(url, method, options.body);
     }),
     loadProtectedImageObjectUrl: vi.fn(async () => null),
     revokeProtectedImageObjectUrl: vi.fn(),
@@ -214,6 +240,7 @@ beforeEach(() => {
     resetDom();
     m.apiCalls = [];
     m.toasts = [];
+    m.automation = defaultAutomation();
 });
 
 describe('Super Admin retention control panel', () => {
@@ -232,52 +259,88 @@ describe('Super Admin retention control panel', () => {
         document.getElementById('sidebar-retention-link')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
         await waitFor(() => {
-            expect(document.body.textContent).toContain('Kebijakan Global');
-            expect(document.body.textContent).toContain('Archive Pool');
+            expect(document.body.textContent).toContain('Kebijakan Penyimpanan');
+            expect(document.body.textContent).toContain('Arsip Tersimpan');
         });
 
         expect(m.apiCalls.some((call) => call.url === '/api/super-admin/retention/overview')).toBe(true);
     });
 
-    it('renders overview, policy, candidates, archives, and audit actions from safe metadata only', async () => {
+    it('renders overview, policy, and each operational tab from safe metadata only', async () => {
         await renderRetentionControlPanel();
 
-        const text = document.body.textContent ?? '';
-        expect(text).toContain('Retensi & Arsip Surat');
-        expect(text).toContain('Kandidat Retensi');
-        expect(text).toContain('Archive Pool');
-        expect(text).toContain('Audit Actions');
-        expect(text).toContain('surat-tugas #44');
-        expect(text).toContain('surat-pengantar-magang #45');
-        expect(text).toContain('checksum_mismatch');
-        expect(text).toContain('Terverifikasi');
-        expect(text).toContain('Gagal verifikasi');
+        const assertClean = (): void => {
+            const html = document.body.innerHTML;
+            for (const token of [
+                '/storage/private',
+                '/storage/archive',
+                'attachment://',
+                'private-local',
+                'archive-local',
+                'storage_path',
+                'storage_disk',
+                'archive_path',
+                'archive_disk',
+                'checksum_sha256',
+                'archive_checksum_sha256',
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+                '/api/storage',
+            ]) {
+                expect(html).not.toContain(token);
+            }
+            expect(html).not.toContain('Checksum');
+        };
+
+        // Header + policy are always visible; the three sections are tabs.
+        expect(document.body.textContent).toContain('Retensi & Arsip Surat');
+        expect(document.body.textContent).toContain('Kebijakan Penyimpanan');
+        expect(document.body.textContent).toContain('Siap Diarsipkan');
+        expect(document.body.textContent).toContain('Arsip Tersimpan');
+        expect(document.body.textContent).toContain('Riwayat Tindakan');
         expect((document.getElementById('retention-policy-supporting_document_retention_days') as HTMLInputElement).value).toBe('14');
 
-        const html = document.body.innerHTML;
-        for (const token of [
-            '/storage/private',
-            '/storage/archive',
-            'attachment://',
-            'private-local',
-            'archive-local',
-            'storage_path',
-            'storage_disk',
-            'archive_path',
-            'archive_disk',
-            'checksum_sha256',
-            'archive_checksum_sha256',
-            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-            'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-            '/api/storage',
-        ]) {
-            expect(html).not.toContain(token);
-        }
-        expect(html).not.toContain('Checksum');
+        // Default tab: Siap Diarsipkan.
+        expect(document.body.textContent).toContain('surat-tugas #44');
+        expect(document.body.textContent).toContain('Terverifikasi');
+        assertClean();
+
+        // Arsip Tersimpan tab.
+        document.querySelector<HTMLButtonElement>('[data-retention-tab="archives"]')?.click();
+        expect(document.body.textContent).toContain('surat-pengantar-magang #45');
+        assertClean();
+
+        // Riwayat Tindakan tab.
+        document.querySelector<HTMLButtonElement>('[data-retention-tab="actions"]')?.click();
+        expect(document.body.textContent).toContain('checksum_mismatch');
+        expect(document.body.textContent).toContain('Gagal verifikasi');
+        assertClean();
+
         expect(document.getElementById('retention-scheduler-toggle')).toBeNull();
-        expect(html).not.toContain('pause');
-        expect(html).not.toContain('resume');
+        expect(document.body.innerHTML).not.toContain('pause');
+        expect(document.body.innerHTML).not.toContain('resume');
+    });
+
+    it('uses operational tabs, a status dropdown, and labelled filters', async () => {
+        await renderRetentionControlPanel();
+
+        // Default tab shows candidate content but not the archive row.
+        expect(document.body.textContent).toContain('surat-tugas #44');
+        expect(document.body.textContent).not.toContain('surat-pengantar-magang #45');
+
+        // Candidate filters carry visible labels + a safe, non-destructive check.
+        expect(document.body.textContent).toContain('Kategori berkas');
+        expect(document.body.textContent).toContain('ID pengajuan');
+        expect(document.getElementById('retention-dry-run-button')?.textContent).toContain('Cek Dokumen');
+        expect(document.body.textContent).toContain('Aman, tidak mengubah data.');
+
+        // Riwayat Tindakan tab reveals the action log + a finite status dropdown.
+        document.querySelector<HTMLButtonElement>('[data-retention-tab="actions"]')?.click();
+        expect(document.body.textContent).not.toContain('surat-tugas #44');
+        const statusSelect = document.getElementById('retention-action-status');
+        expect(statusSelect?.tagName).toBe('SELECT');
+        expect(statusSelect?.textContent).toContain('Semua status');
     });
 
     it('updates the global policy through PUT with validated day values', async () => {
@@ -325,9 +388,11 @@ describe('Super Admin retention control panel', () => {
         document.getElementById('retention-modal-confirm')?.click();
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(m.apiCalls.some((call) => call.url === '/api/super-admin/retention/execute')).toBe(false);
-        expect(m.toasts.some((toast) => toast.includes('Alasan aksi retensi minimal 10 karakter.'))).toBe(true);
+        expect(m.toasts.some((toast) => toast.includes('Alasan minimal 10 karakter.'))).toBe(true);
 
         document.getElementById('retention-modal-cancel')?.click();
+        // Restore/purge live under the Arsip Tersimpan tab.
+        document.querySelector<HTMLButtonElement>('[data-retention-tab="archives"]')?.click();
         document.querySelector<HTMLButtonElement>('[data-retention-action="restore"]')?.click();
         document.getElementById('retention-modal-confirm')?.click();
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -338,6 +403,147 @@ describe('Super Admin retention control panel', () => {
         document.getElementById('retention-modal-confirm')?.click();
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(m.apiCalls.some((call) => call.url.endsWith('/purge'))).toBe(false);
+    });
+
+    it('uses one automation term, an actionable failed-card, and a specific success toast', async () => {
+        await renderRetentionControlPanel();
+
+        // Consistent automation wording; no mixed legacy terms.
+        expect(document.body.textContent).toContain('Pengarsipan otomatis belum aktif');
+        expect(document.body.textContent).toContain('Tombol ini mengatur pengarsipan di aplikasi. Jadwal server tetap harus berjalan agar pengarsipan otomatis dieksekusi.');
+        for (const legacyTerm of [
+            ['Retensi', 'otomatis'].join(' '),
+            ['Proses', 'otomatis'].join(' '),
+            ['Sched', 'uler'].join(''),
+            ['tidak bisa diubah', 'dari halaman ini'].join(' '),
+        ]) {
+            expect(document.body.innerHTML).not.toContain(legacyTerm);
+        }
+
+        // Failed actions make the summary card jump to the history tab.
+        expect(document.querySelector('[data-retention-goto="actions"]')).not.toBeNull();
+
+        // Valid execute sends the call + a specific, verifiable success toast.
+        document.querySelector<HTMLButtonElement>('[data-retention-action="execute"]')?.click();
+        (document.getElementById('retention-action-reason') as HTMLTextAreaElement).value = 'Sudah melewati masa simpan sesuai kebijakan.';
+        document.getElementById('retention-modal-confirm')?.click();
+        await waitFor(() => {
+            expect(m.apiCalls.some((call) => call.url === '/api/super-admin/retention/execute')).toBe(true);
+            expect(m.toasts.some((toast) => toast.includes('Dokumen berhasil diproses'))).toBe(true);
+        });
+    });
+
+    const automationPatches = (): ApiCall[] =>
+        m.apiCalls.filter((call) => call.url.endsWith('/retention/automation') && call.method === 'PATCH');
+
+    it('shows the automation card and requires reason + acknowledgement to enable', async () => {
+        await renderRetentionControlPanel();
+
+        expect(document.body.textContent).toContain('Pengaturan Otomatis');
+        const toggle = document.getElementById('retention-automation-toggle');
+        // One semantic switch, unchecked, bound to backend state.
+        expect(toggle?.getAttribute('role')).toBe('switch');
+        expect(toggle?.getAttribute('aria-checked')).toBe('false');
+        expect(document.getElementById('retention-automation-state')?.textContent).toContain('Belum aktif');
+
+        // Opening the toggle shows a confirmation modal (does not instantly enable).
+        toggle?.click();
+        // The switch must not flip before the request succeeds.
+        expect(document.getElementById('retention-automation-toggle')?.getAttribute('aria-checked')).toBe('false');
+        expect(document.getElementById('retention-automation-form')).not.toBeNull();
+        expect(document.body.textContent).toContain('Aktifkan Pengarsipan Otomatis?');
+
+        // Confirm with no reason/acknowledgement → blocked, no request sent.
+        document.getElementById('retention-automation-confirm')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(automationPatches()).toHaveLength(0);
+
+        // Provide reason + acknowledgement → PATCH enable + success toast.
+        (document.getElementById('retention-automation-reason') as HTMLTextAreaElement).value = 'Mengaktifkan pengarsipan otomatis sesuai kebijakan retensi.';
+        (document.getElementById('retention-automation-ack') as HTMLInputElement).checked = true;
+        document.getElementById('retention-automation-confirm')?.click();
+        await waitFor(() => {
+            const call = automationPatches().at(-1);
+            expect(call).toBeDefined();
+            expect(bodyOf(call!).enabled).toBe(true);
+            expect(bodyOf(call!).acknowledged).toBe(true);
+            expect(m.toasts.some((toast) => toast.includes('berhasil diaktifkan'))).toBe(true);
+            // Switch flips to checked only from the returned server state.
+            expect(document.getElementById('retention-automation-toggle')?.getAttribute('aria-checked')).toBe('true');
+        });
+    });
+
+    it('requires the typed NONAKTIFKAN phrase to disable automation', async () => {
+        await renderRetentionControlPanel();
+
+        // Enable first so the toggle offers the disable path.
+        document.getElementById('retention-automation-toggle')?.click();
+        (document.getElementById('retention-automation-reason') as HTMLTextAreaElement).value = 'Mengaktifkan sesuai kebijakan retensi.';
+        (document.getElementById('retention-automation-ack') as HTMLInputElement).checked = true;
+        document.getElementById('retention-automation-confirm')?.click();
+        await waitFor(() => expect(m.toasts.some((t) => t.includes('berhasil diaktifkan'))).toBe(true));
+
+        // The switch is now checked (from server state); it offers the disable path.
+        expect(document.getElementById('retention-automation-toggle')?.getAttribute('aria-checked')).toBe('true');
+        document.getElementById('retention-automation-toggle')?.click();
+        expect(document.body.textContent).toContain('Nonaktifkan Pengarsipan Otomatis?');
+        expect(document.getElementById('retention-automation-phrase')).not.toBeNull();
+
+        // Wrong phrase → blocked (no new PATCH).
+        (document.getElementById('retention-automation-reason') as HTMLTextAreaElement).value = 'Menonaktifkan sementara untuk pemeliharaan.';
+        (document.getElementById('retention-automation-ack') as HTMLInputElement).checked = true;
+        (document.getElementById('retention-automation-phrase') as HTMLInputElement).value = 'salah';
+        const before = automationPatches().length;
+        document.getElementById('retention-automation-confirm')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(automationPatches()).toHaveLength(before);
+
+        // Correct phrase → PATCH disable + toast.
+        (document.getElementById('retention-automation-phrase') as HTMLInputElement).value = 'NONAKTIFKAN';
+        document.getElementById('retention-automation-confirm')?.click();
+        await waitFor(() => {
+            const call = automationPatches().at(-1);
+            expect(bodyOf(call!).enabled).toBe(false);
+            expect(bodyOf(call!).confirmation_phrase).toBe('NONAKTIFKAN');
+            expect(m.toasts.some((t) => t.includes('berhasil dinonaktifkan'))).toBe(true);
+            expect(document.getElementById('retention-automation-toggle')?.getAttribute('aria-checked')).toBe('false');
+        });
+    });
+
+    it('switch aria-checked matches backend state and shows execution health', async () => {
+        m.automation = { ...defaultAutomation(), enabled: true, health_status: 'enabled_waiting_first_run' };
+        await renderRetentionControlPanel();
+
+        expect(document.getElementById('retention-automation-toggle')?.getAttribute('aria-checked')).toBe('true');
+        expect(document.getElementById('retention-automation-state')?.textContent).toContain('Aktif');
+        // Enabled but never executed → honest waiting message, not "berjalan".
+        expect(document.getElementById('retention-automation-health')?.textContent).toContain('Menunggu jadwal pertama.');
+        expect(document.body.textContent).toContain('Jadwal server tetap harus berjalan');
+    });
+
+    it('shows a human warning when the last execution failed', async () => {
+        m.automation = {
+            ...defaultAutomation(), enabled: true, health_status: 'failed',
+            last_failure_at: '2026-06-10T02:00:00Z', last_failure_message: 'Checksum tidak cocok',
+        };
+        await renderRetentionControlPanel();
+
+        expect(document.getElementById('retention-automation-health')?.textContent).toContain('Gagal terakhir');
+        expect(document.getElementById('retention-automation-health')?.textContent).toContain('Checksum tidak cocok');
+    });
+
+    it('disables the switch with a visible reason when the archive system is not ready', async () => {
+        m.automation = { ...defaultAutomation(), schema_ready: false, health_status: 'unavailable' };
+        await renderRetentionControlPanel();
+
+        const toggle = document.getElementById('retention-automation-toggle') as HTMLButtonElement;
+        expect(toggle.disabled).toBe(true);
+        expect(toggle.getAttribute('aria-disabled')).toBe('true');
+        expect(document.body.textContent).toContain('Pengarsipan belum bisa diubah karena sistem arsip belum siap.');
+
+        // A disabled switch never opens a modal.
+        toggle.click();
+        expect(document.getElementById('retention-automation-form')).toBeNull();
     });
 
     it('keeps retention code bounded to existing routes and avoids duplicate backend or storage fallbacks', () => {

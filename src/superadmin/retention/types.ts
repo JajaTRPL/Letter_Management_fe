@@ -28,6 +28,36 @@ export interface RetentionPolicyPayload {
     scheduler: RetentionSchedulerStatus;
 }
 
+export type RetentionHealthStatus =
+    | 'disabled'
+    | 'enabled_waiting_first_run'
+    | 'healthy'
+    | 'failed'
+    | 'needs_server_attention'
+    | 'unavailable';
+
+export interface RetentionAutomationStatus {
+    enabled: boolean;
+    schema_ready: boolean;
+    updated_by: string | null;
+    enabled_at: string | null;
+    disabled_at: string | null;
+    last_checked_at: string | null;
+    last_run_at: string | null;
+    last_success_at: string | null;
+    last_failure_at: string | null;
+    last_failure_message: string | null;
+    schedule_registered: boolean;
+    health_status: RetentionHealthStatus;
+}
+
+export interface RetentionAutomationUpdate {
+    enabled: boolean;
+    reason: string;
+    acknowledged: boolean;
+    confirmation_phrase?: string;
+}
+
 export interface RetentionOverview {
     schema_ready: boolean;
     policy: RetentionPolicyPayload;
