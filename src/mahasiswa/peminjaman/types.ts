@@ -7,6 +7,36 @@ export type BookingStatus =
     | 'rejected'
     | 'cancelled';
 
+export type BookingConflictStatus =
+    | 'none'
+    | 'approved_overlap'
+    | 'pending_overlap';
+
+export type BookingConflictLevel =
+    | 'none'
+    | 'warning'
+    | 'blocking';
+
+export interface BookingConflictSummary {
+    booking_id: number;
+    room_id: number;
+    room_name?: string | null;
+    start_at: string;
+    end_at: string;
+    status: BookingStatus;
+    requester_name?: string | null;
+    activity_name?: string | null;
+    purpose?: string | null;
+}
+
+export interface BookingConflictMetadata {
+    conflict_status?: BookingConflictStatus;
+    has_conflict?: boolean;
+    conflict_level?: BookingConflictLevel;
+    conflict_message?: string | null;
+    conflicts?: BookingConflictSummary[];
+}
+
 export interface LaboratorySummary {
     id: number;
     code: string;
@@ -123,7 +153,7 @@ export interface SuratPeminjamanPdfMeta {
     download_url?: string | null;
 }
 
-export interface MahasiswaBooking {
+export interface MahasiswaBooking extends BookingConflictMetadata {
     id: number;
     room: Room;
     activity_name: string;
@@ -182,7 +212,7 @@ export interface SuperAdminBookingListEnvelope extends ApiEnvelope<SuperAdminBoo
     meta: PaginationMeta;
 }
 
-export interface SuperAdminCalendarItem {
+export interface SuperAdminCalendarItem extends BookingConflictMetadata {
     id: number;
     room_id: number;
     room_code: string;

@@ -455,6 +455,11 @@ const toSarprasCalendarViewItem = (item: TendikCalendarItem): BookingCalendarVie
     purpose: item.purpose,
     requesterName: item.requester_name,
     laboratoryName: item.laboratory_name,
+    conflictStatus: item.conflict_status,
+    hasConflict: item.has_conflict,
+    conflictLevel: item.conflict_level,
+    conflictMessage: item.conflict_message,
+    conflicts: item.conflicts,
     capabilities: {
         view: item.can_view,
     },
@@ -1382,6 +1387,28 @@ const renderActionButtons = (booking: TendikBooking): string => {
     `;
 };
 
+const renderConflictNotice = (booking: TendikBooking): string => {
+    if (booking.conflict_status === 'approved_overlap') {
+        const count = booking.conflicts?.length ?? 0;
+        const countText = count > 0 ? ` ${count} jadwal bentrok terdeteksi.` : '';
+
+        return `
+            <p role="status" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">Pengajuan ini bentrok dengan peminjaman yang sudah disetujui. Persetujuan tetap dicegah oleh sistem sampai konflik diselesaikan.${escapeHtml(countText)}</p>
+        `;
+    }
+
+    if (booking.conflict_status === 'pending_overlap') {
+        const count = booking.conflicts?.length ?? 0;
+        const countText = count > 0 ? ` ${count} pengajuan lain terdeteksi.` : '';
+
+        return `
+            <p role="status" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Ada pengajuan lain pada ruang dan waktu yang sama. Periksa detail sebelum mengambil keputusan.${escapeHtml(countText)}</p>
+        `;
+    }
+
+    return '';
+};
+
 const renderDetailDrawer = (
     booking: TendikBooking | null,
     loading: boolean,
@@ -1417,6 +1444,7 @@ const renderDetailDrawer = (
                             <span class="inline-flex rounded-full border px-3 py-1 text-xs font-bold ${getBookingStatusTone(booking.status)}">${escapeHtml(getBookingStatusLabel(booking.status))}</span>
                             <span class="text-xs font-semibold text-gray-500">${escapeHtml(getRoomTypeLabel(booking.room.type))}</span>
                         </div>
+                        ${renderConflictNotice(booking)}
                         <section>
                             <h3 class="text-sm font-bold text-gray-800">Informasi Pengajuan</h3>
                             <dl class="mt-2">${renderDetailRows(booking)}</dl>

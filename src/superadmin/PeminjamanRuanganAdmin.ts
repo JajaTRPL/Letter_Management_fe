@@ -256,6 +256,12 @@ const toCalendarViewItem = (item: SuperAdminCalendarItem): BookingCalendarViewIt
     activityName: item.activity_name,
     purpose: item.purpose,
     requesterName: item.requester_name,
+    laboratoryName: item.laboratory_name,
+    conflictStatus: item.conflict_status,
+    hasConflict: item.has_conflict,
+    conflictLevel: item.conflict_level,
+    conflictMessage: item.conflict_message,
+    conflicts: item.conflicts,
     capabilities: {
         view: item.can_view,
     },
@@ -1272,6 +1278,28 @@ const drawerRoot = (): HTMLElement => {
     return root;
 };
 
+const renderConflictNotice = (booking: SuperAdminBooking): string => {
+    if (booking.conflict_status === 'approved_overlap') {
+        const count = booking.conflicts?.length ?? 0;
+        const countText = count > 0 ? ` ${count} jadwal bentrok terdeteksi.` : '';
+
+        return `
+            <p role="status" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">Pengajuan ini bentrok dengan peminjaman yang sudah disetujui. Super Admin hanya memantau; persetujuan tetap dicegah oleh sistem sampai konflik diselesaikan.${escapeHtml(countText)}</p>
+        `;
+    }
+
+    if (booking.conflict_status === 'pending_overlap') {
+        const count = booking.conflicts?.length ?? 0;
+        const countText = count > 0 ? ` ${count} pengajuan lain terdeteksi.` : '';
+
+        return `
+            <p role="status" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Ada pengajuan lain pada ruang dan waktu yang sama. Super Admin hanya memantau konflik ini.${escapeHtml(countText)}</p>
+        `;
+    }
+
+    return '';
+};
+
 const renderBookingDetail = (
     booking: SuperAdminBooking | null,
     loading: boolean,
@@ -1305,6 +1333,7 @@ const renderBookingDetail = (
                             <span class="inline-flex rounded-full border px-3 py-1 text-xs font-bold ${getBookingStatusTone(booking.status)}">${escapeHtml(getBookingStatusLabel(booking.status))}</span>
                             <span class="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">Monitoring saja</span>
                         </div>
+                        ${renderConflictNotice(booking)}
                         <dl class="divide-y divide-gray-100">
                             ${[
                                 ['Pemohon', booking.requester?.name ?? '-'],

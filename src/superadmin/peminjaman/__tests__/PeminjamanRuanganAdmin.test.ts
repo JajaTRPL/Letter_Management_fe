@@ -509,6 +509,30 @@ describe('Shared booking calendar primitives', () => {
             .toContain('Detail Role');
     });
 
+    it('renders conflict badges in the shared primitive without workflow actions', () => {
+        const config = makeSharedCalendarConfig();
+        config.upcoming.items = [sharedCalendarItem({
+            conflictStatus: 'approved_overlap',
+            hasConflict: true,
+            conflictLevel: 'blocking',
+            conflictMessage: 'Pengajuan ini bentrok dengan peminjaman yang sudah disetujui.',
+            conflicts: [{
+                booking_id: 100,
+                room_id: 99,
+                room_name: 'Lab Role',
+                status: 'approved',
+                start_at: '2026-07-15T08:00:00+07:00',
+                end_at: '2026-07-15T09:30:00+07:00',
+            }],
+        })];
+
+        document.body.innerHTML = renderBookingCalendarView(config);
+
+        expect(document.body.textContent).toContain('Bentrok dengan jadwal disetujui');
+        expect(document.querySelector('[aria-label*="1 jadwal bertabrakan"]')).not.toBeNull();
+        expect(document.querySelector('[data-role-calendar-detail]')).toBeNull();
+    });
+
     it('renders selected-date panel shell without actions by default', () => {
         document.body.innerHTML = renderBookingCalendarSelectedDatePanel({
             dateKey: '2026-07-15',
@@ -1062,6 +1086,50 @@ describe('Super Admin calendar monitoring', () => {
         expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
         expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
         expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
+    });
+
+    it('shows calendar conflict visibility as SuperAdmin monitoring only', async () => {
+        const conflict = {
+            booking_id: 45,
+            room_id: 12,
+            room_name: 'Ruang Booking',
+            status: 'approved' as const,
+            start_at: `${currentMonthKey()}-15T08:00:00+07:00`,
+            end_at: `${currentMonthKey()}-15T10:00:00+07:00`,
+            requester_name: 'Pemohon Disetujui',
+            activity_name: 'Agenda Disetujui',
+            purpose: 'Agenda yang sudah disetujui.',
+        };
+        m.getCalendar.mockResolvedValue(calendarEnvelope([calendarItem({
+            conflict_status: 'approved_overlap',
+            has_conflict: true,
+            conflict_level: 'blocking',
+            conflict_message: 'Pengajuan ini bentrok dengan peminjaman yang sudah disetujui.',
+            conflicts: [conflict],
+        })]));
+        m.getBooking.mockResolvedValue(booking({
+            conflict_status: 'approved_overlap',
+            has_conflict: true,
+            conflict_level: 'blocking',
+            conflict_message: 'Pengajuan ini bentrok dengan peminjaman yang sudah disetujui.',
+            conflicts: [conflict],
+        }));
+
+        await renderPeminjamanRuanganAdmin();
+        openCalendar();
+        await flush();
+
+        expect(document.body.textContent).toContain('Bentrok dengan jadwal disetujui');
+
+        document.querySelector<HTMLElement>('[data-admin-calendar-detail="44"]')?.click();
+        await flush();
+
+        expect(document.body.textContent).toContain('Super Admin hanya memantau');
+        expect(document.body.textContent).toContain('persetujuan tetap dicegah oleh sistem');
+        expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
+        expect(document.body.textContent).not.toMatch(/Relokasi|Delegasi|Override|Prioritas/i);
     });
 
     it('selects calendar dates with Enter and Space', async () => {

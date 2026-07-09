@@ -1,4 +1,10 @@
-import type { BookingStatus, RoomType } from '../mahasiswa/peminjaman/types';
+import type {
+    BookingConflictLevel,
+    BookingConflictStatus,
+    BookingConflictSummary,
+    BookingStatus,
+    RoomType,
+} from '../mahasiswa/peminjaman/types';
 import {
     DENSITY_LEGEND,
     formatDateKey,
@@ -31,6 +37,11 @@ export interface BookingCalendarViewItem {
     purpose: string;
     requesterName?: string | null;
     laboratoryName?: string | null;
+    conflictStatus?: BookingConflictStatus;
+    hasConflict?: boolean;
+    conflictLevel?: BookingConflictLevel;
+    conflictMessage?: string | null;
+    conflicts?: BookingConflictSummary[];
     capabilities?: BookingCalendarItemCapabilities;
 }
 
@@ -192,6 +203,29 @@ const renderItemActions = (
     `;
 };
 
+const renderConflictBadge = (item: BookingCalendarViewItem): string => {
+    const status = item.conflictStatus ?? 'none';
+    if (status === 'none' || item.hasConflict === false) return '';
+
+    const count = item.conflicts?.length ?? 0;
+    const countText = count > 0 ? `${count} jadwal bertabrakan.` : 'Ada jadwal bertabrakan.';
+    const commonClasses = 'mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold';
+
+    if (status === 'approved_overlap') {
+        return `
+            <span class="${commonClasses} border-red-200 bg-red-50 text-red-700" title="${escapePeminjamanCalendarText(item.conflictMessage ?? '')}" aria-label="${escapePeminjamanCalendarText(`Bentrok dengan jadwal disetujui. ${countText}`)}">Bentrok dengan jadwal disetujui</span>
+        `;
+    }
+
+    if (status === 'pending_overlap') {
+        return `
+            <span class="${commonClasses} border-amber-200 bg-amber-50 text-amber-800" title="${escapePeminjamanCalendarText(item.conflictMessage ?? '')}" aria-label="${escapePeminjamanCalendarText(`Ada pengajuan lain di waktu yang sama. ${countText}`)}">Ada pengajuan lain di waktu yang sama</span>
+        `;
+    }
+
+    return '';
+};
+
 export const renderBookingCalendarItemCard = (
     item: BookingCalendarViewItem,
     actions: readonly BookingCalendarItemAction[] = [],
@@ -207,6 +241,7 @@ export const renderBookingCalendarItemCard = (
             <span class="inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${getBookingStatusTone(item.status)}">${escapePeminjamanCalendarText(getBookingStatusLabel(item.status))}</span>
         </div>
         <p class="mt-2 break-words text-sm font-semibold text-gray-800">${escapePeminjamanCalendarText(item.activityName)}</p>
+        ${renderConflictBadge(item)}
         <p class="mt-1 break-words text-xs text-gray-500">${escapePeminjamanCalendarText(item.requesterName ?? 'Pemohon tidak tersedia')}</p>
         <p class="mt-2 line-clamp-2 break-words text-xs text-gray-600">${escapePeminjamanCalendarText(item.purpose)}</p>
         ${renderItemActions(item, actions)}

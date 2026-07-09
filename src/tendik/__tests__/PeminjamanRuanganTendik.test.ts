@@ -659,6 +659,51 @@ describe('Tendik Peminjaman reviewer page', () => {
         expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
     });
 
+    it('shows approved-overlap conflict visibility in Sarpras calendar cards and detail', async () => {
+        const conflict = {
+            booking_id: 72,
+            room_id: 9,
+            room_name: 'Ruang Kelas Utama',
+            status: 'approved' as const,
+            start_at: isoAt(currentDateKey(), 10),
+            end_at: isoAt(currentDateKey(), 12),
+            requester_name: 'Pemohon Disetujui',
+            activity_name: 'Agenda Disetujui',
+            purpose: 'Agenda yang sudah disetujui.',
+        };
+        m.getCalendar.mockResolvedValue(calendarEnvelope([
+            calendarItem({
+                conflict_status: 'approved_overlap',
+                has_conflict: true,
+                conflict_level: 'blocking',
+                conflict_message: 'Pengajuan ini bentrok dengan peminjaman yang sudah disetujui.',
+                conflicts: [conflict],
+            }),
+        ]));
+        m.getBooking.mockResolvedValue(booking({
+            conflict_status: 'approved_overlap',
+            has_conflict: true,
+            conflict_level: 'blocking',
+            conflict_message: 'Pengajuan ini bentrok dengan peminjaman yang sudah disetujui.',
+            conflicts: [conflict],
+        }));
+
+        await renderPeminjamanRuanganTendik();
+        await openCalendarTab();
+
+        expect(document.body.textContent).toContain('Bentrok dengan jadwal disetujui');
+        expect(document.querySelector('[aria-label*="Bentrok dengan jadwal disetujui"]')).not.toBeNull();
+
+        document.querySelector<HTMLElement>('[data-sarpras-calendar-detail="71"]')?.click();
+        await flush();
+
+        expect(document.body.textContent).toContain(
+            'Persetujuan tetap dicegah oleh sistem sampai konflik diselesaikan.',
+        );
+        expect(document.body.textContent).toContain('1 jadwal bentrok terdeteksi.');
+        expect(document.getElementById('approve-tendik-peminjaman')).not.toBeNull();
+    });
+
     it('renders the Kepala Lab calendar with lab copy, own-scope filters, and backend-driven detail', async () => {
         const labRoom = {
             ...room,
@@ -846,6 +891,65 @@ describe('Tendik Peminjaman reviewer page', () => {
         expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
         expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
         expect(document.body.textContent).not.toMatch(/Minta Revisi|Relokasi|Delegasi|Konflik/i);
+    });
+
+    it('shows pending-overlap warnings for Laboran without mutation controls', async () => {
+        const labRoom = {
+            ...room,
+            id: 10,
+            code: 'LAB-10',
+            name: 'Lab Praktikum',
+            type: 'laboratory' as const,
+            owning_laboratory: { id: 2, code: 'LAB', name: 'Lab Uji' },
+        };
+        const conflict = {
+            booking_id: 73,
+            room_id: 10,
+            room_name: 'Lab Praktikum',
+            status: 'submitted' as const,
+            start_at: isoAt(currentDateKey(), 10),
+            end_at: isoAt(currentDateKey(), 12),
+            requester_name: 'Pemohon Lain',
+            activity_name: 'Praktikum Lain',
+            purpose: 'Pengajuan lain.',
+        };
+        m.getProfile.mockResolvedValue(profile('laboran'));
+        m.getBookings.mockResolvedValue(envelope([]));
+        m.getCalendar.mockResolvedValue(calendarEnvelope([
+            labCalendarItem({
+                id: 71,
+                status: 'submitted',
+                conflict_status: 'pending_overlap',
+                has_conflict: true,
+                conflict_level: 'warning',
+                conflict_message: 'Ada pengajuan lain pada ruang dan waktu yang sama.',
+                conflicts: [conflict],
+            }),
+        ]));
+        m.getBooking.mockResolvedValue(booking({
+            room: labRoom,
+            conflict_status: 'pending_overlap',
+            has_conflict: true,
+            conflict_level: 'warning',
+            conflict_message: 'Ada pengajuan lain pada ruang dan waktu yang sama.',
+            conflicts: [conflict],
+        }));
+
+        await renderPeminjamanRuanganTendik();
+        await openCalendarTab();
+
+        expect(document.body.textContent).toContain('Ada pengajuan lain di waktu yang sama');
+
+        document.querySelector<HTMLElement>('[data-sarpras-calendar-detail="71"]')?.click();
+        await flush();
+
+        expect(document.body.textContent).toContain(
+            'Ada pengajuan lain pada ruang dan waktu yang sama. Periksa detail sebelum mengambil keputusan.',
+        );
+        expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
+        expect(document.body.textContent).not.toMatch(/Relokasi|Delegasi|Override|Prioritas/i);
     });
 
     it('supports Sarpras calendar reset, filters, Enter/Space/arrow date navigation, and backend-driven detail opening', async () => {
