@@ -732,6 +732,122 @@ describe('Tendik Peminjaman reviewer page', () => {
         expect(document.getElementById('approve-tendik-peminjaman')).not.toBeNull();
     });
 
+    it('renders the Laboran lab schedule calendar with lab filters, approved default status, and read-only detail', async () => {
+        const labRoom = {
+            ...room,
+            id: 10,
+            code: 'LAB-10',
+            name: 'Lab Praktikum',
+            type: 'laboratory' as const,
+            owning_laboratory: { id: 2, code: 'LAB', name: 'Lab Uji' },
+        };
+        const labBooking = booking({
+            room: labRoom,
+            status: 'approved',
+            activity_name: 'Praktikum Basis Data',
+        });
+        const items = [
+            labCalendarItem({ id: 71, status: 'approved' }),
+            labCalendarItem({
+                id: 72,
+                room_id: 11,
+                room_code: 'LAB-11',
+                room_name: 'Lab Jaringan',
+                laboratory_id: 3,
+                laboratory_name: 'Lab Jaringan',
+                status: 'submitted',
+                activity_name: 'Simulasi Jaringan',
+                start_at: isoAt(currentDateKey(), 13),
+                end_at: isoAt(currentDateKey(), 15),
+            }),
+        ];
+        m.getProfile.mockResolvedValue(profile('laboran'));
+        m.getBookings.mockResolvedValue(envelope([labBooking]));
+        m.getBooking.mockResolvedValue(labBooking);
+        m.getCalendar.mockResolvedValue(calendarEnvelope(items));
+        await renderPeminjamanRuanganTendik();
+        await openCalendarTab();
+
+        expect(document.querySelector('[data-tendik-tab="calendar"]')?.textContent)
+            .toContain('Kalender Peminjaman');
+        expect(m.getCalendar).toHaveBeenCalledWith(expect.objectContaining({
+            month: currentMonthKey(),
+            status: 'approved',
+        }));
+        expect(m.getCalendar.mock.calls.every(([filters]) =>
+            !('roomType' in filters))).toBe(true);
+        expect(apiSource).toContain('/api/tendik/peminjaman-ruangan');
+        expect(apiSource).toContain('/calendar');
+        expect(document.body.textContent).toContain('Jadwal Laboratorium');
+        expect(document.body.textContent).toContain(
+            'Pantau jadwal peminjaman laboratorium untuk membantu kesiapan ruang dan fasilitas.',
+        );
+        expect(document.body.textContent).toContain('Jadwal Lab Terdekat');
+        expect(document.body.textContent).toContain('Mengikuti filter aktif, mulai hari ini.');
+        expect(document.body.textContent).toContain('Semua (2)');
+        expect(document.body.textContent).toContain('Diajukan (1)');
+        expect(document.body.textContent).toContain('Disetujui (1)');
+        expect(document.querySelector('[data-sarpras-calendar-status="approved"]')?.getAttribute('aria-label'))
+            .toContain('1 jadwal laboratorium');
+        expect(document.body.textContent).toContain('Kepadatan');
+        expect(document.body.textContent).toContain('Kepadatan dihitung dari jumlah jadwal laboratorium sesuai filter aktif.');
+        expect(document.body.textContent).toContain('Rendah');
+        expect(document.body.textContent).toContain('LAB-10 - Lab Praktikum');
+        expect(document.body.textContent).toContain('Lab Uji');
+        expect(document.body.textContent).toContain('Mahasiswa Reviewer');
+        expect(document.body.textContent).toContain('Praktikum Basis Data');
+        expect(document.body.textContent).toContain('WIB');
+        expect(document.getElementById('sarpras-calendar-laboratory')).not.toBeNull();
+        expect(document.getElementById('sarpras-calendar-laboratory')?.textContent).toContain('Lab Uji');
+        expect(document.getElementById('sarpras-calendar-room')).not.toBeNull();
+        expect(document.querySelector('[data-sarpras-calendar-room-type]')).toBeNull();
+        expect(document.body.textContent).not.toContain('Kalender Review Ruang Kelas');
+        expect(document.body.textContent).not.toContain('Tambah Ruang Kelas');
+        expect(document.body.textContent).not.toContain('/storage');
+
+        const dateButtons = Array.from(
+            document.querySelectorAll<HTMLButtonElement>('[data-sarpras-calendar-date]'),
+        );
+        dateButtons[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        expect(document.activeElement).toBe(dateButtons[1]);
+
+        const laboratorySelect = document.getElementById('sarpras-calendar-laboratory') as HTMLSelectElement;
+        laboratorySelect.value = '2';
+        laboratorySelect.dispatchEvent(new Event('change', { bubbles: true }));
+        await flush();
+        expect(m.getCalendar).toHaveBeenCalledWith(expect.objectContaining({
+            laboratoryId: 2,
+            status: 'approved',
+        }));
+
+        document.getElementById('sarpras-calendar-reset')?.click();
+        await flush();
+        expect(m.getCalendar.mock.calls.slice(-2).some(([filters]) =>
+            filters.month === currentMonthKey()
+            && filters.status === 'approved'
+            && !('laboratoryId' in filters))).toBe(true);
+
+        const dateButton = document.querySelector<HTMLButtonElement>(
+            `[data-sarpras-calendar-date="${currentDateKey()}"]`,
+        );
+        expect(dateButton).not.toBeNull();
+        expect(dateButton?.tagName).toBe('BUTTON');
+        expect(dateButton?.getAttribute('aria-label')).toContain('2 peminjaman');
+        dateButton?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+        expect(document.getElementById('sarpras-calendar-day-drawer-root')).not.toBeNull();
+        expect(document.body.textContent).toContain('2 jadwal laboratorium pada tanggal ini');
+
+        document.querySelector<HTMLElement>('[data-sarpras-calendar-detail="71"]')?.click();
+        await flush();
+        expect(m.getBooking).toHaveBeenCalledWith(71);
+        expect(document.querySelector('[data-reviewer-detail-state="success"]')).not.toBeNull();
+        expect(document.body.textContent).toContain('Mode baca saja: tindakan reviewer tidak tersedia untuk Laboran.');
+        expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
+        expect(document.body.textContent).not.toMatch(/Minta Revisi|Relokasi|Delegasi|Konflik/i);
+    });
+
     it('supports Sarpras calendar reset, filters, Enter/Space/arrow date navigation, and backend-driven detail opening', async () => {
         await renderPeminjamanRuanganTendik();
         await openCalendarTab();
@@ -849,10 +965,59 @@ describe('Tendik Peminjaman reviewer page', () => {
         expect(document.body.textContent).toContain('Kalender lab sementara gagal.');
     });
 
-    it('keeps the calendar tab away from Laboran and does not render fake calendar actions', async () => {
+    it('renders Laboran calendar loading, error, month-empty, selected-date-empty, and upcoming-empty states', async () => {
+        let resolveMonth!: (value: ReturnType<typeof calendarEnvelope>) => void;
+        let resolveUpcoming!: (value: ReturnType<typeof calendarEnvelope>) => void;
         m.getProfile.mockResolvedValue(profile('laboran'));
+        m.getBookings.mockResolvedValue(envelope([]));
+        m.getCalendar
+            .mockReturnValueOnce(new Promise((resolve) => { resolveMonth = resolve; }))
+            .mockReturnValueOnce(new Promise((resolve) => { resolveUpcoming = resolve; }));
         await renderPeminjamanRuanganTendik();
-        expect(document.querySelector('[data-tendik-tab="calendar"]')).toBeNull();
+        document.querySelector<HTMLElement>('[data-tendik-tab="calendar"]')?.click();
+        expect(document.querySelector('[data-sarpras-calendar-state="loading"]')).not.toBeNull();
+        expect(document.body.textContent).toContain('Memuat jadwal laboratorium...');
+
+        resolveMonth(calendarEnvelope([]));
+        resolveUpcoming(calendarEnvelope([]));
+        await flush();
+        expect(document.querySelector('[data-sarpras-calendar-state="empty"]')).not.toBeNull();
+        expect(document.body.textContent).toContain('Belum ada jadwal laboratorium untuk bulan dan filter ini.');
+        expect(document.body.textContent).toContain('Belum ada jadwal lab terdekat untuk filter aktif.');
+
+        const emptyDate = document.querySelector<HTMLButtonElement>('[data-sarpras-calendar-date]');
+        emptyDate?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        expect(document.getElementById('sarpras-calendar-day-drawer-root')).not.toBeNull();
+        expect(document.body.textContent).toContain('Belum ada jadwal laboratorium pada tanggal ini untuk filter aktif.');
+        document.getElementById('close-sarpras-calendar-day')?.click();
+
+        m.getCalendar
+            .mockResolvedValueOnce(calendarEnvelope([]))
+            .mockRejectedValueOnce(new Error('Jadwal lab terdekat sementara gagal.'));
+        document.getElementById('sarpras-calendar-today')?.click();
+        await flush();
+        expect(document.body.textContent).toContain('Jadwal lab terdekat sementara gagal.');
+
+        m.getCalendar
+            .mockRejectedValueOnce(new Error('Jadwal laboratorium sementara gagal.'))
+            .mockResolvedValueOnce(calendarEnvelope([]));
+        document.getElementById('sarpras-calendar-today')?.click();
+        await flush();
+        expect(document.querySelector('[data-sarpras-calendar-state="error"]')).not.toBeNull();
+        expect(document.body.textContent).toContain('Jadwal laboratorium sementara gagal.');
+    });
+
+    it('keeps the calendar tab away from Persuratan and does not render inaccessible calendar actions', async () => {
+        m.getProfile.mockResolvedValue(profile('laboran'));
+        m.getBookings.mockResolvedValue(envelope([]));
+        m.getCalendar.mockResolvedValue(calendarEnvelope([labCalendarItem({ can_view: false })]));
+        await renderPeminjamanRuanganTendik();
+        await openCalendarTab();
+
+        expect(document.querySelector('[data-sarpras-calendar-detail]')).toBeNull();
+        expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
 
         m.getProfile.mockResolvedValue(profile('persuratan'));
         await renderPeminjamanRuanganTendik();

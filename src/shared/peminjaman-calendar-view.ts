@@ -30,6 +30,7 @@ export interface BookingCalendarViewItem {
     activityName: string;
     purpose: string;
     requesterName?: string | null;
+    laboratoryName?: string | null;
     capabilities?: BookingCalendarItemCapabilities;
 }
 
@@ -199,6 +200,7 @@ export const renderBookingCalendarItemCard = (
         <div class="flex flex-wrap items-start justify-between gap-2">
             <div>
                 <p class="break-words text-sm font-bold text-gray-800">${escapePeminjamanCalendarText(item.roomCode)} - ${escapePeminjamanCalendarText(item.roomName)}</p>
+                ${item.laboratoryName ? `<p class="mt-1 break-words text-xs font-semibold text-gray-500">${escapePeminjamanCalendarText(item.laboratoryName)}</p>` : ''}
                 <p class="mt-1 text-xs font-semibold text-gray-600">${escapePeminjamanCalendarText(formatIndonesianDate(new Date(item.startAt)))}</p>
                 <p class="mt-1 text-xs text-gray-500">${escapePeminjamanCalendarText(formatTimeRange(item.startAt, item.endAt))}</p>
             </div>

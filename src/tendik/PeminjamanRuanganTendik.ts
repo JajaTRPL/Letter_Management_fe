@@ -69,11 +69,12 @@ const PER_PAGE = 10;
 
 type TendikTab = 'queue' | 'calendar' | 'rooms';
 type CalendarStatusFilter = 'all' | BookingStatus;
-type CalendarRole = 'sarpras' | 'kepala_lab';
+type CalendarRole = 'sarpras' | 'kepala_lab' | 'laboran';
 
 interface SarprasCalendarState {
     cursor: Date;
     status: CalendarStatusFilter;
+    laboratoryId: number | null;
     roomId: number | null;
     selectedDateKey: string | null;
 }
@@ -83,6 +84,12 @@ interface CalendarRoomOption {
     code: string;
     name: string;
     type: RoomType;
+    laboratoryId: number | null;
+}
+
+interface CalendarLaboratoryOption {
+    id: number;
+    name: string;
 }
 
 interface TendikCalendarCopy {
@@ -119,22 +126,30 @@ const SARPRAS_CALENDAR_DETAIL_ACTION: BookingCalendarItemAction = {
     requiredCapability: 'view',
 };
 
-const createInitialSarprasCalendarState = (): SarprasCalendarState => {
+const defaultCalendarStatus = (role: CalendarRole | null): CalendarStatusFilter =>
+    role === 'laboran' ? 'approved' : 'all';
+
+const createInitialSarprasCalendarState = (
+    role: CalendarRole | null = null,
+): SarprasCalendarState => {
     const now = new Date();
 
     return {
         cursor: new Date(now.getFullYear(), now.getMonth(), 1),
-        status: 'all',
+        status: defaultCalendarStatus(role),
+        laboratoryId: null,
         roomId: null,
         selectedDateKey: null,
     };
 };
 
-const createResetSarprasCalendarState = (): SarprasCalendarState => {
+const createResetSarprasCalendarState = (
+    role: CalendarRole | null = null,
+): SarprasCalendarState => {
     const now = new Date();
 
     return {
-        ...createInitialSarprasCalendarState(),
+        ...createInitialSarprasCalendarState(role),
         selectedDateKey: formatDateKey(now),
     };
 };
@@ -164,6 +179,7 @@ let sarprasCalendarItems: TendikCalendarItem[] = [];
 let sarprasCalendarStatusCounts: Partial<Record<BookingStatus, number>> = {};
 let sarprasCalendarUpcomingItemsState: TendikCalendarItem[] = [];
 let sarprasCalendarRoomMap = new Map<number, CalendarRoomOption>();
+let sarprasCalendarLaboratoryMap = new Map<number, CalendarLaboratoryOption>();
 let sarprasCalendarLoading = false;
 let sarprasCalendarLoaded = false;
 let sarprasCalendarError: string | null = null;
@@ -234,16 +250,18 @@ const canManageRooms = (): boolean =>
     || reviewerRole() === 'laboran';
 
 const canUseCalendar = (): boolean =>
-    reviewerRole() === 'sarpras' || reviewerRole() === 'kepala_lab';
+    reviewerRole() === 'sarpras'
+    || reviewerRole() === 'kepala_lab'
+    || reviewerRole() === 'laboran';
 
 const calendarRole = (): CalendarRole | null => {
     const role = reviewerRole();
 
-    return role === 'sarpras' || role === 'kepala_lab' ? role : null;
+    return role === 'sarpras' || role === 'kepala_lab' || role === 'laboran' ? role : null;
 };
 
 const calendarRoomType = (): RoomType =>
-    calendarRole() === 'kepala_lab' ? 'laboratory' : 'classroom';
+    calendarRole() === 'sarpras' ? 'classroom' : 'laboratory';
 
 /** Room types this reviewer may create (create stays with sarpras/classroom). */
 const allowedCreateTypes = (): ManagedRoomType[] =>
@@ -294,12 +312,19 @@ const errorMessage = (error: unknown, fallback: string): string => {
 const rememberRooms = (items: TendikBooking[]): void => {
     items.forEach((booking) => {
         knownRooms.set(booking.room.id, booking.room);
+        if (booking.room.type === 'laboratory' && booking.room.owning_laboratory) {
+            sarprasCalendarLaboratoryMap.set(booking.room.owning_laboratory.id, {
+                id: booking.room.owning_laboratory.id,
+                name: booking.room.owning_laboratory.name,
+            });
+        }
         if (booking.room.type === calendarRoomType()) {
             sarprasCalendarRoomMap.set(booking.room.id, {
                 id: booking.room.id,
                 code: booking.room.code,
                 name: booking.room.name,
                 type: booking.room.type,
+                laboratoryId: booking.room.owning_laboratory?.id ?? null,
             });
         }
     });
@@ -307,17 +332,44 @@ const rememberRooms = (items: TendikBooking[]): void => {
 
 const rememberSarprasCalendarRooms = (items: TendikCalendarItem[]): void => {
     items.forEach((item) => {
+        if (item.room_type === 'laboratory' && item.laboratory_id !== null && item.laboratory_name) {
+            sarprasCalendarLaboratoryMap.set(item.laboratory_id, {
+                id: item.laboratory_id,
+                name: item.laboratory_name,
+            });
+        }
         if (item.room_type !== calendarRoomType()) return;
         sarprasCalendarRoomMap.set(item.room_id, {
             id: item.room_id,
             code: item.room_code,
             name: item.room_name,
             type: item.room_type,
+            laboratoryId: item.laboratory_id,
         });
     });
 };
 
 const tendikCalendarCopy = (): TendikCalendarCopy => {
+    if (calendarRole() === 'laboran') {
+        return {
+            title: 'Jadwal Laboratorium',
+            helper: 'Pantau jadwal peminjaman laboratorium untuk membantu kesiapan ruang dan fasilitas.',
+            densityHelper: 'Kepadatan dihitung dari jumlah jadwal laboratorium sesuai filter aktif.',
+            totalNoun: 'jadwal laboratorium',
+            statusAriaNoun: 'jadwal laboratorium',
+            roomTypeFilterAriaLabel: 'Filter jenis ruangan kalender Laboran',
+            loadingText: 'Memuat jadwal laboratorium...',
+            monthEmptyText: 'Belum ada jadwal laboratorium untuk bulan dan filter ini.',
+            upcomingTitle: 'Jadwal Lab Terdekat',
+            upcomingLoadingText: 'Memuat jadwal lab terdekat...',
+            upcomingEmptyText: 'Belum ada jadwal lab terdekat untuk filter aktif.',
+            dayEyebrow: 'Jadwal Laboratorium',
+            dayCountNoun: 'jadwal laboratorium',
+            dayEmptyText: 'Belum ada jadwal laboratorium pada tanggal ini untuk filter aktif.',
+            calendarErrorFallback: 'Jadwal laboratorium gagal dimuat.',
+            upcomingErrorFallback: 'Jadwal lab terdekat gagal dimuat.',
+        };
+    }
     if (calendarRole() === 'kepala_lab') {
         return {
             title: 'Kalender Peminjaman Laboratorium Saya',
@@ -371,6 +423,9 @@ const sarprasCalendarScopedApiFilters = (
 ): TendikCalendarFilters => ({
     ...dateFilters,
     ...(sarprasCalendarState.status !== 'all' ? { status: sarprasCalendarState.status } : {}),
+    ...(calendarRole() === 'laboran' && sarprasCalendarState.laboratoryId !== null
+        ? { laboratoryId: sarprasCalendarState.laboratoryId }
+        : {}),
     ...(sarprasCalendarState.roomId !== null ? { roomId: sarprasCalendarState.roomId } : {}),
 });
 
@@ -399,6 +454,7 @@ const toSarprasCalendarViewItem = (item: TendikCalendarItem): BookingCalendarVie
     activityName: item.activity_name,
     purpose: item.purpose,
     requesterName: item.requester_name,
+    laboratoryName: item.laboratory_name,
     capabilities: {
         view: item.can_view,
     },
@@ -447,6 +503,10 @@ const sarprasCalendarStatusOptions = () =>
 const sarprasCalendarRoomOptions = (): CalendarRoomOption[] =>
     Array.from(sarprasCalendarRoomMap.values())
         .filter((room) => room.type === calendarRoomType())
+        .filter((room) =>
+            calendarRole() !== 'laboran'
+            || sarprasCalendarState.laboratoryId === null
+            || room.laboratoryId === sarprasCalendarState.laboratoryId)
         .sort((left, right) =>
             `${left.code} ${left.name}`.localeCompare(`${right.code} ${right.name}`, 'id'));
 
@@ -456,6 +516,15 @@ const sarprasCalendarManagedRoomOptions = () =>
         label: `${room.code} - ${room.name}`,
         selected: sarprasCalendarState.roomId === room.id,
     }));
+
+const sarprasCalendarLaboratoryOptions = () =>
+    Array.from(sarprasCalendarLaboratoryMap.values())
+        .sort((left, right) => left.name.localeCompare(right.name, 'id'))
+        .map((laboratory) => ({
+            value: String(laboratory.id),
+            label: laboratory.name,
+            selected: sarprasCalendarState.laboratoryId === laboratory.id,
+        }));
 
 const renderSarprasCalendarGrid = (): string =>
     renderBookingCalendarGridCells(
@@ -732,12 +801,12 @@ const renderSarprasCalendarTab = (): string => {
         filters: {
             roomTypeOptions: [],
             statusOptions: sarprasCalendarStatusOptions(),
-            laboratoryOptions: [],
+            laboratoryOptions: sarprasCalendarLaboratoryOptions(),
             roomOptions: sarprasCalendarManagedRoomOptions(),
         },
         filterVisibility: {
             roomType: false,
-            laboratory: false,
+            laboratory: calendarRole() === 'laboran',
             status: true,
             room: true,
         },
@@ -963,8 +1032,19 @@ const attachSarprasCalendarListeners = (): void => {
         sarprasCalendarState.roomId = value ? Number(value) : null;
         reloadSarprasCalendarForFilterChange();
     });
+    document.getElementById('sarpras-calendar-laboratory')?.addEventListener('change', () => {
+        const value = (document.getElementById('sarpras-calendar-laboratory') as HTMLSelectElement | null)?.value ?? '';
+        sarprasCalendarState.laboratoryId = value ? Number(value) : null;
+        if (
+            sarprasCalendarState.roomId !== null
+            && !sarprasCalendarRoomOptions().some((room) => room.id === sarprasCalendarState.roomId)
+        ) {
+            sarprasCalendarState.roomId = null;
+        }
+        reloadSarprasCalendarForFilterChange();
+    });
     document.getElementById('sarpras-calendar-reset')?.addEventListener('click', () => {
-        sarprasCalendarState = createResetSarprasCalendarState();
+        sarprasCalendarState = createResetSarprasCalendarState(calendarRole());
         closeSarprasCalendarDayDrawer();
         void loadSarprasCalendar();
     });
@@ -1679,6 +1759,7 @@ export const renderPeminjamanRuanganTendik = async (role = 'tendik'): Promise<vo
     sarprasCalendarStatusCounts = {};
     sarprasCalendarUpcomingItemsState = [];
     sarprasCalendarRoomMap = new Map();
+    sarprasCalendarLaboratoryMap = new Map();
     sarprasCalendarLoading = false;
     sarprasCalendarLoaded = false;
     sarprasCalendarError = null;
@@ -1716,6 +1797,7 @@ export const renderPeminjamanRuanganTendik = async (role = 'tendik'): Promise<vo
     reviewerProfile = profileResult.status === 'fulfilled'
         ? profileResult.value
         : null;
+    sarprasCalendarState = createInitialSarprasCalendarState(calendarRole());
     if (queueResult.status === 'fulfilled') {
         queue = queueResult.value.data;
         pagination = queueResult.value.meta;
