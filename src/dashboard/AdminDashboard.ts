@@ -1,8 +1,22 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { apiFetch } from '../shared/api-client';
+import {
+    attachSuperAdminDelegatedActivityDashboardCard,
+    renderSuperAdminDelegatedActivityDashboardCard,
+} from '../superadmin/DelegatedActivityMonitoring';
 
 let refreshInterval: any = null;
 let activePeriod: string = 'week';
+
+const fragmentFromMarkup = (markup: string): DocumentFragment => {
+    const range = document.createRange();
+    range.selectNode(document.body);
+    return range.createContextualFragment(markup);
+};
+
+const setMarkup = (element: Element, markup: string): void => {
+    element.replaceChildren(fragmentFromMarkup(markup));
+};
 
 export const renderAdminDashboard = async () => {
     // Clear existing interval if any
@@ -64,6 +78,8 @@ export const renderAdminDashboard = async () => {
                             Super Admin
                         </span>
                     </div>
+
+                    ${renderSuperAdminDelegatedActivityDashboardCard({ kind: 'loading' })}
 
                     <!-- User Count Cards -->
                     <div>
@@ -166,10 +182,11 @@ export const renderAdminDashboard = async () => {
 
             const container = document.getElementById('admin-dashboard-wrapper');
             if (container) {
-                container.innerHTML = content;
+                setMarkup(container, content);
 
                 // Tab switching logic
                 const tabBar = document.getElementById('activity-tab-bar');
+                attachSuperAdminDelegatedActivityDashboardCard();
 
                 const setActiveTab = (period: string) => {
                     tabBar?.querySelectorAll('.activity-tab').forEach(b => {
