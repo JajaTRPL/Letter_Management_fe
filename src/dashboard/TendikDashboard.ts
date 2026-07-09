@@ -7,6 +7,10 @@ import { renderReviewSuratKeteranganAktif } from '../tendik/ReviewSuratKeteranga
 import { renderReviewSuratPengantarMagang } from '../tendik/ReviewSuratPengantarMagang';
 import { renderReviewSuratTugas } from '../tendik/ReviewSuratTugas';
 import {
+    attachDelegatedActivityDashboardCard,
+    renderDelegatedActivityDashboardCard,
+} from '../tendik/DelegatedActivityAcknowledgements';
+import {
     getAssignedTaskLabel,
     getLetterStatusLabel,
     getLetterStatusTone,
@@ -47,6 +51,9 @@ export const renderTendikDashboard = async (role: string) => {
     `, role, 'dashboard');
 
     try {
+        const tendikRole = localStorage.getItem('auth_tendik_role') ?? '';
+        const shouldShowDelegatedActivityCard = tendikRole === 'kepala_lab';
+
         // Fetch dashboard tasks/stats and the live profile in parallel.
         // /api/tendik/dashboard/tasks returns only stats+tasks+scope (no user meta),
         // so we read assigned_tasks from /api/profile — the same source the Tendik
@@ -100,7 +107,6 @@ export const renderTendikDashboard = async (role: string) => {
         // Sarpras/Kepala Lab/Laboran work in Peminjaman Ruangan, not surat
         // verification — their greeting must not talk about "jenis surat"
         // or show empty surat-assignment chips.
-        const tendikRole = localStorage.getItem('auth_tendik_role') ?? '';
         const isPeminjamanOnlyRole = ['sarpras', 'kepala_lab', 'laboran'].includes(tendikRole);
         const welcomeSubtitle = tendikRole === 'sarpras'
             ? 'Pantau dan verifikasi pengajuan peminjaman ruang kelas.'
@@ -161,6 +167,8 @@ export const renderTendikDashboard = async (role: string) => {
                         </div>
                     </div>
                 </div>
+
+                ${shouldShowDelegatedActivityCard ? renderDelegatedActivityDashboardCard({ kind: 'loading' }) : ''}
 
                 <!-- Antrean Perlu Tindakan Section -->
                 <div class="mt-10">
@@ -278,6 +286,10 @@ export const renderTendikDashboard = async (role: string) => {
             </div>
         `;
         renderDashboardLayout('Dashboard', content, role, 'dashboard');
+
+        if (shouldShowDelegatedActivityCard) {
+            attachDelegatedActivityDashboardCard();
+        }
 
         // "Lihat Selengkapnya" routes to the full Dokumen page (Tugas Saya tab).
         document.getElementById('see-all-dokumen')?.addEventListener('click', () => {
