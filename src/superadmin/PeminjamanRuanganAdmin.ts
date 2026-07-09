@@ -102,6 +102,15 @@ const createInitialCalendarState = (): CalendarViewState => {
     };
 };
 
+const createResetCalendarState = (): CalendarViewState => {
+    const now = new Date();
+
+    return {
+        ...createInitialCalendarState(),
+        selectedDateKey: formatDateKey(now),
+    };
+};
+
 let renderSequence = 0;
 let activeTab: ActiveTab = 'rooms';
 let laboratories: LaboratorySummary[] = [];
@@ -121,6 +130,10 @@ let bookingsError: string | null = null;
 let bookingFilterError: string | null = null;
 let calendarState: CalendarViewState = createInitialCalendarState();
 let calendarItems: SuperAdminCalendarItem[] = [];
+let calendarStatusCounts: Partial<Record<BookingStatus, number>> = {};
+let calendarUpcomingItemsState: SuperAdminCalendarItem[] = [];
+let calendarUpcomingLoading = false;
+let calendarUpcomingError: string | null = null;
 let calendarLoading = false;
 let calendarLoaded = false;
 let calendarError: string | null = null;
@@ -201,13 +214,30 @@ const calendarMonthKey = (): string => {
     return `${year}-${month}`;
 };
 
-const calendarApiFilters = (): SuperAdminCalendarFilters => ({
-    month: calendarMonthKey(),
+const calendarScopedApiFilters = (
+    dateFilters: Pick<SuperAdminCalendarFilters, 'month' | 'from' | 'to'>,
+): SuperAdminCalendarFilters => ({
+    ...dateFilters,
     ...(calendarState.status !== 'all' ? { status: calendarState.status } : {}),
     ...(calendarState.roomType !== 'all' ? { roomType: calendarState.roomType } : {}),
     ...(calendarState.laboratoryId !== null ? { laboratoryId: calendarState.laboratoryId } : {}),
     ...(calendarState.roomId !== null ? { roomId: calendarState.roomId } : {}),
 });
+
+const calendarApiFilters = (): SuperAdminCalendarFilters => calendarScopedApiFilters({
+    month: calendarMonthKey(),
+});
+
+const calendarUpcomingApiFilters = (): SuperAdminCalendarFilters => {
+    const from = new Date();
+    const to = new Date(from);
+    to.setDate(from.getDate() + 89);
+
+    return calendarScopedApiFilters({
+        from: formatDateKey(from),
+        to: formatDateKey(to),
+    });
+};
 
 const calendarItemsByDate = (): Map<string, SuperAdminCalendarItem[]> => {
     const indexed = new Map<string, SuperAdminCalendarItem[]>();
@@ -232,11 +262,36 @@ const calendarItemsForDate = (dateKey: string): SuperAdminCalendarItem[] =>
     calendarItemsByDate().get(dateKey) ?? [];
 
 const calendarUpcomingItems = (): SuperAdminCalendarItem[] =>
-    [...calendarItems]
-        .filter((item) => new Date(item.start_at).getTime() >= Date.now())
+    [...calendarUpcomingItemsState]
+        .filter((item) => new Date(item.end_at).getTime() >= Date.now())
         .sort((left, right) =>
             new Date(left.start_at).getTime() - new Date(right.start_at).getTime())
         .slice(0, 5);
+
+const calendarStatusCount = (status: BookingStatus): number =>
+    Number(calendarStatusCounts[status] ?? 0);
+
+const calendarAllStatusCount = (): number =>
+    BOOKING_STATUSES.reduce((total, status) => total + calendarStatusCount(status), 0);
+
+const densityLabelForCount = (count: number): string =>
+    DENSITY_LEGEND.find(({ bucket }) => bucket === getDensityBucket(count))?.label.toLowerCase() ?? 'kosong';
+
+const calendarDateAriaLabel = (
+    date: Date,
+    count: number,
+    isSelected: boolean,
+    isToday: boolean,
+): string => {
+    const parts = [
+        formatIndonesianDate(date),
+        isSelected ? 'dipilih' : 'tidak dipilih',
+    ];
+    if (isToday) parts.push('hari ini');
+    parts.push(`${count} peminjaman`);
+    parts.push(`kepadatan ${densityLabelForCount(count)}`);
+    return `${parts.join(', ')}.`;
+};
 
 const calendarRoomOptions = (): ManagedRoom[] =>
     roomCatalog.filter((room) =>
@@ -400,19 +455,27 @@ const renderCalendarRoomTypeButton = (filter: CalendarRoomTypeFilter): string =>
     <button type="button" data-admin-calendar-room-type="${filter}" aria-pressed="${calendarState.roomType === filter}" class="shrink-0 rounded-xl border px-4 py-2.5 text-xs font-bold transition-colors ${calendarState.roomType === filter ? 'border-primary-teal bg-teal-50 text-primary-teal' : 'border-gray-200 bg-white text-gray-600 hover:border-teal-200 hover:text-primary-teal'}">${calendarRoomTypeLabel(filter)}</button>
 `;
 
-const renderCalendarStatusButton = (status: CalendarStatusFilter): string => `
-    <button type="button" data-admin-calendar-status="${status}" aria-pressed="${calendarState.status === status}" class="shrink-0 rounded-xl border px-4 py-2.5 text-xs font-bold transition-colors ${calendarState.status === status ? 'border-primary-teal bg-teal-50 text-primary-teal' : 'border-gray-200 bg-white text-gray-600 hover:border-teal-200 hover:text-primary-teal'}">${escapeHtml(status === 'all' ? 'Semua' : getBookingStatusLabel(status))}</button>
-`;
+const renderCalendarStatusButton = (status: CalendarStatusFilter): string => {
+    const label = status === 'all' ? 'Semua' : getBookingStatusLabel(status);
+    const count = status === 'all' ? calendarAllStatusCount() : calendarStatusCount(status);
+
+    return `
+        <button type="button" data-admin-calendar-status="${status}" aria-pressed="${calendarState.status === status}" aria-label="${escapeHtml(`Filter status ${label}, ${count} peminjaman.`)}" class="shrink-0 rounded-xl border px-4 py-2.5 text-xs font-bold transition-colors ${calendarState.status === status ? 'border-primary-teal bg-teal-50 text-primary-teal' : 'border-gray-200 bg-white text-gray-600 hover:border-teal-200 hover:text-primary-teal'}">${escapeHtml(`${label} (${count})`)}</button>
+    `;
+};
 
 const renderCalendarDensityLegend = (): string => `
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-gray-600">
-        <span class="font-bold uppercase tracking-wider text-gray-500">Kepadatan</span>
-        ${DENSITY_LEGEND.map(({ bucket, label }) => `
-            <span class="inline-flex items-center gap-1.5">
-                <span class="h-3 w-3 rounded ${getDensitySwatchClass(bucket)}" aria-hidden="true"></span>
-                ${label}
-            </span>
-        `).join('')}
+    <div class="space-y-1.5">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-gray-600">
+            <span class="font-bold uppercase tracking-wider text-gray-500">Kepadatan</span>
+            ${DENSITY_LEGEND.map(({ bucket, label }) => `
+                <span class="inline-flex items-center gap-1.5">
+                    <span class="h-3 w-3 rounded ${getDensitySwatchClass(bucket)}" aria-hidden="true"></span>
+                    ${label}
+                </span>
+            `).join('')}
+        </div>
+        <p class="text-[11px] font-medium text-gray-500">Kepadatan dihitung dari jumlah peminjaman sesuai filter aktif.</p>
     </div>
 `;
 
@@ -430,9 +493,11 @@ const buildAdminCalendarGrid = (): string => {
         const dateKey = formatDateKey(cellDate);
         const inMonth = cellDate.getMonth() === month;
         const count = indexed.get(dateKey)?.length ?? 0;
-        const selectedClass = dateKey === calendarState.selectedDateKey
+        const isSelected = dateKey === calendarState.selectedDateKey;
+        const isToday = dateKey === todayKey;
+        const selectedClass = isSelected
             ? 'ring-2 ring-teal-700 ring-offset-1'
-            : dateKey === todayKey
+            : isToday
                 ? 'ring-1 ring-teal-500'
                 : '';
 
@@ -441,7 +506,7 @@ const buildAdminCalendarGrid = (): string => {
         }
 
         return `
-            <button type="button" data-admin-calendar-date="${dateKey}" aria-pressed="${dateKey === calendarState.selectedDateKey}" aria-label="${escapeHtml(formatIndonesianDate(cellDate))}, ${count} peminjaman" class="relative flex h-11 items-center justify-center rounded-lg text-sm font-semibold transition-all ${getDensityCellClass(getDensityBucket(count))} ${selectedClass}">
+            <button type="button" data-admin-calendar-date="${dateKey}" aria-pressed="${isSelected}" aria-label="${escapeHtml(calendarDateAriaLabel(cellDate, count, isSelected, isToday))}" class="relative flex h-11 items-center justify-center rounded-lg text-sm font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 ${getDensityCellClass(getDensityBucket(count))} ${selectedClass}">
                 ${cellDate.getDate()}
                 ${count > 0 ? `<span class="absolute right-0.5 top-0.5 h-4 min-w-4 rounded-full bg-white/90 px-1 text-[9px] leading-4 text-teal-800 shadow-sm">${count}</span>` : ''}
             </button>
@@ -488,6 +553,9 @@ const renderCalendarFilters = (): string => `
                 </select>
             </label>
         </div>
+        <div class="flex justify-end">
+            <button id="admin-calendar-reset" type="button" class="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">Reset Kalender</button>
+        </div>
     </div>
 `;
 
@@ -496,6 +564,7 @@ const renderCalendarBookingCard = (item: SuperAdminCalendarItem): string => `
         <div class="flex flex-wrap items-start justify-between gap-2">
             <div>
                 <p class="break-words text-sm font-bold text-gray-800">${escapeHtml(item.room_code)} - ${escapeHtml(item.room_name)}</p>
+                <p class="mt-1 text-xs font-semibold text-gray-600">${escapeHtml(formatIndonesianDate(new Date(item.start_at)))}</p>
                 <p class="mt-1 text-xs text-gray-500">${escapeHtml(formatTimeRange(item.start_at, item.end_at))}</p>
             </div>
             <span class="inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${getBookingStatusTone(item.status)}">${escapeHtml(getBookingStatusLabel(item.status))}</span>
@@ -513,8 +582,10 @@ const renderCalendarUpcomingPanel = (): string => {
     return `
         <div class="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <h4 class="text-sm font-bold text-gray-800">Peminjaman Terdekat</h4>
-            <p class="mt-1 text-xs text-gray-500">Mengikuti filter aktif.</p>
-            ${upcoming.length > 0 ? `
+            <p class="mt-1 text-xs text-gray-500">Mengikuti filter aktif, mulai hari ini.</p>
+            ${calendarUpcomingLoading ? '<p data-admin-calendar-upcoming-state="loading" class="mt-4 rounded-xl border border-teal-100 bg-teal-50 px-4 py-5 text-center text-sm font-semibold text-teal-700">Memuat peminjaman terdekat...</p>' : calendarUpcomingError ? `
+                <p data-admin-calendar-upcoming-state="error" class="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-5 text-center text-sm font-semibold text-red-700">${escapeHtml(calendarUpcomingError)}</p>
+            ` : upcoming.length > 0 ? `
                 <ul class="mt-4 space-y-3">
                     ${upcoming.map(renderCalendarBookingCard).join('')}
                 </ul>
@@ -562,10 +633,10 @@ const renderCalendarMonitoring = (): string => `
                     <p class="mt-1 text-xs text-gray-500">Pantau pengajuan dan jadwal ruangan berdasarkan tanggal, status, jenis ruangan, dan laboratorium.</p>
                 </div>
                 <div class="flex items-center gap-1 md:gap-2">
-                    <button id="admin-calendar-prev-month" type="button" class="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100" aria-label="Bulan sebelumnya">&lsaquo;</button>
-                    <div class="min-w-[128px] text-center text-sm font-bold text-gray-800 md:min-w-[150px]">${getMonthLabel(calendarState.cursor)}</div>
-                    <button id="admin-calendar-next-month" type="button" class="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100" aria-label="Bulan berikutnya">&rsaquo;</button>
-                    <button id="admin-calendar-today" type="button" class="ml-1 inline-flex items-center justify-center rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50">Hari Ini</button>
+                    <button id="admin-calendar-prev-month" type="button" class="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700" aria-label="Bulan sebelumnya">&lsaquo;</button>
+                    <div id="admin-calendar-month-heading" class="min-w-[128px] text-center text-sm font-bold text-gray-800 md:min-w-[150px]" aria-live="polite">${getMonthLabel(calendarState.cursor)}</div>
+                    <button id="admin-calendar-next-month" type="button" class="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700" aria-label="Bulan berikutnya">&rsaquo;</button>
+                    <button id="admin-calendar-today" type="button" class="ml-1 inline-flex items-center justify-center rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700" aria-label="Kembali ke bulan dan tanggal hari ini">Hari Ini</button>
                 </div>
             </div>
             ${renderCalendarFilters()}
@@ -974,6 +1045,13 @@ const reloadCalendarForFilterChange = (): void => {
     void loadCalendar();
 };
 
+const selectCalendarDate = (dateKey: string): void => {
+    calendarState.selectedDateKey = dateKey;
+    const grid = document.getElementById('admin-peminjaman-calendar-grid');
+    if (grid) grid.innerHTML = buildAdminCalendarGrid();
+    openCalendarDayDrawer(dateKey);
+};
+
 const attachCalendarDetailButtons = (root: ParentNode = document): void => {
     root.querySelectorAll<HTMLElement>('[data-admin-calendar-detail]').forEach((button) => {
         button.addEventListener('click', () => {
@@ -1024,6 +1102,11 @@ const attachCalendarListeners = (): void => {
         calendarState.roomId = value ? Number(value) : null;
         reloadCalendarForFilterChange();
     });
+    document.getElementById('admin-calendar-reset')?.addEventListener('click', () => {
+        calendarState = createResetCalendarState();
+        closeCalendarDayDrawer();
+        void loadCalendar();
+    });
     document.getElementById('admin-calendar-prev-month')?.addEventListener('click', () => {
         calendarState.cursor = new Date(
             calendarState.cursor.getFullYear(),
@@ -1043,16 +1126,23 @@ const attachCalendarListeners = (): void => {
     document.getElementById('admin-calendar-today')?.addEventListener('click', () => {
         const now = new Date();
         calendarState.cursor = new Date(now.getFullYear(), now.getMonth(), 1);
-        reloadCalendarForFilterChange();
+        calendarState.selectedDateKey = formatDateKey(now);
+        closeCalendarDayDrawer();
+        void loadCalendar();
     });
     document.getElementById('admin-peminjaman-calendar-grid')?.addEventListener('click', (event) => {
         const target = (event.target as HTMLElement).closest<HTMLElement>('[data-admin-calendar-date]');
         const dateKey = target?.dataset.adminCalendarDate;
         if (!dateKey) return;
-        calendarState.selectedDateKey = dateKey;
-        const grid = document.getElementById('admin-peminjaman-calendar-grid');
-        if (grid) grid.innerHTML = buildAdminCalendarGrid();
-        openCalendarDayDrawer(dateKey);
+        selectCalendarDate(dateKey);
+    });
+    document.getElementById('admin-peminjaman-calendar-grid')?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const target = (event.target as HTMLElement).closest<HTMLElement>('[data-admin-calendar-date]');
+        const dateKey = target?.dataset.adminCalendarDate;
+        if (!dateKey) return;
+        event.preventDefault();
+        selectCalendarDate(dateKey);
     });
     document.getElementById('admin-calendar-retry')?.addEventListener('click', () => {
         void loadCalendar();
@@ -1063,25 +1153,40 @@ const attachCalendarListeners = (): void => {
 const loadCalendar = async (): Promise<void> => {
     const sequence = ++calendarRequestSequence;
     calendarLoading = true;
+    calendarUpcomingLoading = true;
     calendarError = null;
+    calendarUpcomingError = null;
     renderPage();
 
-    try {
-        const result = await getSuperAdminBookingCalendar(calendarApiFilters());
-        if (sequence !== calendarRequestSequence) return;
-        calendarItems = result.items;
-        calendarLoaded = true;
+    const [monthResult, upcomingResult] = await Promise.allSettled([
+        getSuperAdminBookingCalendar(calendarApiFilters()),
+        getSuperAdminBookingCalendar(calendarUpcomingApiFilters()),
+    ]);
+
+    if (sequence !== calendarRequestSequence) return;
+
+    if (monthResult.status === 'fulfilled') {
+        calendarItems = monthResult.value.items;
+        calendarStatusCounts = monthResult.value.summary.counts_by_status ?? {};
         calendarError = null;
-    } catch (error) {
-        if (sequence !== calendarRequestSequence) return;
+    } else {
         calendarItems = [];
-        calendarLoaded = true;
-        calendarError = errorMessage(error, 'Kalender peminjaman gagal dimuat.');
-    } finally {
-        if (sequence !== calendarRequestSequence) return;
-        calendarLoading = false;
-        renderPage();
+        calendarStatusCounts = {};
+        calendarError = errorMessage(monthResult.reason, 'Kalender peminjaman gagal dimuat.');
     }
+
+    if (upcomingResult.status === 'fulfilled') {
+        calendarUpcomingItemsState = upcomingResult.value.items;
+        calendarUpcomingError = null;
+    } else {
+        calendarUpcomingItemsState = [];
+        calendarUpcomingError = errorMessage(upcomingResult.reason, 'Peminjaman terdekat gagal dimuat.');
+    }
+
+    calendarLoaded = true;
+    calendarLoading = false;
+    calendarUpcomingLoading = false;
+    renderPage();
 };
 
 const loadRooms = async (showLoading = true): Promise<void> => {
@@ -1189,7 +1294,7 @@ const openCalendarDayDrawer = (dateKey: string): void => {
                 <div>
                     <p class="text-xs font-bold uppercase tracking-wider text-teal-700">Peminjaman Ruangan</p>
                     <h2 id="admin-calendar-day-title" class="mt-1 text-base font-bold text-gray-900">${escapeHtml(formatIndonesianDate(parseDateKey(dateKey)))}</h2>
-                    <p class="mt-1 text-xs text-gray-500">${items.length} peminjaman sesuai filter aktif</p>
+                    <p class="mt-1 text-xs text-gray-500">${items.length} peminjaman pada tanggal ini mengikuti filter aktif.</p>
                 </div>
                 <button id="close-admin-calendar-day" type="button" class="rounded-lg p-2 text-gray-400 hover:bg-gray-100" aria-label="Tutup detail tanggal">x</button>
             </header>
@@ -1374,6 +1479,10 @@ export const renderPeminjamanRuanganAdmin = async (): Promise<void> => {
     bookingFilterError = null;
     calendarState = createInitialCalendarState();
     calendarItems = [];
+    calendarStatusCounts = {};
+    calendarUpcomingItemsState = [];
+    calendarUpcomingLoading = false;
+    calendarUpcomingError = null;
     calendarLoading = false;
     calendarLoaded = false;
     calendarError = null;

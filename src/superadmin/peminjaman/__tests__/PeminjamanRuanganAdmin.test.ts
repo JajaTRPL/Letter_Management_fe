@@ -188,6 +188,21 @@ const currentMonthKey = (): string => {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 };
 
+const dateKeyFromNow = (days: number): string => {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+const formatDateId = (date: Date): string =>
+    date.toLocaleDateString('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+    });
+
 const calendarItem = (overrides = {}) => ({
     id: 44,
     room_id: 12,
@@ -213,19 +228,34 @@ const calendarItem = (overrides = {}) => ({
     ...overrides,
 });
 
-const calendarEnvelope = (items = [calendarItem()]) => ({
-    message: 'ok',
-    month: currentMonthKey(),
-    range: { start: `${currentMonthKey()}-01`, end: `${currentMonthKey()}-31` },
-    items,
-    summary: {
-        total: items.length,
-        counts_by_status: items.reduce<Record<string, number>>((counts, item) => {
-            counts[item.status] = (counts[item.status] ?? 0) + 1;
-            return counts;
-        }, {}),
-    },
-});
+const calendarEnvelope = (
+    items = [calendarItem()],
+    countsByStatus?: Record<string, number>,
+) => {
+    const summaryCounts = countsByStatus ?? items.reduce<Record<string, number>>((counts, item) => {
+        counts[item.status] = (counts[item.status] ?? 0) + 1;
+        return counts;
+    }, {});
+
+    return {
+        message: 'ok',
+        month: currentMonthKey(),
+        range: { start: `${currentMonthKey()}-01`, end: `${currentMonthKey()}-31` },
+        items,
+        summary: {
+            total: Object.values(summaryCounts).reduce((total, count) => total + count, 0),
+            counts_by_status: summaryCounts,
+        },
+    };
+};
+
+const calendarMonthCalls = (): Record<string, unknown>[] =>
+    m.getCalendar.mock.calls
+        .map(([filters]) => filters as Record<string, unknown>)
+        .filter((filters) => 'month' in filters);
+
+const latestCalendarMonthCall = (): Record<string, unknown> | undefined =>
+    calendarMonthCalls().at(-1);
 
 const flush = async (): Promise<void> => {
     await Promise.resolve();
@@ -645,13 +675,58 @@ describe('Super Admin calendar monitoring', () => {
         expect(m.getCalendar).toHaveBeenCalledWith(expect.objectContaining({
             month: expect.stringMatching(/^\d{4}-\d{2}$/),
         }));
+        expect(m.getCalendar).toHaveBeenCalledWith(expect.objectContaining({
+            from: dateKeyFromNow(0),
+            to: dateKeyFromNow(89),
+        }));
         expect(document.body.textContent).toContain('Kalender Peminjaman Ruangan');
         expect(document.body.textContent).toContain('Pantau pengajuan dan jadwal ruangan berdasarkan tanggal, status, jenis ruangan, dan laboratorium.');
         expect(document.body.textContent).toContain('Peminjaman Terdekat');
-        expect(document.body.textContent).toContain('Mengikuti filter aktif.');
+        expect(document.body.textContent).toContain('Mengikuti filter aktif, mulai hari ini.');
         expect(document.body.textContent).not.toContain('Kalender Peminjaman Disetujui');
         expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
         expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
+    });
+
+    it('shows status chip counts, density helper copy, and calendar accessibility labels', async () => {
+        m.getCalendar.mockResolvedValue(calendarEnvelope([calendarItem()], {
+            submitted: 3,
+            revision_requested: 2,
+            approved: 1,
+            rejected: 4,
+            cancelled: 5,
+        }));
+
+        await renderPeminjamanRuanganAdmin();
+        openCalendar();
+        await flush();
+
+        expect(document.body.textContent).toContain('Semua (15)');
+        expect(document.body.textContent).toContain('Diajukan (3)');
+        expect(document.body.textContent).toContain('Perlu Revisi (2)');
+        expect(document.body.textContent).toContain('Disetujui (1)');
+        expect(document.body.textContent).toContain('Ditolak (4)');
+        expect(document.body.textContent).toContain('Dibatalkan (5)');
+        expect(document.querySelector('[data-admin-calendar-status="submitted"]')?.getAttribute('aria-label'))
+            .toBe('Filter status Diajukan, 3 peminjaman.');
+        expect(document.body.textContent).toContain('Kepadatan dihitung dari jumlah peminjaman sesuai filter aktif.');
+        expect(document.getElementById('admin-calendar-today')?.getAttribute('aria-label'))
+            .toBe('Kembali ke bulan dan tanggal hari ini');
+        expect(document.getElementById('admin-calendar-prev-month')?.getAttribute('aria-label')).toBe('Bulan sebelumnya');
+        expect(document.getElementById('admin-calendar-next-month')?.getAttribute('aria-label')).toBe('Bulan berikutnya');
+        expect(document.getElementById('admin-calendar-month-heading')?.getAttribute('aria-live')).toBe('polite');
+        expect(document.getElementById('admin-calendar-month-heading')?.textContent).toContain(currentMonthKey().slice(0, 4));
+
+        const dayButton = document.querySelector<HTMLElement>(`[data-admin-calendar-date="${currentMonthKey()}-15"]`);
+        const label = dayButton?.getAttribute('aria-label') ?? '';
+        expect(label).toContain('tidak dipilih');
+        expect(label).toContain('1 peminjaman');
+        expect(label).toContain('kepadatan rendah');
+
+        document.querySelector<HTMLElement>('[data-admin-calendar-status="approved"]')?.click();
+        await flush();
+        expect(document.body.textContent).toContain('Semua (15)');
+        expect(document.body.textContent).toContain('Diajukan (3)');
     });
 
     it('loads calendar filters for room type, status, laboratory, room, and month navigation', async () => {
@@ -671,33 +746,75 @@ describe('Super Admin calendar monitoring', () => {
 
         document.querySelector<HTMLElement>('[data-admin-calendar-room-type="laboratory"]')?.click();
         await flush();
-        expect(m.getCalendar).toHaveBeenLastCalledWith(expect.objectContaining({
+        expect(latestCalendarMonthCall()).toEqual(expect.objectContaining({
             roomType: 'laboratory',
         }));
 
         document.querySelector<HTMLElement>('[data-admin-calendar-status="approved"]')?.click();
         await flush();
-        expect(m.getCalendar).toHaveBeenLastCalledWith(expect.objectContaining({
+        expect(latestCalendarMonthCall()).toEqual(expect.objectContaining({
             roomType: 'laboratory',
             status: 'approved',
         }));
 
         changeValue('admin-calendar-laboratory', '7');
         await flush();
-        expect(m.getCalendar).toHaveBeenLastCalledWith(expect.objectContaining({
+        expect(latestCalendarMonthCall()).toEqual(expect.objectContaining({
             laboratoryId: 7,
         }));
 
         changeValue('admin-calendar-room', '13');
         await flush();
-        expect(m.getCalendar).toHaveBeenLastCalledWith(expect.objectContaining({
+        expect(latestCalendarMonthCall()).toEqual(expect.objectContaining({
             roomId: 13,
         }));
 
-        const beforePrev = m.getCalendar.mock.calls.at(-1)?.[0].month;
+        const beforePrev = latestCalendarMonthCall()?.month;
         document.getElementById('admin-calendar-prev-month')?.click();
         await flush();
-        expect(m.getCalendar.mock.calls.at(-1)?.[0].month).not.toBe(beforePrev);
+        expect(latestCalendarMonthCall()?.month).not.toBe(beforePrev);
+    });
+
+    it('resets calendar filters, month, and selected date to today', async () => {
+        m.listRooms.mockResolvedValue([
+            managedRoom(),
+            managedRoom({
+                id: 13,
+                code: 'LAB-13',
+                name: 'Lab Uji',
+                type: 'laboratory',
+                owning_laboratory: { id: 7, code: 'LAB-UJI', name: 'Laboratorium Uji' },
+            }),
+        ]);
+
+        await renderPeminjamanRuanganAdmin();
+        openCalendar();
+        await flush();
+
+        document.querySelector<HTMLElement>('[data-admin-calendar-room-type="laboratory"]')?.click();
+        await flush();
+        document.querySelector<HTMLElement>('[data-admin-calendar-status="approved"]')?.click();
+        await flush();
+        changeValue('admin-calendar-laboratory', '7');
+        await flush();
+        changeValue('admin-calendar-room', '13');
+        await flush();
+        document.getElementById('admin-calendar-prev-month')?.click();
+        await flush();
+
+        document.getElementById('admin-calendar-reset')?.click();
+        await flush();
+
+        const resetFilters = latestCalendarMonthCall();
+        expect(resetFilters).toEqual(expect.objectContaining({ month: currentMonthKey() }));
+        expect(resetFilters?.status).toBeUndefined();
+        expect(resetFilters?.roomType).toBeUndefined();
+        expect(resetFilters?.laboratoryId).toBeUndefined();
+        expect(resetFilters?.roomId).toBeUndefined();
+        expect((document.getElementById('admin-calendar-laboratory') as HTMLSelectElement | null)?.value).toBe('');
+        expect((document.getElementById('admin-calendar-room') as HTMLSelectElement | null)?.value).toBe('');
+        expect(document.querySelector(`[data-admin-calendar-date="${dateKeyFromNow(0)}"]`)?.getAttribute('aria-pressed'))
+            .toBe('true');
     });
 
     it('selects a date, shows matching bookings, and opens the existing monitoring detail drawer', async () => {
@@ -710,9 +827,15 @@ describe('Super Admin calendar monitoring', () => {
             ?.click();
 
         expect(document.getElementById('admin-calendar-day-drawer-root')).not.toBeNull();
+        expect(document.getElementById('admin-calendar-day-title')?.textContent)
+            .toBe(formatDateId(new Date(`${currentMonthKey()}-15T12:00:00+07:00`)));
+        expect(document.body.textContent).toContain('1 peminjaman pada tanggal ini mengikuti filter aktif.');
         expect(document.body.textContent).toContain('Kegiatan Kalender');
         expect(document.body.textContent).toContain('Pemohon Kalender');
         expect(document.body.textContent).toContain('Diajukan');
+        expect(document.body.textContent).toContain(formatDateId(new Date(`${currentMonthKey()}-15T09:00:00+07:00`)));
+        expect(document.body.textContent).toContain('09.00');
+        expect(document.body.textContent).toContain('11.00 WIB');
 
         document
             .querySelector<HTMLElement>('#admin-calendar-day-drawer-root [data-admin-calendar-detail="44"]')
@@ -727,6 +850,23 @@ describe('Super Admin calendar monitoring', () => {
         expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
     });
 
+    it('selects calendar dates with Enter and Space', async () => {
+        await renderPeminjamanRuanganAdmin();
+        openCalendar();
+        await flush();
+
+        document
+            .querySelector<HTMLElement>(`[data-admin-calendar-date="${currentMonthKey()}-15"]`)
+            ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        expect(document.getElementById('admin-calendar-day-drawer-root')).not.toBeNull();
+
+        document.getElementById('close-admin-calendar-day')?.click();
+        document
+            .querySelector<HTMLElement>(`[data-admin-calendar-date="${currentMonthKey()}-15"]`)
+            ?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+        expect(document.getElementById('admin-calendar-day-drawer-root')).not.toBeNull();
+    });
+
     it('renders clear empty states for month and selected date', async () => {
         m.getCalendar.mockResolvedValue(calendarEnvelope([]));
         await renderPeminjamanRuanganAdmin();
@@ -739,6 +879,7 @@ describe('Super Admin calendar monitoring', () => {
             .querySelector<HTMLElement>(`[data-admin-calendar-date="${currentMonthKey()}-15"]`)
             ?.click();
 
+        expect(document.body.textContent).toContain('0 peminjaman pada tanggal ini mengikuti filter aktif.');
         expect(document.body.textContent).toContain('Belum ada peminjaman pada tanggal ini untuk filter aktif.');
     });
 });
