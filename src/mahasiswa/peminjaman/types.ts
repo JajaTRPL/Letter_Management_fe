@@ -220,6 +220,26 @@ export interface SuperAdminCalendarEnvelope {
     };
 }
 
+export interface TendikCalendarItem extends SuperAdminCalendarItem {
+    can_update_readiness?: boolean;
+    can_resolve_conflict?: boolean;
+    can_relocate_booking?: boolean;
+}
+
+export interface TendikCalendarEnvelope {
+    message: string;
+    month: string;
+    range: {
+        start: string;
+        end: string;
+    };
+    items: TendikCalendarItem[];
+    summary: {
+        total: number;
+        counts_by_status: Partial<Record<BookingStatus, number>>;
+    };
+}
+
 export interface TendikBookingFilters {
     status?: BookingStatus;
     roomType?: RoomType;
@@ -241,6 +261,8 @@ export interface SuperAdminCalendarFilters {
     roomId?: number;
     laboratoryId?: number;
 }
+
+export type TendikCalendarFilters = SuperAdminCalendarFilters;
 
 export interface SuperAdminRoomFilters {
     type?: RoomType;

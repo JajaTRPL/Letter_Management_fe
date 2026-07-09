@@ -4,6 +4,7 @@ import {
     approveTendikBooking,
     downloadSuratPeminjamanPdf,
     getTendikBooking,
+    getTendikBookingCalendar,
     getTendikBookings,
     getTendikReviewerProfile,
     PeminjamanApiError,
@@ -22,15 +23,27 @@ import type {
     RoomType,
     TendikBooking,
     TendikBookingFilters,
+    TendikCalendarFilters,
+    TendikCalendarItem,
     TendikReviewerProfile,
     TendikReviewerRole,
 } from '../mahasiswa/peminjaman/types';
 import {
+    formatDateKey,
+    formatIsoDateKeyInJakarta,
     formatTimeRange,
+    getCalendarKeyboardTargetDateKey,
     getBookingStatusLabel,
     getBookingStatusTone,
     getRoomTypeLabel,
 } from '../shared/peminjaman-calendar';
+import {
+    renderBookingCalendarGridCells,
+    renderBookingCalendarSelectedDatePanel,
+    renderBookingCalendarView,
+    type BookingCalendarItemAction,
+    type BookingCalendarViewItem,
+} from '../shared/peminjaman-calendar-view';
 import { bulkDeleteRooms, listManagedRooms } from '../shared/room-management/api';
 import {
     attachRoomSelectionListeners,
@@ -54,7 +67,57 @@ import type {
 
 const PER_PAGE = 10;
 
-type TendikTab = 'queue' | 'rooms';
+type TendikTab = 'queue' | 'calendar' | 'rooms';
+type CalendarStatusFilter = 'all' | BookingStatus;
+
+interface SarprasCalendarState {
+    cursor: Date;
+    status: CalendarStatusFilter;
+    roomId: number | null;
+    selectedDateKey: string | null;
+}
+
+interface CalendarRoomOption {
+    id: number;
+    code: string;
+    name: string;
+    type: RoomType;
+}
+
+const BOOKING_STATUSES: BookingStatus[] = [
+    'submitted',
+    'revision_requested',
+    'approved',
+    'rejected',
+    'cancelled',
+];
+const SARPRAS_CALENDAR_DATE_ATTRIBUTE = 'data-sarpras-calendar-date';
+const SARPRAS_CALENDAR_DETAIL_ACTION: BookingCalendarItemAction = {
+    label: 'Lihat Detail',
+    dataAttribute: 'data-sarpras-calendar-detail',
+    value: (item) => item.id,
+    requiredCapability: 'view',
+};
+
+const createInitialSarprasCalendarState = (): SarprasCalendarState => {
+    const now = new Date();
+
+    return {
+        cursor: new Date(now.getFullYear(), now.getMonth(), 1),
+        status: 'all',
+        roomId: null,
+        selectedDateKey: null,
+    };
+};
+
+const createResetSarprasCalendarState = (): SarprasCalendarState => {
+    const now = new Date();
+
+    return {
+        ...createInitialSarprasCalendarState(),
+        selectedDateKey: formatDateKey(now),
+    };
+};
 
 let renderSequence = 0;
 let reviewerProfile: TendikReviewerProfile | null = null;
@@ -76,6 +139,18 @@ let drawerEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
 let actionEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
 // "Kelola Ruangan" tab state (management roles only).
 let activeTab: TendikTab = 'queue';
+let sarprasCalendarState: SarprasCalendarState = createInitialSarprasCalendarState();
+let sarprasCalendarItems: TendikCalendarItem[] = [];
+let sarprasCalendarStatusCounts: Partial<Record<BookingStatus, number>> = {};
+let sarprasCalendarUpcomingItemsState: TendikCalendarItem[] = [];
+let sarprasCalendarRoomMap = new Map<number, CalendarRoomOption>();
+let sarprasCalendarLoading = false;
+let sarprasCalendarLoaded = false;
+let sarprasCalendarError: string | null = null;
+let sarprasCalendarUpcomingLoading = false;
+let sarprasCalendarUpcomingError: string | null = null;
+let sarprasCalendarRequestSequence = 0;
+let calendarDayEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
 let managedRooms: ManagedRoom[] = [];
 let managedRoomsLoaded = false;
 let managedRoomsLoading = false;
@@ -138,6 +213,9 @@ const canManageRooms = (): boolean =>
     || reviewerRole() === 'kepala_lab'
     || reviewerRole() === 'laboran';
 
+const canUseCalendar = (): boolean =>
+    reviewerRole() === 'sarpras';
+
 /** Room types this reviewer may create (create stays with sarpras/classroom). */
 const allowedCreateTypes = (): ManagedRoomType[] =>
     reviewerRole() === 'sarpras' ? ['classroom'] : [];
@@ -187,8 +265,133 @@ const errorMessage = (error: unknown, fallback: string): string => {
 const rememberRooms = (items: TendikBooking[]): void => {
     items.forEach((booking) => {
         knownRooms.set(booking.room.id, booking.room);
+        if (booking.room.type === 'classroom') {
+            sarprasCalendarRoomMap.set(booking.room.id, {
+                id: booking.room.id,
+                code: booking.room.code,
+                name: booking.room.name,
+                type: booking.room.type,
+            });
+        }
     });
 };
+
+const rememberSarprasCalendarRooms = (items: TendikCalendarItem[]): void => {
+    items.forEach((item) => {
+        if (item.room_type !== 'classroom') return;
+        sarprasCalendarRoomMap.set(item.room_id, {
+            id: item.room_id,
+            code: item.room_code,
+            name: item.room_name,
+            type: item.room_type,
+        });
+    });
+};
+
+const sarprasCalendarMonthKey = (): string => {
+    const year = sarprasCalendarState.cursor.getFullYear();
+    const month = String(sarprasCalendarState.cursor.getMonth() + 1).padStart(2, '0');
+
+    return `${year}-${month}`;
+};
+
+const sarprasCalendarScopedApiFilters = (
+    dateFilters: Pick<TendikCalendarFilters, 'month' | 'from' | 'to'>,
+): TendikCalendarFilters => ({
+    ...dateFilters,
+    ...(sarprasCalendarState.status !== 'all' ? { status: sarprasCalendarState.status } : {}),
+    ...(sarprasCalendarState.roomId !== null ? { roomId: sarprasCalendarState.roomId } : {}),
+});
+
+const sarprasCalendarApiFilters = (): TendikCalendarFilters => sarprasCalendarScopedApiFilters({
+    month: sarprasCalendarMonthKey(),
+});
+
+const sarprasCalendarUpcomingApiFilters = (): TendikCalendarFilters => {
+    const from = new Date();
+    const to = new Date(from);
+    to.setDate(from.getDate() + 89);
+
+    return sarprasCalendarScopedApiFilters({
+        from: formatDateKey(from),
+        to: formatDateKey(to),
+    });
+};
+
+const toSarprasCalendarViewItem = (item: TendikCalendarItem): BookingCalendarViewItem => ({
+    id: item.id,
+    roomCode: item.room_code,
+    roomName: item.room_name,
+    status: item.status,
+    startAt: item.start_at,
+    endAt: item.end_at,
+    activityName: item.activity_name,
+    purpose: item.purpose,
+    requesterName: item.requester_name,
+    capabilities: {
+        view: item.can_view,
+    },
+});
+
+const sarprasCalendarViewItems = (): BookingCalendarViewItem[] =>
+    sarprasCalendarItems.map(toSarprasCalendarViewItem);
+
+const sarprasCalendarItemsForDate = (dateKey: string): BookingCalendarViewItem[] =>
+    sarprasCalendarViewItems()
+        .filter((item) => formatIsoDateKeyInJakarta(item.startAt) === dateKey)
+        .sort((left, right) =>
+            new Date(left.startAt).getTime() - new Date(right.startAt).getTime());
+
+const sarprasCalendarUpcomingItems = (): TendikCalendarItem[] =>
+    [...sarprasCalendarUpcomingItemsState]
+        .filter((item) => new Date(item.end_at).getTime() >= Date.now())
+        .sort((left, right) =>
+            new Date(left.start_at).getTime() - new Date(right.start_at).getTime())
+        .slice(0, 5);
+
+const sarprasCalendarUpcomingViewItems = (): BookingCalendarViewItem[] =>
+    sarprasCalendarUpcomingItems().map(toSarprasCalendarViewItem);
+
+const sarprasCalendarStatusCount = (status: BookingStatus): number =>
+    Number(sarprasCalendarStatusCounts[status] ?? 0);
+
+const sarprasCalendarAllStatusCount = (): number =>
+    BOOKING_STATUSES.reduce((total, status) => total + sarprasCalendarStatusCount(status), 0);
+
+const sarprasCalendarStatusOptions = () =>
+    (['all', ...BOOKING_STATUSES] as CalendarStatusFilter[]).map((value) => {
+        const label = value === 'all' ? 'Semua' : getBookingStatusLabel(value);
+        const count = value === 'all' ? sarprasCalendarAllStatusCount() : sarprasCalendarStatusCount(value);
+
+        return {
+            value,
+            label,
+            count,
+            selected: sarprasCalendarState.status === value,
+            ariaLabel: `Filter status ${label}, ${count} pengajuan ruang kelas.`,
+        };
+    });
+
+const sarprasCalendarRoomOptions = (): CalendarRoomOption[] =>
+    Array.from(sarprasCalendarRoomMap.values())
+        .filter((room) => room.type === 'classroom')
+        .sort((left, right) =>
+            `${left.code} ${left.name}`.localeCompare(`${right.code} ${right.name}`, 'id'));
+
+const sarprasCalendarManagedRoomOptions = () =>
+    sarprasCalendarRoomOptions().map((room) => ({
+        value: String(room.id),
+        label: `${room.code} - ${room.name}`,
+        selected: sarprasCalendarState.roomId === room.id,
+    }));
+
+const renderSarprasCalendarGrid = (): string =>
+    renderBookingCalendarGridCells(
+        sarprasCalendarState.cursor,
+        sarprasCalendarState.selectedDateKey,
+        sarprasCalendarViewItems(),
+        SARPRAS_CALENDAR_DATE_ATTRIBUTE,
+    );
 
 const renderRoleNotice = (): string => {
     switch (reviewerRole()) {
@@ -370,14 +573,17 @@ const renderQueueState = (): string => {
 };
 
 const renderTabBar = (): string => {
-    if (!canManageRooms()) return '';
+    if (!canManageRooms() && !canUseCalendar()) return '';
     const tab = (id: TendikTab, label: string): string => `
         <button type="button" role="tab" data-tendik-tab="${id}" aria-selected="${activeTab === id}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === id ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">${label}</button>
     `;
+    const tabs: Array<[TendikTab, string]> = [['queue', 'Pengajuan']];
+    if (canUseCalendar()) tabs.push(['calendar', 'Kalender Peminjaman']);
+    if (canManageRooms()) tabs.push(['rooms', 'Kelola Ruangan']);
+
     return `
         <div class="flex flex-wrap gap-2" role="tablist" aria-label="Bagian Peminjaman Ruangan">
-            ${tab('queue', 'Pengajuan')}
-            ${tab('rooms', 'Kelola Ruangan')}
+            ${tabs.map(([id, label]) => tab(id, label)).join('')}
         </div>
     `;
 };
@@ -395,6 +601,82 @@ const renderQueueTab = (): string => `
         </section>
     </div>
 `;
+
+const renderSarprasCalendarTab = (): string => renderBookingCalendarView({
+    copy: {
+        title: 'Kalender Review Ruang Kelas',
+        helper: 'Pantau pengajuan ruang kelas berdasarkan tanggal, status, dan ruangan untuk membantu proses review.',
+        densityHelper: 'Kepadatan dihitung dari jumlah pengajuan ruang kelas sesuai filter aktif.',
+        totalText: `${sarprasCalendarItems.length} pengajuan ruang kelas mengikuti filter aktif.`,
+        roomTypeFilterLabel: 'Jenis Ruangan',
+        roomTypeFilterAriaLabel: 'Filter jenis ruangan kalender Sarpras',
+        statusFilterLabel: 'Status',
+        statusFilterAriaLabel: 'Filter status kalender Sarpras',
+        laboratoryLabel: 'Laboratorium',
+        roomLabel: 'Ruangan',
+        allLaboratoriesLabel: 'Semua laboratorium',
+        allRoomsLabel: 'Semua ruangan',
+        resetLabel: 'Reset Kalender',
+        loadingText: 'Memuat kalender review ruang kelas...',
+        errorTitle: 'Kalender gagal dimuat',
+        retryLabel: 'Coba Lagi',
+        monthEmptyText: 'Belum ada pengajuan ruang kelas untuk bulan dan filter ini.',
+    },
+    ids: {
+        previousMonthButton: 'sarpras-calendar-prev-month',
+        nextMonthButton: 'sarpras-calendar-next-month',
+        todayButton: 'sarpras-calendar-today',
+        resetButton: 'sarpras-calendar-reset',
+        monthHeading: 'sarpras-calendar-month-heading',
+        grid: 'sarpras-peminjaman-calendar-grid',
+        retryButton: 'sarpras-calendar-retry',
+        laboratorySelect: 'sarpras-calendar-laboratory',
+        roomSelect: 'sarpras-calendar-room',
+    },
+    dataAttributes: {
+        dateCell: SARPRAS_CALENDAR_DATE_ATTRIBUTE,
+        roomTypeFilter: 'data-sarpras-calendar-room-type',
+        statusFilter: 'data-sarpras-calendar-status',
+        calendarState: 'data-sarpras-calendar-state',
+        upcomingState: 'data-sarpras-calendar-upcoming-state',
+    },
+    navigation: {
+        previousMonthAriaLabel: 'Bulan sebelumnya',
+        nextMonthAriaLabel: 'Bulan berikutnya',
+        todayLabel: 'Hari Ini',
+        todayAriaLabel: 'Kembali ke bulan dan tanggal hari ini',
+    },
+    state: {
+        cursor: sarprasCalendarState.cursor,
+        selectedDateKey: sarprasCalendarState.selectedDateKey,
+        items: sarprasCalendarViewItems(),
+        loading: sarprasCalendarLoading,
+        loaded: sarprasCalendarLoaded,
+        error: sarprasCalendarError,
+    },
+    filters: {
+        roomTypeOptions: [],
+        statusOptions: sarprasCalendarStatusOptions(),
+        laboratoryOptions: [],
+        roomOptions: sarprasCalendarManagedRoomOptions(),
+    },
+    filterVisibility: {
+        roomType: false,
+        laboratory: false,
+        status: true,
+        room: true,
+    },
+    upcoming: {
+        title: 'Pengajuan Ruang Kelas Terdekat',
+        subtitle: 'Mengikuti filter aktif, mulai hari ini.',
+        loading: sarprasCalendarUpcomingLoading,
+        error: sarprasCalendarUpcomingError,
+        loadingText: 'Memuat pengajuan ruang kelas terdekat...',
+        emptyText: 'Belum ada pengajuan ruang kelas terdekat untuk filter aktif.',
+        items: sarprasCalendarUpcomingViewItems(),
+    },
+    actions: [SARPRAS_CALENDAR_DETAIL_ACTION],
+});
 
 const renderRoomsTabState = (): string => {
     if (managedRoomsLoading) {
@@ -468,15 +750,19 @@ const renderRoomsTab = (): string => {
 const renderMainState = (): void => {
     const root = document.getElementById('tendik-peminjaman-page-state');
     if (!root) return;
+    if (activeTab === 'calendar' && !canUseCalendar()) activeTab = 'queue';
+    if (activeTab === 'rooms' && !canManageRooms()) activeTab = 'queue';
+    const showCalendar = canUseCalendar() && activeTab === 'calendar';
     const showRooms = canManageRooms() && activeTab === 'rooms';
     root.innerHTML = `
         <div class="space-y-5">
             ${renderTabBar()}
-            ${showRooms ? renderRoomsTab() : renderQueueTab()}
+            ${showCalendar ? renderSarprasCalendarTab() : showRooms ? renderRoomsTab() : renderQueueTab()}
         </div>
     `;
     attachTabListeners();
-    if (showRooms) attachRoomsListeners();
+    if (showCalendar) attachSarprasCalendarListeners();
+    else if (showRooms) attachRoomsListeners();
     else attachMainListeners();
 };
 
@@ -488,9 +774,217 @@ const attachTabListeners = (): void => {
             activeTab = tab;
             clearRoomSelection();
             renderMainState();
+            if (tab === 'calendar' && !sarprasCalendarLoaded) void loadSarprasCalendar();
             if (tab === 'rooms' && !managedRoomsLoaded) void loadManagedRooms();
         });
     });
+};
+
+const reloadSarprasCalendarForFilterChange = (): void => {
+    sarprasCalendarState.selectedDateKey = null;
+    closeSarprasCalendarDayDrawer();
+    void loadSarprasCalendar();
+};
+
+const focusSarprasCalendarDateButton = (dateKey: string): void => {
+    document.querySelector<HTMLElement>(`[${SARPRAS_CALENDAR_DATE_ATTRIBUTE}="${dateKey}"]`)?.focus();
+};
+
+const moveSarprasCalendarFocus = (dateKey: string, key: string): void => {
+    const targetDateKey = getCalendarKeyboardTargetDateKey(dateKey, key);
+    if (!targetDateKey) return;
+
+    const [targetYear, targetMonth] = targetDateKey.split('-').map(Number);
+    if (!targetYear || !targetMonth) return;
+
+    const monthChanged = targetYear !== sarprasCalendarState.cursor.getFullYear()
+        || targetMonth - 1 !== sarprasCalendarState.cursor.getMonth();
+
+    if (!monthChanged) {
+        focusSarprasCalendarDateButton(targetDateKey);
+        return;
+    }
+
+    sarprasCalendarState.cursor = new Date(targetYear, targetMonth - 1, 1);
+    sarprasCalendarState.selectedDateKey = null;
+    closeSarprasCalendarDayDrawer();
+    void loadSarprasCalendar().then(() => focusSarprasCalendarDateButton(targetDateKey));
+};
+
+const selectSarprasCalendarDate = (dateKey: string): void => {
+    sarprasCalendarState.selectedDateKey = dateKey;
+    const grid = document.getElementById('sarpras-peminjaman-calendar-grid');
+    if (grid) grid.innerHTML = renderSarprasCalendarGrid();
+    openSarprasCalendarDayDrawer(dateKey);
+};
+
+const closeSarprasCalendarDayDrawer = (refreshGrid = false): void => {
+    document.getElementById('sarpras-calendar-day-drawer-root')?.remove();
+    if (calendarDayEscapeHandler) {
+        document.removeEventListener('keydown', calendarDayEscapeHandler);
+        calendarDayEscapeHandler = null;
+    }
+    if (refreshGrid) {
+        sarprasCalendarState.selectedDateKey = null;
+        const grid = document.getElementById('sarpras-peminjaman-calendar-grid');
+        if (grid) grid.innerHTML = renderSarprasCalendarGrid();
+    }
+};
+
+const attachSarprasCalendarDetailButtons = (root: ParentNode = document): void => {
+    root.querySelectorAll<HTMLElement>('[data-sarpras-calendar-detail]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const id = Number(button.dataset.sarprasCalendarDetail);
+            if (!Number.isInteger(id) || id <= 0) return;
+            closeSarprasCalendarDayDrawer();
+            void openDetail(id);
+        });
+    });
+};
+
+const openSarprasCalendarDayDrawer = (dateKey: string): void => {
+    closeSarprasCalendarDayDrawer();
+    const items = sarprasCalendarItemsForDate(dateKey);
+    const root = document.createElement('div');
+    root.id = 'sarpras-calendar-day-drawer-root';
+    root.innerHTML = renderBookingCalendarSelectedDatePanel({
+        dateKey,
+        items,
+        titleEyebrow: 'Peminjaman Ruang Kelas',
+        titleId: 'sarpras-calendar-day-title',
+        closeButtonId: 'close-sarpras-calendar-day',
+        closeButtonLabel: 'Tutup detail tanggal',
+        overlayDataAttribute: 'data-sarpras-calendar-day-overlay',
+        countText: `${items.length} pengajuan ruang kelas pada tanggal ini mengikuti filter aktif.`,
+        emptyText: 'Belum ada pengajuan ruang kelas pada tanggal ini untuk filter aktif.',
+        actions: [SARPRAS_CALENDAR_DETAIL_ACTION],
+    });
+    document.body.appendChild(root);
+
+    const close = (): void => closeSarprasCalendarDayDrawer(true);
+    root.querySelector('[data-sarpras-calendar-day-overlay]')?.addEventListener('click', close);
+    root.querySelector('#close-sarpras-calendar-day')?.addEventListener('click', close);
+    attachSarprasCalendarDetailButtons(root);
+    calendarDayEscapeHandler = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') close();
+    };
+    document.addEventListener('keydown', calendarDayEscapeHandler);
+    root.querySelector<HTMLButtonElement>('#close-sarpras-calendar-day')?.focus();
+};
+
+const attachSarprasCalendarListeners = (): void => {
+    document.querySelectorAll<HTMLElement>('[data-sarpras-calendar-status]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const value = button.dataset.sarprasCalendarStatus as CalendarStatusFilter | undefined;
+            if (!value || sarprasCalendarState.status === value) return;
+            sarprasCalendarState.status = value;
+            reloadSarprasCalendarForFilterChange();
+        });
+    });
+    document.getElementById('sarpras-calendar-room')?.addEventListener('change', () => {
+        const value = (document.getElementById('sarpras-calendar-room') as HTMLSelectElement | null)?.value ?? '';
+        sarprasCalendarState.roomId = value ? Number(value) : null;
+        reloadSarprasCalendarForFilterChange();
+    });
+    document.getElementById('sarpras-calendar-reset')?.addEventListener('click', () => {
+        sarprasCalendarState = createResetSarprasCalendarState();
+        closeSarprasCalendarDayDrawer();
+        void loadSarprasCalendar();
+    });
+    document.getElementById('sarpras-calendar-prev-month')?.addEventListener('click', () => {
+        sarprasCalendarState.cursor = new Date(
+            sarprasCalendarState.cursor.getFullYear(),
+            sarprasCalendarState.cursor.getMonth() - 1,
+            1,
+        );
+        reloadSarprasCalendarForFilterChange();
+    });
+    document.getElementById('sarpras-calendar-next-month')?.addEventListener('click', () => {
+        sarprasCalendarState.cursor = new Date(
+            sarprasCalendarState.cursor.getFullYear(),
+            sarprasCalendarState.cursor.getMonth() + 1,
+            1,
+        );
+        reloadSarprasCalendarForFilterChange();
+    });
+    document.getElementById('sarpras-calendar-today')?.addEventListener('click', () => {
+        const now = new Date();
+        sarprasCalendarState.cursor = new Date(now.getFullYear(), now.getMonth(), 1);
+        sarprasCalendarState.selectedDateKey = formatDateKey(now);
+        closeSarprasCalendarDayDrawer();
+        void loadSarprasCalendar();
+    });
+    document.getElementById('sarpras-peminjaman-calendar-grid')?.addEventListener('click', (event) => {
+        const target = (event.target as HTMLElement).closest<HTMLElement>(`[${SARPRAS_CALENDAR_DATE_ATTRIBUTE}]`);
+        const dateKey = target?.getAttribute(SARPRAS_CALENDAR_DATE_ATTRIBUTE);
+        if (!dateKey) return;
+        selectSarprasCalendarDate(dateKey);
+    });
+    document.getElementById('sarpras-peminjaman-calendar-grid')?.addEventListener('keydown', (event) => {
+        const target = (event.target as HTMLElement).closest<HTMLElement>(`[${SARPRAS_CALENDAR_DATE_ATTRIBUTE}]`);
+        const dateKey = target?.getAttribute(SARPRAS_CALENDAR_DATE_ATTRIBUTE);
+        if (!dateKey) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectSarprasCalendarDate(dateKey);
+            return;
+        }
+        if (!getCalendarKeyboardTargetDateKey(dateKey, event.key)) return;
+        event.preventDefault();
+        moveSarprasCalendarFocus(dateKey, event.key);
+    });
+    document.getElementById('sarpras-calendar-retry')?.addEventListener('click', () => {
+        void loadSarprasCalendar();
+    });
+    attachSarprasCalendarDetailButtons();
+};
+
+const loadSarprasCalendar = async (): Promise<void> => {
+    const sequence = ++sarprasCalendarRequestSequence;
+    sarprasCalendarLoading = true;
+    sarprasCalendarUpcomingLoading = true;
+    sarprasCalendarError = null;
+    sarprasCalendarUpcomingError = null;
+    renderMainState();
+
+    const [monthResult, upcomingResult] = await Promise.allSettled([
+        getTendikBookingCalendar(sarprasCalendarApiFilters()),
+        getTendikBookingCalendar(sarprasCalendarUpcomingApiFilters()),
+    ]);
+
+    if (sequence !== sarprasCalendarRequestSequence) return;
+
+    if (monthResult.status === 'fulfilled') {
+        sarprasCalendarItems = monthResult.value.items;
+        sarprasCalendarStatusCounts = monthResult.value.summary.counts_by_status ?? {};
+        rememberSarprasCalendarRooms(monthResult.value.items);
+        sarprasCalendarError = null;
+    } else {
+        sarprasCalendarItems = [];
+        sarprasCalendarStatusCounts = {};
+        sarprasCalendarError = errorMessage(monthResult.reason, 'Kalender review ruang kelas gagal dimuat.');
+    }
+
+    if (upcomingResult.status === 'fulfilled') {
+        sarprasCalendarUpcomingItemsState = upcomingResult.value.items;
+        rememberSarprasCalendarRooms(upcomingResult.value.items);
+        sarprasCalendarUpcomingError = null;
+    } else {
+        sarprasCalendarUpcomingItemsState = [];
+        sarprasCalendarUpcomingError = errorMessage(upcomingResult.reason, 'Pengajuan ruang kelas terdekat gagal dimuat.');
+    }
+
+    if (
+        sarprasCalendarState.roomId !== null
+        && !sarprasCalendarRoomOptions().some((room) => room.id === sarprasCalendarState.roomId)
+    ) {
+        sarprasCalendarState.roomId = null;
+    }
+
+    sarprasCalendarLoaded = true;
+    sarprasCalendarLoading = false;
+    sarprasCalendarUpcomingLoading = false;
+    renderMainState();
 };
 
 const attachRoomsListeners = (): void => {
@@ -1034,6 +1528,7 @@ const refreshAfterAction = async (bookingId: number): Promise<void> => {
     }
     queueLoading = false;
     renderMainState();
+    if (sarprasCalendarLoaded) void loadSarprasCalendar();
     if (detailResult.status === 'fulfilled') {
         renderDetailDrawer(detailResult.value, false, null);
     } else {
@@ -1101,6 +1596,17 @@ export const renderPeminjamanRuanganTendik = async (role = 'tendik'): Promise<vo
     knownRooms = new Map();
     actionDeniedBookingIds = new Set();
     activeTab = 'queue';
+    sarprasCalendarState = createInitialSarprasCalendarState();
+    sarprasCalendarItems = [];
+    sarprasCalendarStatusCounts = {};
+    sarprasCalendarUpcomingItemsState = [];
+    sarprasCalendarRoomMap = new Map();
+    sarprasCalendarLoading = false;
+    sarprasCalendarLoaded = false;
+    sarprasCalendarError = null;
+    sarprasCalendarUpcomingLoading = false;
+    sarprasCalendarUpcomingError = null;
+    sarprasCalendarRequestSequence = 0;
     managedRooms = [];
     managedRoomsLoaded = false;
     managedRoomsLoading = false;
@@ -1109,6 +1615,7 @@ export const renderPeminjamanRuanganTendik = async (role = 'tendik'): Promise<vo
     roomCoverCache.clear();
     clearRoomSelection();
     document.getElementById('room-bulk-confirm-root')?.remove();
+    closeSarprasCalendarDayDrawer();
     closeActionDialog();
     closeDrawer();
     closeRoomManagementDrawer();

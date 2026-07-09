@@ -19,12 +19,15 @@ import type {
     SuperAdminRoomFilters,
     TendikBooking,
     TendikBookingFilters,
+    TendikCalendarEnvelope,
+    TendikCalendarFilters,
     TendikBookingListEnvelope,
     TendikReviewerProfile,
     ValidationErrors,
 } from './types';
 
 const BASE = '/api/mahasiswa/peminjaman-ruangan';
+const TENDIK_BASE = '/api/tendik/peminjaman-ruangan';
 const TENDIK_REQUESTS_BASE = '/api/tendik/peminjaman-ruangan/requests';
 const SUPER_ADMIN_BASE = '/api/super-admin/peminjaman-ruangan';
 // Protected surat-peminjaman attachment routes (role-gated inside the backend
@@ -355,6 +358,28 @@ export async function getTendikBooking(id: number): Promise<TendikBooking> {
         response,
         'Gagal memuat detail review peminjaman.',
     )).data;
+}
+
+export async function getTendikBookingCalendar(
+    filters: TendikCalendarFilters = {},
+): Promise<TendikCalendarEnvelope> {
+    const params = new URLSearchParams();
+    if (filters.month !== undefined) params.set('month', filters.month);
+    if (filters.from !== undefined) params.set('from', filters.from);
+    if (filters.to !== undefined) params.set('to', filters.to);
+    if (filters.status !== undefined) params.set('status', filters.status);
+    if (filters.roomType !== undefined) params.set('room_type', filters.roomType);
+    if (filters.roomId !== undefined) params.set('room_id', String(filters.roomId));
+    if (filters.laboratoryId !== undefined) {
+        params.set('laboratory_id', String(filters.laboratoryId));
+    }
+
+    const query = params.toString();
+    const response = await apiFetch(`${TENDIK_BASE}/calendar${query ? `?${query}` : ''}`);
+    return readJson<TendikCalendarEnvelope>(
+        response,
+        'Gagal memuat kalender review peminjaman.',
+    );
 }
 
 export async function approveTendikBooking(id: number): Promise<TendikBooking> {

@@ -115,6 +115,12 @@ export interface BookingCalendarViewConfig {
         laboratoryOptions: BookingCalendarSelectOption[];
         roomOptions: BookingCalendarSelectOption[];
     };
+    filterVisibility?: {
+        roomType?: boolean;
+        status?: boolean;
+        laboratory?: boolean;
+        room?: boolean;
+    };
     upcoming: {
         title: string;
         subtitle: string;
@@ -233,9 +239,15 @@ const renderSelectOptions = (
     `).join('')}
 `;
 
-const renderBookingCalendarFilters = (config: BookingCalendarViewConfig): string => `
-    <div class="space-y-4">
-        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+const filterIsVisible = (visibility: boolean | undefined): boolean => visibility !== false;
+
+const renderBookingCalendarFilters = (config: BookingCalendarViewConfig): string => {
+    const showRoomType = filterIsVisible(config.filterVisibility?.roomType);
+    const showStatus = filterIsVisible(config.filterVisibility?.status);
+    const showLaboratory = filterIsVisible(config.filterVisibility?.laboratory);
+    const showRoom = filterIsVisible(config.filterVisibility?.room);
+    const primaryFilters = [
+        showRoomType ? `
             <div>
                 <p class="mb-2 text-xs font-bold text-gray-600">${escapePeminjamanCalendarText(config.copy.roomTypeFilterLabel)}</p>
                 <div class="flex flex-wrap items-center gap-2" role="group" aria-label="${escapePeminjamanCalendarText(config.copy.roomTypeFilterAriaLabel)}">
@@ -243,6 +255,8 @@ const renderBookingCalendarFilters = (config: BookingCalendarViewConfig): string
                         renderRoomTypeButton(option, config.dataAttributes.roomTypeFilter)).join('')}
                 </div>
             </div>
+        ` : '',
+        showStatus ? `
             <div>
                 <p class="mb-2 text-xs font-bold text-gray-600">${escapePeminjamanCalendarText(config.copy.statusFilterLabel)}</p>
                 <div class="flex flex-wrap items-center gap-2" role="group" aria-label="${escapePeminjamanCalendarText(config.copy.statusFilterAriaLabel)}">
@@ -250,26 +264,37 @@ const renderBookingCalendarFilters = (config: BookingCalendarViewConfig): string
                         renderStatusButton(option, config.dataAttributes.statusFilter)).join('')}
                 </div>
             </div>
-        </div>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        ` : '',
+    ].filter(Boolean).join('');
+    const selectFilters = [
+        showLaboratory ? `
             <label class="text-xs font-bold text-gray-600">
                 ${escapePeminjamanCalendarText(config.copy.laboratoryLabel)}
                 <select id="${escapePeminjamanCalendarText(config.ids.laboratorySelect)}" class="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700">
                     ${renderSelectOptions(config.copy.allLaboratoriesLabel, config.filters.laboratoryOptions)}
                 </select>
             </label>
+        ` : '',
+        showRoom ? `
             <label class="text-xs font-bold text-gray-600">
                 ${escapePeminjamanCalendarText(config.copy.roomLabel)}
                 <select id="${escapePeminjamanCalendarText(config.ids.roomSelect)}" class="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700">
                     ${renderSelectOptions(config.copy.allRoomsLabel, config.filters.roomOptions)}
                 </select>
             </label>
+        ` : '',
+    ].filter(Boolean);
+
+    return `
+        <div class="space-y-4">
+            ${primaryFilters ? `<div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">${primaryFilters}</div>` : ''}
+            ${selectFilters.length > 0 ? `<div class="grid grid-cols-1 gap-4 ${selectFilters.length > 1 ? 'md:grid-cols-2' : ''}">${selectFilters.join('')}</div>` : ''}
+            <div class="flex justify-end">
+                <button id="${escapePeminjamanCalendarText(config.ids.resetButton)}" type="button" class="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">${escapePeminjamanCalendarText(config.copy.resetLabel)}</button>
+            </div>
         </div>
-        <div class="flex justify-end">
-            <button id="${escapePeminjamanCalendarText(config.ids.resetButton)}" type="button" class="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">${escapePeminjamanCalendarText(config.copy.resetLabel)}</button>
-        </div>
-    </div>
-`;
+    `;
+};
 
 const renderDensityLegend = (helper: string): string => `
     <div class="space-y-1.5">
