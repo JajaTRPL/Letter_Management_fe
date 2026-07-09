@@ -108,8 +108,15 @@ vi.mock('toastify-js', () => ({
 
 import { PeminjamanApiError } from '../../../mahasiswa/peminjaman/api';
 import type { Room, SuperAdminBooking } from '../../../mahasiswa/peminjaman/types';
+import {
+    renderBookingCalendarSelectedDatePanel,
+    renderBookingCalendarView,
+    type BookingCalendarViewItem,
+    type BookingCalendarViewConfig,
+} from '../../../shared/peminjaman-calendar-view';
 import type { ManagedRoom } from '../../../shared/room-management/types';
 import { renderPeminjamanRuanganAdmin } from '../../PeminjamanRuanganAdmin';
+import calendarViewSource from '../../../shared/peminjaman-calendar-view.ts?raw';
 import pageSource from '../../PeminjamanRuanganAdmin.ts?raw';
 
 const labs = [{ id: 7, code: 'LAB-UJI', name: 'Laboratorium <script>uji</script>' }];
@@ -194,6 +201,13 @@ const dateKeyFromNow = (days: number): string => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
+const shiftMonthDateKey = (dateKey: string, months: number): string => {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const date = new Date(year, month - 1, day, 12, 0, 0);
+    date.setMonth(date.getMonth() + months);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
 const formatDateId = (date: Date): string =>
     date.toLocaleDateString('id-ID', {
         timeZone: 'Asia/Jakarta',
@@ -202,6 +216,20 @@ const formatDateId = (date: Date): string =>
         month: 'long',
         year: 'numeric',
     });
+
+const sharedCalendarItem = (overrides: Partial<BookingCalendarViewItem> = {}): BookingCalendarViewItem => ({
+    id: 99,
+    roomCode: 'LAB-99',
+    roomName: 'Lab Role',
+    status: 'approved',
+    startAt: '2026-07-15T09:00:00+07:00',
+    endAt: '2026-07-15T10:00:00+07:00',
+    activityName: 'Praktikum Role',
+    purpose: 'Kegiatan role.',
+    requesterName: 'Pemohon Role',
+    capabilities: { view: true },
+    ...overrides,
+});
 
 const calendarItem = (overrides = {}) => ({
     id: 44,
@@ -277,6 +305,82 @@ const submit = (id: string): void => {
     document.getElementById(id)?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 };
 
+const makeSharedCalendarConfig = (): BookingCalendarViewConfig => ({
+    copy: {
+        title: 'Kalender Reviewer Lab',
+        helper: 'Pantau jadwal untuk lingkup reviewer.',
+        densityHelper: 'Kepadatan mengikuti filter reviewer.',
+        totalText: '1 jadwal mengikuti filter.',
+        roomTypeFilterLabel: 'Jenis Ruangan',
+        roomTypeFilterAriaLabel: 'Filter jenis role',
+        statusFilterLabel: 'Status',
+        statusFilterAriaLabel: 'Filter status role',
+        laboratoryLabel: 'Unit',
+        roomLabel: 'Ruang',
+        allLaboratoriesLabel: 'Semua unit',
+        allRoomsLabel: 'Semua ruang',
+        resetLabel: 'Reset',
+        loadingText: 'Memuat kalender role...',
+        errorTitle: 'Kalender role gagal dimuat',
+        retryLabel: 'Coba Lagi',
+        monthEmptyText: 'Belum ada jadwal role.',
+    },
+    ids: {
+        previousMonthButton: 'role-calendar-prev',
+        nextMonthButton: 'role-calendar-next',
+        todayButton: 'role-calendar-today',
+        resetButton: 'role-calendar-reset',
+        monthHeading: 'role-calendar-heading',
+        grid: 'role-calendar-grid',
+        retryButton: 'role-calendar-retry',
+        laboratorySelect: 'role-calendar-unit',
+        roomSelect: 'role-calendar-room',
+    },
+    dataAttributes: {
+        dateCell: 'data-role-calendar-date',
+        roomTypeFilter: 'data-role-calendar-room-type',
+        statusFilter: 'data-role-calendar-status',
+        calendarState: 'data-role-calendar-state',
+        upcomingState: 'data-role-calendar-upcoming-state',
+    },
+    navigation: {
+        previousMonthAriaLabel: 'Bulan role sebelumnya',
+        nextMonthAriaLabel: 'Bulan role berikutnya',
+        todayLabel: 'Hari Ini',
+        todayAriaLabel: 'Kembali ke hari ini',
+    },
+    state: {
+        cursor: new Date(2026, 6, 1),
+        selectedDateKey: null,
+        items: [sharedCalendarItem()],
+        loading: false,
+        loaded: true,
+        error: null,
+    },
+    filters: {
+        roomTypeOptions: [
+            { value: 'all', label: 'Semua', selected: true },
+            { value: 'classroom', label: 'Kelas', selected: false },
+            { value: 'laboratory', label: 'Lab', selected: false },
+        ],
+        statusOptions: [
+            { value: 'all', label: 'Semua', count: 1, selected: true },
+            { value: 'approved', label: 'Disetujui', count: 1, selected: false },
+        ],
+        laboratoryOptions: [{ value: '7', label: 'LAB - Unit Role', selected: false }],
+        roomOptions: [{ value: '99', label: 'LAB-99 - Lab Role', selected: false }],
+    },
+    upcoming: {
+        title: 'Jadwal Terdekat Role',
+        subtitle: 'Mengikuti filter role.',
+        loading: false,
+        error: null,
+        loadingText: 'Memuat jadwal role...',
+        emptyText: 'Tidak ada jadwal role.',
+        items: [],
+    },
+});
+
 const openRoomForm = (): void => {
     document.getElementById('admin-peminjaman-add-room')?.click();
 };
@@ -327,6 +431,110 @@ beforeEach(() => {
     m.getBookings.mockResolvedValue(bookingEnvelope());
     m.getCalendar.mockResolvedValue(calendarEnvelope());
     m.getBooking.mockResolvedValue(booking());
+});
+
+describe('Shared booking calendar primitives', () => {
+    it('renders configurable copy and distinct empty states without leaking SuperAdmin copy', () => {
+        const config = makeSharedCalendarConfig();
+        config.state.items = [];
+        config.upcoming.items = [];
+
+        document.body.innerHTML = renderBookingCalendarView(config);
+
+        expect(document.body.textContent).toContain('Kalender Reviewer Lab');
+        expect(document.body.textContent).toContain('Pantau jadwal untuk lingkup reviewer.');
+        expect(document.body.textContent).toContain('Kepadatan mengikuti filter reviewer.');
+        expect(document.body.textContent).toContain('Belum ada jadwal role.');
+        expect(document.body.textContent).toContain('Tidak ada jadwal role.');
+        expect(document.body.textContent).not.toContain('Kalender Peminjaman Ruangan');
+        expect(document.body.textContent).not.toContain('Pantau pengajuan dan jadwal ruangan berdasarkan tanggal');
+        expect(document.querySelector('[data-role-calendar-state="empty"]')).not.toBeNull();
+    });
+
+    it('renders shared loading and error states from caller config with escaped text', () => {
+        const loadingConfig = makeSharedCalendarConfig();
+        loadingConfig.state.loading = true;
+        loadingConfig.state.loaded = false;
+        loadingConfig.upcoming.loading = true;
+
+        document.body.innerHTML = renderBookingCalendarView(loadingConfig);
+
+        expect(document.querySelector('[data-role-calendar-state="loading"]')?.textContent)
+            .toContain('Memuat kalender role...');
+        expect(document.querySelector('[data-role-calendar-upcoming-state="loading"]')?.textContent)
+            .toContain('Memuat jadwal role...');
+
+        const calendarErrorConfig = makeSharedCalendarConfig();
+        calendarErrorConfig.state.error = 'Kalender role <b>gagal</b>';
+
+        document.body.innerHTML = renderBookingCalendarView(calendarErrorConfig);
+
+        expect(document.querySelector('[data-role-calendar-state="error"]')?.textContent)
+            .toContain('Kalender role <b>gagal</b>');
+        expect(document.querySelector('b')).toBeNull();
+
+        const upcomingErrorConfig = makeSharedCalendarConfig();
+        upcomingErrorConfig.upcoming.items = [];
+        upcomingErrorConfig.upcoming.error = 'Terdekat <script>gagal</script>';
+
+        document.body.innerHTML = renderBookingCalendarView(upcomingErrorConfig);
+
+        expect(document.querySelector('[data-role-calendar-upcoming-state="error"]')?.textContent)
+            .toContain('Terdekat <script>gagal</script>');
+        expect(document.querySelector('script')).toBeNull();
+    });
+
+    it('defaults action slots to no actions and requires explicit item capability', () => {
+        const config = makeSharedCalendarConfig();
+        config.upcoming.items = [sharedCalendarItem({ capabilities: { view: true } })];
+
+        document.body.innerHTML = renderBookingCalendarView(config);
+        expect(document.querySelector('[data-role-calendar-detail]')).toBeNull();
+
+        config.actions = [{
+            label: 'Detail Role',
+            dataAttribute: 'data-role-calendar-detail',
+            value: (item) => item.id,
+            requiredCapability: 'view',
+        }];
+        config.upcoming.items = [sharedCalendarItem({ capabilities: { view: false } })];
+
+        document.body.innerHTML = renderBookingCalendarView(config);
+        expect(document.querySelector('[data-role-calendar-detail]')).toBeNull();
+
+        config.upcoming.items = [sharedCalendarItem({ capabilities: { view: true } })];
+
+        document.body.innerHTML = renderBookingCalendarView(config);
+        expect(document.querySelector('[data-role-calendar-detail="99"]')?.textContent)
+            .toContain('Detail Role');
+    });
+
+    it('renders selected-date panel shell without actions by default', () => {
+        document.body.innerHTML = renderBookingCalendarSelectedDatePanel({
+            dateKey: '2026-07-15',
+            items: [sharedCalendarItem()],
+            titleEyebrow: 'Peminjaman Role',
+            titleId: 'role-date-title',
+            closeButtonId: 'role-date-close',
+            closeButtonLabel: 'Tutup tanggal role',
+            overlayDataAttribute: 'data-role-date-overlay',
+            countText: '1 jadwal role pada tanggal ini.',
+            emptyText: 'Tidak ada jadwal role pada tanggal ini.',
+        });
+
+        expect(document.getElementById('role-date-title')?.textContent)
+            .toContain('Rabu, 15 Juli 2026');
+        expect(document.body.textContent).toContain('1 jadwal role pada tanggal ini.');
+        expect(document.querySelector('[data-role-calendar-detail]')).toBeNull();
+    });
+
+    it('keeps the shared primitive source free of raw DOM sinks and workflow controls', () => {
+        expect(calendarViewSource)
+            .not.toMatch(/innerHTML|dangerouslySetInnerHTML|insertAdjacentHTML|eval\(|window\.open|<iframe|srcdoc/);
+        expect(calendarViewSource).not.toContain('approveTendikBooking');
+        expect(calendarViewSource).not.toContain('rejectTendikBooking');
+        expect(calendarViewSource).not.toContain('requestRevision');
+    });
 });
 
 describe('Super Admin room master management', () => {
@@ -685,6 +893,7 @@ describe('Super Admin calendar monitoring', () => {
         expect(document.body.textContent).toContain('Mengikuti filter aktif, mulai hari ini.');
         expect(document.body.textContent).not.toContain('Kalender Peminjaman Disetujui');
         expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
         expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
     });
 
@@ -722,6 +931,11 @@ describe('Super Admin calendar monitoring', () => {
         expect(label).toContain('tidak dipilih');
         expect(label).toContain('1 peminjaman');
         expect(label).toContain('kepadatan rendah');
+        expect(document.body.textContent).toContain('Kegiatan Kalender');
+        expect(document.body.textContent).toContain(formatDateId(new Date(`${currentMonthKey()}-15T09:00:00+07:00`)));
+        expect(document.body.textContent).toContain('09.00');
+        expect(document.body.textContent).toContain('11.00 WIB');
+        expect(document.body.textContent).toContain('Diajukan');
 
         document.querySelector<HTMLElement>('[data-admin-calendar-status="approved"]')?.click();
         await flush();
@@ -865,6 +1079,27 @@ describe('Super Admin calendar monitoring', () => {
             .querySelector<HTMLElement>(`[data-admin-calendar-date="${currentMonthKey()}-15"]`)
             ?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
         expect(document.getElementById('admin-calendar-day-drawer-root')).not.toBeNull();
+    });
+
+    it('moves calendar focus with arrow keys and PageDown', async () => {
+        await renderPeminjamanRuanganAdmin();
+        openCalendar();
+        await flush();
+
+        const startDateKey = `${currentMonthKey()}-15`;
+        const nextDateKey = `${currentMonthKey()}-16`;
+        const startButton = document.querySelector<HTMLElement>(`[data-admin-calendar-date="${startDateKey}"]`);
+        startButton?.focus();
+        startButton?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+        expect(document.activeElement?.getAttribute('data-admin-calendar-date')).toBe(nextDateKey);
+
+        const pageDownDateKey = shiftMonthDateKey(nextDateKey, 1);
+        document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+        await flush();
+
+        expect(latestCalendarMonthCall()?.month).toBe(pageDownDateKey.slice(0, 7));
+        expect(document.activeElement?.getAttribute('data-admin-calendar-date')).toBe(pageDownDateKey);
     });
 
     it('renders clear empty states for month and selected date', async () => {
