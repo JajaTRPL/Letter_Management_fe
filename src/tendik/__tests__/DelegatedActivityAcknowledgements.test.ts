@@ -304,7 +304,7 @@ describe('Delegated activity acknowledgement drawer', () => {
         expect(m.success).toHaveBeenCalledWith('Aktivitas delegasi berhasil dikonfirmasi sudah ditinjau.');
     });
 
-    it('does not allow acknowledgement when backend permissions deny it', async () => {
+    it('hides the acknowledgement action when backend permissions deny it', async () => {
         detailPayload = task({
             permissions: {
                 can_acknowledge: false,
@@ -315,15 +315,58 @@ describe('Delegated activity acknowledgement drawer', () => {
         await openAndLoad();
         await openDetail();
 
-        const button = document.getElementById('delegated-activity-acknowledge') as HTMLButtonElement;
-        expect(button.disabled).toBe(true);
-        button.click();
-        await flush();
-
+        expect(document.getElementById('delegated-activity-acknowledge')).toBeNull();
+        expect(document.body.textContent).toContain('Anda tidak memiliki akses untuk mengonfirmasi peninjauan aktivitas ini.');
         expect(m.apiFetch.mock.calls.some(([url, options]) =>
             String(url).endsWith('/acknowledge') && (options as RequestInit | undefined)?.method === 'POST',
         )).toBe(false);
-        expect(document.body.textContent).toContain('Akun ini tidak memiliki izin konfirmasi');
+    });
+
+    it('renders the acknowledgement action as an enabled button for an authorized pending task', async () => {
+        await openAndLoad();
+        await openDetail();
+
+        const button = document.getElementById('delegated-activity-acknowledge') as HTMLButtonElement;
+        expect(button).not.toBeNull();
+        expect(button.disabled).toBe(false);
+        expect(button.textContent).toContain('Konfirmasi Sudah Ditinjau');
+    });
+
+    it('does not render the acknowledgement action for an acknowledged task', async () => {
+        detailPayload = task({
+            status: 'acknowledged',
+            effective_status: 'acknowledged',
+            is_overdue: false,
+            acknowledged_at: '2026-07-10T09:00:00+07:00',
+            permissions: {
+                can_acknowledge: false,
+                can_mark_escalation_seen: false,
+            },
+        });
+
+        await openAndLoad();
+        await openDetail();
+
+        expect(document.getElementById('delegated-activity-acknowledge')).toBeNull();
+        expect(document.body.textContent).toContain('Aktivitas ini sudah tidak memerlukan konfirmasi peninjauan.');
+    });
+
+    it('does not render the acknowledgement action for a voided task', async () => {
+        detailPayload = task({
+            status: 'voided',
+            effective_status: 'voided',
+            is_overdue: false,
+            permissions: {
+                can_acknowledge: false,
+                can_mark_escalation_seen: false,
+            },
+        });
+
+        await openAndLoad();
+        await openDetail();
+
+        expect(document.getElementById('delegated-activity-acknowledge')).toBeNull();
+        expect(document.body.textContent).toContain('Aktivitas ini sudah tidak memerlukan konfirmasi peninjauan.');
     });
 
     it('renders a calm 403 acknowledgement error and keeps the drawer open', async () => {

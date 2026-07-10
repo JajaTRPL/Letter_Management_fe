@@ -540,9 +540,9 @@ const renderDetail = (task: DelegatedActivityAcknowledgement): string => {
     const canAcknowledge = task.permissions?.can_acknowledge === true
         && (task.status === 'pending_review' || task.status === 'escalated');
     const finished = task.status === 'acknowledged' || task.status === 'voided';
-    const disabledReason = finished
+    const readOnlyReason = finished
         ? 'Aktivitas ini sudah tidak memerlukan konfirmasi peninjauan.'
-        : 'Akun ini tidak memiliki izin konfirmasi untuk aktivitas ini.';
+        : 'Anda tidak memiliki akses untuk mengonfirmasi peninjauan aktivitas ini.';
 
     return `
         <article data-delegated-activity-detail-state="success" class="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
@@ -598,13 +598,12 @@ const renderDetail = (task: DelegatedActivityAcknowledgement): string => {
                 </label>
                 <textarea id="delegated-activity-note" rows="4" maxlength="1000" ${finished || !task.permissions?.can_acknowledge ? 'disabled' : ''} class="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-700 disabled:bg-gray-50 disabled:text-gray-400" aria-describedby="delegated-activity-note-helper">${escapeHtml(task.acknowledgement_note ?? '')}</textarea>
                 <p id="delegated-activity-note-helper" class="mt-2 text-xs text-gray-500">Opsional. Catatan ini tersimpan bersama konfirmasi peninjauan.</p>
-                ${finished ? `
-                    <p class="mt-4 rounded-xl bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600">${disabledReason}</p>
-                ` : `
-                    <button id="delegated-activity-acknowledge" type="button" ${canAcknowledge ? '' : 'disabled'} class="mt-4 rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-50" aria-label="Konfirmasi sudah ditinjau untuk aktivitas ${escapeHtml(task.activity_summary)}">
+                ${canAcknowledge ? `
+                    <button id="delegated-activity-acknowledge" type="button" class="mt-4 rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-teal-800" aria-label="Konfirmasi sudah ditinjau untuk aktivitas ${escapeHtml(task.activity_summary)}">
                         Konfirmasi Sudah Ditinjau
                     </button>
-                    ${canAcknowledge ? '' : `<p class="mt-3 rounded-xl bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600">${disabledReason}</p>`}
+                ` : `
+                    <p class="mt-4 rounded-xl bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600">${readOnlyReason}</p>
                 `}
             </section>
         </article>
