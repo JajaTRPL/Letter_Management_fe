@@ -10,12 +10,71 @@ import { clearAllAuthenticationState } from '../login/password-rotation-state';
 
 let dashboardLayoutAvatarObjectUrl: string | null = null;
 let dashboardLayoutDrawerCleanup: (() => void) | null = null;
+let dashboardLayoutUserMenuCleanup: (() => void) | null = null;
 
 const isNarrowDashboardViewport = (): boolean => window.innerWidth < 1024;
 
 export const cleanupDashboardLayout = (): void => {
     dashboardLayoutDrawerCleanup?.();
     dashboardLayoutDrawerCleanup = null;
+    dashboardLayoutUserMenuCleanup?.();
+    dashboardLayoutUserMenuCleanup = null;
+};
+
+/**
+ * Account menu: hover remains a visual shortcut (group-hover classes), but the
+ * controlled open state below is what makes it operable by keyboard — the
+ * trigger is a real button (Enter/Space fire click natively), Escape closes
+ * and returns focus, and clicking outside or choosing an item closes it.
+ */
+const attachDashboardUserMenu = (): (() => void) => {
+    const trigger = document.getElementById('user-menu-trigger');
+    const menu = document.getElementById('user-menu');
+    if (!trigger || !menu) return () => undefined;
+
+    let isOpen = false;
+
+    const syncMenu = (): void => {
+        menu.classList.toggle('opacity-100', isOpen);
+        menu.classList.toggle('visible', isOpen);
+        menu.classList.toggle('opacity-0', !isOpen);
+        menu.classList.toggle('invisible', !isOpen);
+        trigger.setAttribute('aria-expanded', String(isOpen));
+    };
+    const closeMenu = (restoreFocus = false): void => {
+        if (!isOpen) return;
+        isOpen = false;
+        syncMenu();
+        if (restoreFocus) trigger.focus();
+    };
+    const onTriggerClick = (): void => {
+        isOpen = !isOpen;
+        syncMenu();
+    };
+    const onDocumentClick = (event: MouseEvent): void => {
+        if (!isOpen) return;
+        const target = event.target as Node | null;
+        if (target && (trigger.contains(target) || menu.contains(target))) return;
+        closeMenu();
+    };
+    const onKeydown = (event: KeyboardEvent): void => {
+        if (event.key === 'Escape' && isOpen) closeMenu(true);
+    };
+    const menuItems = Array.from(menu.querySelectorAll<HTMLElement>('a, button'));
+    const onItemClick = (): void => closeMenu();
+
+    trigger.addEventListener('click', onTriggerClick);
+    document.addEventListener('click', onDocumentClick);
+    document.addEventListener('keydown', onKeydown);
+    menuItems.forEach((item) => item.addEventListener('click', onItemClick));
+    syncMenu();
+
+    return (): void => {
+        trigger.removeEventListener('click', onTriggerClick);
+        document.removeEventListener('click', onDocumentClick);
+        document.removeEventListener('keydown', onKeydown);
+        menuItems.forEach((item) => item.removeEventListener('click', onItemClick));
+    };
 };
 
 const attachDashboardSidebarDrawer = (): (() => void) => {
@@ -134,7 +193,7 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                             </button>
                             
                             <div class="relative group">
-                                <div class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                                <button id="user-menu-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu" class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal/60">
                                     <div class="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden text-teal-700 font-bold shrink-0">
                                         <img id="header-user-avatar" src="/ugm-logo.png" alt="Profile" class="w-8 h-8 object-contain">
                                     </div>
@@ -142,10 +201,10 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                                         <p class="text-sm font-semibold text-gray-900 leading-none">${getGreetingName(localStorage.getItem('auth_name'))}</p>
                                         <p class="text-[10px] text-gray-500 font-medium uppercase mt-1 tracking-wider">${role.replace('_', ' ')}</p>
                                     </div>
-                                </div>
-                                
-                                <div class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                                    <a href="#/profile" id="profile-btn" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-teal-600 transition-colors">
+                                </button>
+
+                                <div id="user-menu" role="menu" aria-label="Menu akun" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                                    <a href="#/profile" id="profile-btn" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-teal-600 transition-colors">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                                             <circle cx="12" cy="7" r="4"></circle>
@@ -153,7 +212,7 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                                         Profil
                                     </a>
                                     <div class="h-px bg-gray-100 my-1"></div>
-                                    <button id="logout-btn" class="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                                    <button id="logout-btn" type="button" role="menuitem" class="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                                             <polyline points="16 17 21 12 16 7"></polyline>
@@ -179,6 +238,7 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
     `;
 
     dashboardLayoutDrawerCleanup = attachDashboardSidebarDrawer();
+    dashboardLayoutUserMenuCleanup = attachDashboardUserMenu();
 
     // Async-load the header avatar from the auth-protected storage endpoint.
     // The img always renders the default logo first; if a real photo exists
