@@ -45,6 +45,29 @@ export interface ManagedRoomFacility {
     notes?: string | null;
 }
 
+export type FacilityDelegatedActivityOutcome =
+    | 'created'
+    | 'existing'
+    | 'skipped'
+    | 'not_applicable';
+
+export interface FacilityDelegatedActivityUser {
+    id: number;
+    name?: string | null;
+}
+
+export interface FacilityDelegatedActivityAcknowledgementOutcome {
+    outcome: FacilityDelegatedActivityOutcome;
+    id: number | null;
+    status: string | null;
+    effective_status: string | null;
+    acknowledgement_due_at: string | null;
+    accountable_role: 'kepala_lab' | string | null;
+    accountable_user: FacilityDelegatedActivityUser | null;
+    message: string;
+    reason: string | null;
+}
+
 export interface FacilityTypeOption {
     id: number;
     name: string;
@@ -143,6 +166,11 @@ export interface FacilitySyncEntry {
     quantity?: number | null;
     condition?: RoomFacilityCondition | null;
     notes?: string | null;
+}
+
+export interface RoomFacilitySyncResult {
+    data: ManagedRoomFacility[];
+    delegated_activity_acknowledgement?: FacilityDelegatedActivityAcknowledgementOutcome | null;
 }
 
 export type RoomManagementValidationErrors = Record<string, string[]>;

@@ -38,6 +38,7 @@ import {
 import { getRoomTypeLabel } from '../peminjaman-calendar';
 import type {
     FacilitySyncEntry,
+    FacilityDelegatedActivityAcknowledgementOutcome,
     FacilityTypeOption,
     ManagedLaboratory,
     ManagedRoomDetail,
@@ -82,6 +83,7 @@ interface DrawerState {
     // Snapshot of the last-persisted facility rows, for saved/unsaved markers
     // and dirty detection.
     savedFacilities: FacilityRow[] | null;
+    facilityAcknowledgement: FacilityDelegatedActivityAcknowledgementOutcome | null;
     facilityTypes: FacilityTypeOption[];
     templates: ManagedRoomTemplate[] | null;
     audit: RoomAuditEntry[] | null;
@@ -135,6 +137,7 @@ export const openRoomManagementDrawer = async (
         photos: null,
         facilities: null,
         savedFacilities: null,
+        facilityAcknowledgement: null,
         facilityTypes: [],
         templates: null,
         audit: null,
@@ -697,6 +700,61 @@ const facilitiesAreDirty = (): boolean => {
     return current.some((signature, index) => signature !== saved[index]);
 };
 
+const clearFacilityAcknowledgement = (): void => {
+    if (state) state.facilityAcknowledgement = null;
+};
+
+const facilityAcknowledgementCopy = (
+    acknowledgement: FacilityDelegatedActivityAcknowledgementOutcome,
+): { title: string; body: string | null } => {
+    if (acknowledgement.outcome === 'created') {
+        return {
+            title: 'Perubahan fasilitas tersimpan',
+            body: 'Aktivitas ini menunggu peninjauan Kepala Lab.',
+        };
+    }
+
+    if (acknowledgement.outcome === 'existing') {
+        return {
+            title: 'Perubahan fasilitas tersimpan',
+            body: 'Aktivitas peninjauan sudah tercatat sebelumnya.',
+        };
+    }
+
+    if (acknowledgement.reason === 'no_active_kepala_lab') {
+        return {
+            title: 'Perubahan fasilitas tersimpan',
+            body: 'Belum ada Kepala Lab aktif untuk peninjauan otomatis.',
+        };
+    }
+
+    if (acknowledgement.reason === 'no_effective_change') {
+        return {
+            title: 'Tidak ada perubahan baru',
+            body: 'Data fasilitas sudah sesuai, tidak ada aktivitas peninjauan baru.',
+        };
+    }
+
+    return {
+        title: acknowledgement.message || 'Perubahan fasilitas tersimpan',
+        body: null,
+    };
+};
+
+const renderFacilityAcknowledgementStatus = (): string => {
+    const acknowledgement = state?.facilityAcknowledgement;
+    if (!acknowledgement) return '';
+
+    const copy = facilityAcknowledgementCopy(acknowledgement);
+
+    return `
+        <section id="room-facility-delegated-status" role="status" aria-live="polite" data-facility-delegated-outcome="${escapeHtml(acknowledgement.outcome)}" class="rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+            <p class="font-bold">${escapeHtml(copy.title)}</p>
+            ${copy.body ? `<p class="mt-1 text-xs font-semibold text-teal-800">${escapeHtml(copy.body)}</p>` : ''}
+        </section>
+    `;
+};
+
 const renderFacilityTab = async (): Promise<void> => {
     if (!state) return;
     if (state.facilities === null) {
@@ -790,6 +848,7 @@ const paintFacilityTab = (): void => {
                     }).join('')}
                 </div>
                 ${dirty ? '<p data-facility-dirty class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800">Ada perubahan fasilitas yang belum disimpan.</p>' : ''}
+                ${renderFacilityAcknowledgementStatus()}
                 <div class="flex flex-wrap items-center gap-3">
                     <button id="room-facility-add" type="button" class="rounded-xl border border-teal-700 px-4 py-2 text-sm font-bold text-teal-700 hover:bg-teal-50">Tambah Fasilitas</button>
                     <button id="room-facility-save" type="button" ${state.busy || !dirty ? 'disabled' : ''} class="rounded-xl px-4 py-2 text-sm font-bold text-white disabled:opacity-60 ${dirty ? 'bg-teal-700 hover:bg-teal-800' : 'bg-gray-400'}">${state.busy ? 'Menyimpan...' : dirty ? 'Simpan Perubahan' : 'Tersimpan'}</button>
@@ -809,6 +868,7 @@ const paintFacilityTab = (): void => {
 
     body.querySelector('#room-facility-add')?.addEventListener('click', () => {
         syncFacilityInputsToState();
+        clearFacilityAcknowledgement();
         state?.facilities?.push({ facility_type_id: '', quantity: '', condition: '', notes: '' });
         paintFacilityTab();
     });
@@ -817,6 +877,7 @@ const paintFacilityTab = (): void => {
     (state.facilities ?? []).forEach((_row, index) => {
         body.querySelector(`[data-facility-remove="${index}"]`)?.addEventListener('click', () => {
             syncFacilityInputsToState();
+            clearFacilityAcknowledgement();
             state?.facilities?.splice(index, 1);
             paintFacilityTab();
         });
@@ -825,6 +886,7 @@ const paintFacilityTab = (): void => {
         ['type', 'qty', 'condition', 'notes'].forEach((field) => {
             body.querySelector(`[data-facility-${field}="${index}"]`)?.addEventListener('change', () => {
                 syncFacilityInputsToState();
+                clearFacilityAcknowledgement();
                 paintFacilityTab();
             });
         });
@@ -879,9 +941,11 @@ const handleFacilitySave = (): Promise<void> => withBusy(async () => {
     }
     paintFacilityTab();
     try {
+        clearFacilityAcknowledgement();
         const saved = await syncRoomFacilities(state.roomId, payload);
-        state.facilities = facilityDisplayList(saved).map(toFacilityRow);
+        state.facilities = facilityDisplayList(saved.data).map(toFacilityRow);
         state.savedFacilities = cloneFacilityRows(state.facilities);
+        state.facilityAcknowledgement = saved.delegated_activity_acknowledgement ?? null;
         showToast('Fasilitas ruangan berhasil disimpan.', true);
         notifyMutation();
         await reloadDetail();
@@ -902,6 +966,7 @@ const handleCreateFacilityType = (): Promise<void> => withBusy(async () => {
     syncFacilityInputsToState();
     try {
         const created = await createFacilityType(name);
+        clearFacilityAcknowledgement();
         state.facilityTypes = [...state.facilityTypes, created];
         state.facilities?.push({ facility_type_id: created.id, quantity: '', condition: '', notes: '' });
         showToast('Jenis fasilitas berhasil ditambahkan.', true);

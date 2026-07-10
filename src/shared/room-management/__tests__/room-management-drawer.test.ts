@@ -93,7 +93,7 @@ beforeEach(() => {
     m.listPhotos.mockResolvedValue([]);
     m.getFacilities.mockResolvedValue([]);
     m.listFacilityTypes.mockResolvedValue([{ id: 1, name: 'Proyektor', slug: 'proyektor', is_predefined: true }]);
-    m.syncFacilities.mockResolvedValue([]);
+    m.syncFacilities.mockResolvedValue({ data: [], delegated_activity_acknowledgement: null });
     m.listTemplates.mockResolvedValue([]);
     m.listAudit.mockResolvedValue([]);
     URL.createObjectURL = vi.fn(() => 'blob:x');
@@ -264,6 +264,120 @@ describe('room management drawer — Fasilitas tab', () => {
         expect(m.syncFacilities).toHaveBeenCalledWith(9, [
             { facility_type_id: 1, quantity: 2, condition: 'baik', notes: null },
         ]);
+        expect(m.toasts).toContain('Fasilitas ruangan berhasil disimpan.');
+    });
+
+    it('shows accessible delegated review copy when facility save creates an acknowledgement', async () => {
+        m.syncFacilities.mockResolvedValue({
+            data: [{ facility_type_id: 1, name: 'Proyektor', slug: 'proyektor', quantity: 2, condition: 'baik', notes: null }],
+            delegated_activity_acknowledgement: {
+                outcome: 'created',
+                id: 12,
+                status: 'pending_review',
+                effective_status: 'pending_review',
+                acknowledgement_due_at: '2026-07-11T09:00:00+07:00',
+                accountable_role: 'kepala_lab',
+                accountable_user: { id: 4, name: 'Kepala Lab' },
+                message: 'Perubahan fasilitas tersimpan dan menunggu peninjauan Kepala Lab.',
+                reason: null,
+            },
+        });
+
+        await openRoomManagementDrawer(9, { laboratories: [] });
+        await flush();
+        await openTab('fasilitas');
+        document.getElementById('room-facility-add')?.click();
+        await flush();
+        (document.querySelector('[data-facility-type="0"]') as HTMLSelectElement).value = '1';
+        document.querySelector('[data-facility-type="0"]')?.dispatchEvent(new Event('change'));
+        await flush();
+        document.getElementById('room-facility-save')?.click();
+        await flush();
+
+        const panel = document.getElementById('room-facility-delegated-status');
+        expect(panel?.getAttribute('role')).toBe('status');
+        expect(panel?.getAttribute('aria-live')).toBe('polite');
+        expect(panel?.textContent).toContain('Perubahan fasilitas tersimpan');
+        expect(panel?.textContent).toContain('Aktivitas ini menunggu peninjauan Kepala Lab.');
+        expect(document.getElementById('room-mgmt-confirm-root')).toBeNull();
+        expect(document.getElementById('room-form-modal-root')).toBeNull();
+    });
+
+    it.each([
+        ['existing', null, 'Aktivitas peninjauan sudah tercatat sebelumnya.'],
+        ['skipped', 'no_active_kepala_lab', 'Belum ada Kepala Lab aktif untuk peninjauan otomatis.'],
+        ['skipped', 'no_effective_change', 'Data fasilitas sudah sesuai, tidak ada aktivitas peninjauan baru.'],
+    ] as const)('shows accurate delegated confirmation copy for %s %s', async (outcome, reason, bodyCopy) => {
+        m.syncFacilities.mockResolvedValue({
+            data: [{ facility_type_id: 1, name: 'Proyektor', slug: 'proyektor', quantity: 2, condition: 'baik', notes: null }],
+            delegated_activity_acknowledgement: {
+                outcome,
+                id: outcome === 'existing' ? 12 : null,
+                status: outcome === 'existing' ? 'pending_review' : null,
+                effective_status: outcome === 'existing' ? 'pending_review' : null,
+                acknowledgement_due_at: outcome === 'existing' ? '2026-07-11T09:00:00+07:00' : null,
+                accountable_role: outcome === 'existing' ? 'kepala_lab' : null,
+                accountable_user: outcome === 'existing' ? { id: 4, name: 'Kepala Lab' } : null,
+                message: 'Perubahan fasilitas tersimpan.',
+                reason,
+            },
+        });
+
+        await openRoomManagementDrawer(9, { laboratories: [] });
+        await flush();
+        await openTab('fasilitas');
+        document.getElementById('room-facility-add')?.click();
+        await flush();
+        (document.querySelector('[data-facility-type="0"]') as HTMLSelectElement).value = '1';
+        document.querySelector('[data-facility-type="0"]')?.dispatchEvent(new Event('change'));
+        await flush();
+        document.getElementById('room-facility-save')?.click();
+        await flush();
+
+        expect(document.getElementById('room-facility-delegated-status')?.textContent).toContain(bodyCopy);
+    });
+
+    it('does not show delegated review copy for not applicable or missing metadata responses', async () => {
+        m.syncFacilities.mockResolvedValueOnce({
+            data: [{ facility_type_id: 1, name: 'Proyektor', slug: 'proyektor', quantity: 2, condition: 'baik', notes: null }],
+            delegated_activity_acknowledgement: {
+                outcome: 'not_applicable',
+                id: null,
+                status: null,
+                effective_status: null,
+                acknowledgement_due_at: null,
+                accountable_role: null,
+                accountable_user: null,
+                message: 'Perubahan fasilitas tersimpan.',
+                reason: 'actor_not_laboran',
+            },
+        }).mockResolvedValueOnce({
+            data: [{ facility_type_id: 1, name: 'Proyektor', slug: 'proyektor', quantity: 3, condition: 'baik', notes: null }],
+        });
+
+        await openRoomManagementDrawer(9, { laboratories: [] });
+        await flush();
+        await openTab('fasilitas');
+        document.getElementById('room-facility-add')?.click();
+        await flush();
+        (document.querySelector('[data-facility-type="0"]') as HTMLSelectElement).value = '1';
+        document.querySelector('[data-facility-type="0"]')?.dispatchEvent(new Event('change'));
+        await flush();
+        document.getElementById('room-facility-save')?.click();
+        await flush();
+
+        const notApplicablePanel = document.getElementById('room-facility-delegated-status');
+        expect(notApplicablePanel?.textContent).toContain('Perubahan fasilitas tersimpan');
+        expect(notApplicablePanel?.textContent).not.toContain('menunggu peninjauan Kepala Lab');
+
+        const qty = document.querySelector('[data-facility-qty="0"]') as HTMLInputElement;
+        qty.value = '3';
+        qty.dispatchEvent(new Event('change'));
+        await flush();
+        document.getElementById('room-facility-save')?.click();
+        await flush();
+
+        expect(document.getElementById('room-facility-delegated-status')).toBeNull();
         expect(m.toasts).toContain('Fasilitas ruangan berhasil disimpan.');
     });
 

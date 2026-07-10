@@ -74,12 +74,38 @@ describe('room-management api helpers', () => {
     });
 
     it('sends the facilities sync payload', async () => {
-        mocks.apiFetch.mockResolvedValue(jsonResponse({ message: 'ok', data: [] }));
-        await syncRoomFacilities(9, [{ facility_type_id: 2, quantity: 4, condition: 'baik', notes: null }]);
+        mocks.apiFetch.mockResolvedValue(jsonResponse({
+            message: 'ok',
+            data: [{ facility_type_id: 2, name: 'Proyektor' }],
+            delegated_activity_acknowledgement: {
+                outcome: 'created',
+                id: 15,
+                status: 'pending_review',
+                effective_status: 'pending_review',
+                acknowledgement_due_at: '2026-07-11T09:00:00+07:00',
+                accountable_role: 'kepala_lab',
+                accountable_user: { id: 4, name: 'Kepala Lab' },
+                message: 'Perubahan fasilitas tersimpan dan menunggu peninjauan Kepala Lab.',
+                reason: null,
+            },
+        }));
+        const result = await syncRoomFacilities(9, [{ facility_type_id: 2, quantity: 4, condition: 'baik', notes: null }]);
         const [, options] = mocks.apiFetch.mock.calls[0];
         expect(JSON.parse(options.body as string)).toEqual({
             facilities: [{ facility_type_id: 2, quantity: 4, condition: 'baik', notes: null }],
         });
+        expect(result.data[0].facility_type_id).toBe(2);
+        expect(result.delegated_activity_acknowledgement?.outcome).toBe('created');
+        expect(JSON.stringify(result.delegated_activity_acknowledgement)).not.toContain('before_state');
+        expect(JSON.stringify(result.delegated_activity_acknowledgement)).not.toContain('/storage/');
+    });
+
+    it('tolerates legacy facilities sync responses without delegation metadata', async () => {
+        mocks.apiFetch.mockResolvedValue(jsonResponse({ message: 'ok', data: [] }));
+        const result = await syncRoomFacilities(9, []);
+
+        expect(result.data).toEqual([]);
+        expect(result.delegated_activity_acknowledgement).toBeNull();
     });
 
     it('rejects photo URLs that are not relative /api endpoints, without fetching', async () => {

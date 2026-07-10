@@ -11,6 +11,7 @@ import type {
     ManagedRoomPhoto,
     ManagedRoomTemplate,
     RoomAuditEntry,
+    RoomFacilitySyncResult,
     RoomInfoPayload,
 } from './types';
 
@@ -230,12 +231,19 @@ export async function getRoomFacilities(roomId: number): Promise<ManagedRoomFaci
 export async function syncRoomFacilities(
     roomId: number,
     facilities: FacilitySyncEntry[],
-): Promise<ManagedRoomFacility[]> {
+): Promise<RoomFacilitySyncResult> {
     const response = await apiFetch(`${BASE}/rooms/${roomId}/facilities`, {
         method: 'PUT',
         body: JSON.stringify({ facilities }),
     });
-    return (await readJson<Envelope<ManagedRoomFacility[]>>(response, 'Gagal menyimpan fasilitas.')).data;
+    const payload = await readJson<Envelope<ManagedRoomFacility[]> & {
+        delegated_activity_acknowledgement?: RoomFacilitySyncResult['delegated_activity_acknowledgement'];
+    }>(response, 'Gagal menyimpan fasilitas.');
+
+    return {
+        data: payload.data,
+        delegated_activity_acknowledgement: payload.delegated_activity_acknowledgement ?? null,
+    };
 }
 
 // ─────────────────────────── templates ───────────────────────────
