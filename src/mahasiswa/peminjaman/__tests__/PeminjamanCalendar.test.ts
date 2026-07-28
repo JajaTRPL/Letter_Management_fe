@@ -10,10 +10,9 @@ import type { AvailabilityItem } from '../types';
 const availability = (
     bookingId: number,
     type: 'classroom' | 'laboratory',
-    status: AvailabilityItem['status'],
+    category: AvailabilityItem['lifecycle_category'],
     startAt: string,
 ): AvailabilityItem => ({
-    booking_id: bookingId,
     room: {
         id: bookingId,
         code: `API-${bookingId}`,
@@ -22,7 +21,9 @@ const availability = (
     },
     start_at: startAt,
     end_at: '2026-06-20T12:00:00+07:00',
-    status,
+    lifecycle_category: category,
+    activity_titles: [`Kegiatan ${bookingId}`],
+    request_count: 1,
 });
 
 describe('Peminjaman calendar normalization', () => {
@@ -32,15 +33,15 @@ describe('Peminjaman calendar normalization', () => {
             availability(2, 'laboratory', 'approved', '2026-06-20T13:00:00+07:00'),
         ]);
 
-        expect(indexed.get('2026-06-20')?.map((item) => item.booking_id))
+        expect(indexed.get('2026-06-20')?.map((item) => item.room.id))
             .toEqual([1, 2]);
     });
 
     it('counts only approved bookings for calendar density', () => {
         const items = [
             availability(1, 'classroom', 'approved', '2026-06-20T08:00:00+07:00'),
-            availability(2, 'classroom', 'submitted', '2026-06-20T10:00:00+07:00'),
-            availability(3, 'laboratory', 'revision_requested', '2026-06-20T13:00:00+07:00'),
+            availability(2, 'classroom', 'pending', '2026-06-20T10:00:00+07:00'),
+            availability(3, 'laboratory', 'pending', '2026-06-20T13:00:00+07:00'),
         ];
 
         expect(countApprovedByFilter(items, 'all')).toBe(1);
@@ -51,16 +52,16 @@ describe('Peminjaman calendar normalization', () => {
         const items = [
             availability(1, 'classroom', 'approved', '2026-06-20T08:00:00+07:00'),
             availability(2, 'laboratory', 'approved', '2026-06-20T10:00:00+07:00'),
-            availability(3, 'laboratory', 'cancelled', '2026-06-20T13:00:00+07:00'),
+            availability(3, 'laboratory', 'pending', '2026-06-20T13:00:00+07:00'),
         ];
         const indexed = normalizeAvailabilityByDate(items);
 
         expect(countApprovedByFilter(items, 'classroom')).toBe(1);
         expect(getDayAvailability(indexed, '2026-06-20', 'classroom')
-            .map((item) => item.booking_id)).toEqual([1]);
+            .map((item) => item.room.id)).toEqual([1]);
 
         expect(countApprovedByFilter(items, 'laboratory')).toBe(1);
         expect(getDayAvailability(indexed, '2026-06-20', 'laboratory')
-            .map((item) => item.booking_id)).toEqual([2]);
+            .map((item) => item.room.id)).toEqual([2]);
     });
 });

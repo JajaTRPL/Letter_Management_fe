@@ -129,6 +129,34 @@ describe('room catalog detail drawer', () => {
         expect(document.body.innerHTML).not.toContain('/storage');
     });
 
+    it('navigates the gallery via next/prev arrows, counter, and keyboard (2 photos)', async () => {
+        mockDetailAndPhotos();
+        await openRoomCatalogDetail(7);
+        await flush();
+        await vi.waitFor(() => {
+            expect(document.querySelector('#room-gallery-main img')).not.toBeNull();
+        });
+
+        // Multi-photo controls are present with a starting counter of 1/2.
+        expect(document.querySelector('[data-gallery-prev]')).not.toBeNull();
+        expect(document.querySelector('[data-gallery-next]')).not.toBeNull();
+        expect(document.querySelector('[data-gallery-counter]')?.textContent).toBe('1/2');
+
+        // Next advances to photo 2 and loads its display variant.
+        document.querySelector<HTMLElement>('[data-gallery-next]')?.click();
+        await vi.waitFor(() => {
+            expect(document.querySelector('[data-gallery-counter]')?.textContent).toBe('2/2');
+        });
+        expect(m.apiFetch.mock.calls.some(([url]) => url === '/api/rooms/7/photos/2/display')).toBe(true);
+
+        // Keyboard ArrowLeft on the viewport wraps back to photo 1.
+        const viewport = document.querySelector<HTMLElement>('[data-gallery-viewport]');
+        viewport?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+        await vi.waitFor(() => {
+            expect(document.querySelector('[data-gallery-counter]')?.textContent).toBe('1/2');
+        });
+    });
+
     it('shows friendly empty states without photos, facilities, or template', async () => {
         mockDetailAndPhotos(detail({ photos: [], facilities: [], template: null }));
         await openRoomCatalogDetail(7);

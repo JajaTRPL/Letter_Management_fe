@@ -34,33 +34,37 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                 <span class="font-medium">Dashboard</span>
             </a>
-            <a href="#" id="sidebar-users-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'users' ? activeClass : inactiveClass}">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                <span class="font-medium">Manajemen Akun</span>
+            <a href="#" id="sidebar-peminjaman-admin-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'peminjaman-admin' ? activeClass : inactiveClass}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 11h18"></path></svg>
+                <span class="font-medium">Peminjaman Ruangan</span>
             </a>
             <a href="#" id="sidebar-monitoring-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'monitoring' ? activeClass : inactiveClass}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                 <span class="font-medium">Monitoring Surat</span>
             </a>
+            <a href="#" id="sidebar-review-performance-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'review-performance' ? activeClass : inactiveClass}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                <span class="font-medium">Monitoring Kinerja</span>
+            </a>
+            <a href="#" id="sidebar-users-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'users' ? activeClass : inactiveClass}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                <span class="font-medium">Manajemen Akun</span>
+            </a>
             <a href="#" id="sidebar-template-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'template' ? activeClass : inactiveClass}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
                 <span class="font-medium">Template Dokumen</span>
-            </a>
-            <a href="#" id="sidebar-logs-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'logs' ? activeClass : inactiveClass}">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                <span class="font-medium">Riwayat Aktivitas</span>
-            </a>
-            <a href="#" id="sidebar-retention-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'retention' ? activeClass : inactiveClass}">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 15.53-6.22"></path><path d="M21 3v6h-6"></path><path d="M21 12a9 9 0 0 1-15.53 6.22"></path><path d="M3 21v-6h6"></path></svg>
-                <span class="font-medium">Retensi & Arsip Surat</span>
             </a>
             <a href="#" id="sidebar-academic-periods-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'academic-periods' ? activeClass : inactiveClass}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                 <span class="font-medium">Periode Akademik</span>
             </a>
-            <a href="#" id="sidebar-peminjaman-admin-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'peminjaman-admin' ? activeClass : inactiveClass}">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 11h18"></path></svg>
-                <span class="font-medium">Peminjaman Ruangan</span>
+            <a href="#" id="sidebar-retention-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'retention' ? activeClass : inactiveClass}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 15.53-6.22"></path><path d="M21 3v6h-6"></path><path d="M21 12a9 9 0 0 1-15.53 6.22"></path><path d="M3 21v-6h6"></path></svg>
+                <span class="font-medium">Arsip & Masa Simpan</span>
+            </a>
+            <a href="#" id="sidebar-logs-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'logs' ? activeClass : inactiveClass}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                <span class="font-medium">Riwayat Aktivitas</span>
             </a>
         `;
     } else if (currentRole.startsWith('tendik') || ['kadep', 'kaprodi', 'sekdep', 'sekprodi', 'akademik'].includes(currentRole)) {

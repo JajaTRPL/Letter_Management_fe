@@ -39,7 +39,7 @@ vi.mock('../api', () => ({
     createMahasiswaBooking: m.createBooking,
     updateMahasiswaBooking: m.updateBooking,
     resubmitMahasiswaBooking: m.resubmitBooking,
-    cancelMahasiswaBooking: m.cancelBooking,
+    withdrawMahasiswaBooking: m.cancelBooking,
     PeminjamanApiError: class extends Error {},
 }));
 
@@ -76,7 +76,6 @@ const activeRoom: Room = {
 };
 
 const approvedAvailability: AvailabilityItem = {
-    booking_id: 50,
     room: {
         id: activeRoom.id,
         code: activeRoom.code,
@@ -85,7 +84,9 @@ const approvedAvailability: AvailabilityItem = {
     },
     start_at: '2026-06-20T10:00:00+07:00',
     end_at: '2026-06-20T12:00:00+07:00',
-    status: 'approved',
+    lifecycle_category: 'approved',
+    activity_titles: ['Sidang'],
+    request_count: 1,
 };
 
 const deferred = <T>() => {

@@ -34,12 +34,15 @@ import {
     formatIndonesianDate,
     formatIsoDateKeyInJakarta,
     formatTimeRange,
-    getBookingStatusLabel,
-    getBookingStatusTone,
     getRoomTypeLabel,
     parseDateKey,
 } from '../shared/peminjaman-calendar';
 import { getMahasiswaBookings } from './peminjaman/api';
+import {
+    bookingLifecycleStatus,
+    getLifecycleStatusLabel,
+    getLifecycleStatusTone,
+} from './peminjaman/workflow';
 import type { MahasiswaBooking } from './peminjaman/types';
 
 const LIST_ID_PREFIX = 'riwayat-list';
@@ -102,10 +105,13 @@ const riwayatPengajuanFilters = [
         options: [
             ...filterOptionsFor('status'),
             { value: 'submitted', label: 'Diajukan' },
+            { value: 'under_review', label: 'Sedang Ditinjau' },
             { value: 'revision_requested', label: 'Perlu Revisi' },
             { value: 'approved', label: 'Disetujui' },
             { value: 'rejected', label: 'Ditolak' },
             { value: 'cancelled', label: 'Dibatalkan' },
+            { value: 'expired', label: 'Kedaluwarsa' },
+            { value: 'completed', label: 'Selesai' },
         ],
     },
 ];
@@ -155,13 +161,16 @@ const toLetterRiwayatItem = (item: MahasiswaListItem): RiwayatPengajuanItem => {
 const toPeminjamanRiwayatItem = (booking: MahasiswaBooking): RiwayatPengajuanItem => {
     const title = [booking.room.code, booking.room.name].filter(Boolean).join(' - ') || 'Peminjaman Ruangan';
     const schedule = formatBookingSchedule(booking);
-    const statusLabel = getBookingStatusLabel(booking.status);
+    // Presentation and filtering both follow the backend's authoritative
+    // lifecycle status (under_review/expired/completed refine the stored one).
+    const lifecycleStatus = bookingLifecycleStatus(booking);
+    const statusLabel = getLifecycleStatusLabel(lifecycleStatus);
     return {
         source: 'peminjaman',
         id: String(booking.id),
         letterType: '',
         typeFilter: PEMINJAMAN_TYPE_VALUE,
-        statusFilter: booking.status,
+        statusFilter: lifecycleStatus,
         searchText: [
             'Peminjaman Ruangan',
             booking.room.code,
@@ -179,7 +188,7 @@ const toPeminjamanRiwayatItem = (booking: MahasiswaBooking): RiwayatPengajuanIte
         subtitle: booking.activity_name || 'Peminjaman Ruangan',
         detail: schedule,
         statusLabel,
-        statusTone: getBookingStatusTone(booking.status),
+        statusTone: getLifecycleStatusTone(lifecycleStatus),
     };
 };
 

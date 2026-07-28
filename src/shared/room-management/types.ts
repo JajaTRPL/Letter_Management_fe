@@ -45,11 +45,62 @@ export interface ManagedRoomFacility {
     notes?: string | null;
 }
 
+export type FacilityDelegatedActivityOutcome =
+    | 'created'
+    | 'existing'
+    | 'skipped'
+    | 'not_applicable';
+
+export interface FacilityDelegatedActivityUser {
+    id: number;
+    name?: string | null;
+}
+
+export interface FacilityDelegatedActivityAcknowledgementOutcome {
+    outcome: FacilityDelegatedActivityOutcome;
+    id: number | null;
+    status: string | null;
+    effective_status: string | null;
+    acknowledgement_due_at: string | null;
+    accountable_role: 'kepala_lab' | string | null;
+    accountable_user: FacilityDelegatedActivityUser | null;
+    message: string;
+    reason: string | null;
+}
+
 export interface FacilityTypeOption {
     id: number;
     name: string;
     slug: string;
     is_predefined: boolean;
+    // Present on the master view; absent on legacy/active-filtered responses.
+    is_active?: boolean;
+    usage_count?: number;
+}
+
+/** One room using a facility type (Master Fasilitas "Lihat Penggunaan"). */
+export interface FacilityUsageRoom {
+    id: number;
+    code: string;
+    name: string;
+    type: ManagedRoomType;
+    is_active: boolean;
+    owning_laboratory: ManagedLaboratory | null;
+    quantity?: number | null;
+    condition?: RoomFacilityCondition | string | null;
+}
+
+export interface FacilityUsageSummary {
+    total: number;
+    classroom: number;
+    laboratory: number;
+    other: number;
+}
+
+export interface FacilityUsage {
+    facility_type: FacilityTypeOption;
+    summary: FacilityUsageSummary;
+    rooms: FacilityUsageRoom[];
 }
 
 export interface ManagedRoomTemplate {
@@ -115,6 +166,11 @@ export interface FacilitySyncEntry {
     quantity?: number | null;
     condition?: RoomFacilityCondition | null;
     notes?: string | null;
+}
+
+export interface RoomFacilitySyncResult {
+    data: ManagedRoomFacility[];
+    delegated_activity_acknowledgement?: FacilityDelegatedActivityAcknowledgementOutcome | null;
 }
 
 export type RoomManagementValidationErrors = Record<string, string[]>;

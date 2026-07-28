@@ -64,6 +64,9 @@ const seedAllFive = (): void => {
 };
 
 const rowsRoot = () => document.getElementById('riwayat-list-rows');
+// The Riwayat list renders responsive CARDS (<article>), not table rows — the
+// table markup these assertions were written against is long gone.
+const cards = () => rowsRoot()?.querySelectorAll('article[data-row-action="view-detail"]');
 const ids = {
     search: 'riwayat-list-search',
     typeFilter: 'riwayat-list-filter-type',
@@ -92,10 +95,10 @@ describe('Mahasiswa Riwayat list integration (CP6A)', () => {
         for (const label of ['Surat Keterangan Aktif', 'Surat Pengantar Magang', 'Proses Luar Negeri', 'Surat Tugas']) {
             expect(html).toContain(label);
         }
-        // Newest-first: Beasiswa (2026-06-01) row appears before SKA (2026-05-01).
+        // Newest-first: Beasiswa (2026-06-01) card appears before SKA (2026-05-01).
         expect(html.indexOf('Beasiswa Unggulan')).toBeLessThan(html.indexOf('Surat Keterangan Aktif'));
-        // Five rows.
-        expect(rowsRoot()?.querySelectorAll('tr[data-row-action="view-detail"]').length).toBe(5);
+        // Five cards.
+        expect(cards()?.length).toBe(5);
     });
 
     it('searches by visible label', async () => {
@@ -107,8 +110,7 @@ describe('Mahasiswa Riwayat list integration (CP6A)', () => {
         search.value = 'magang';
         search.dispatchEvent(new Event('input'));
 
-        const rows = rowsRoot()?.querySelectorAll('tr[data-row-action="view-detail"]');
-        expect(rows?.length).toBe(1);
+        expect(cards()?.length).toBe(1);
         expect(rowsRoot()?.innerHTML).toContain('Surat Pengantar Magang');
     });
 
@@ -120,7 +122,7 @@ describe('Mahasiswa Riwayat list integration (CP6A)', () => {
         const statusFilter = document.getElementById(ids.statusFilter) as HTMLSelectElement;
         statusFilter.value = 'Completed';
         statusFilter.dispatchEvent(new Event('change'));
-        expect(rowsRoot()?.querySelectorAll('tr[data-row-action="view-detail"]').length).toBe(2);
+        expect(cards()?.length).toBe(2);
 
         // Reset status, filter by type.
         statusFilter.value = '';
@@ -128,8 +130,7 @@ describe('Mahasiswa Riwayat list integration (CP6A)', () => {
         const typeFilter = document.getElementById(ids.typeFilter) as HTMLSelectElement;
         typeFilter.value = 'surat-tugas';
         typeFilter.dispatchEvent(new Event('change'));
-        const rows = rowsRoot()?.querySelectorAll('tr[data-row-action="view-detail"]');
-        expect(rows?.length).toBe(1);
+        expect(cards()?.length).toBe(1);
         expect(rowsRoot()?.innerHTML).toContain('Surat Tugas');
     });
 
@@ -143,21 +144,22 @@ describe('Mahasiswa Riwayat list integration (CP6A)', () => {
         await flush();
 
         // Default page size 10.
-        expect(rowsRoot()?.querySelectorAll('tr[data-row-action="view-detail"]').length).toBe(10);
+        expect(cards()?.length).toBe(10);
         expect(document.getElementById(ids.pageInfo)?.textContent).toBe('Halaman 1 dari 3');
         expect((document.getElementById(ids.prev) as HTMLButtonElement).disabled).toBe(true);
 
         (document.getElementById(ids.next) as HTMLButtonElement).click();
         (document.getElementById(ids.next) as HTMLButtonElement).click();
         expect(document.getElementById(ids.pageInfo)?.textContent).toBe('Halaman 3 dari 3');
-        expect(rowsRoot()?.querySelectorAll('tr[data-row-action="view-detail"]').length).toBe(3);
+        expect(cards()?.length).toBe(3);
         expect((document.getElementById(ids.next) as HTMLButtonElement).disabled).toBe(true);
     });
 
     it('renders the empty state when no applications exist', async () => {
         await renderRiwayatPengajuan();
         await flush();
-        expect(rowsRoot()?.textContent).toContain('Belum ada riwayat pengajuan surat.');
+        // The list now covers letters AND room bookings, so the copy is generic.
+        expect(rowsRoot()?.textContent).toContain('Belum ada riwayat pengajuan.');
     });
 
     it('dispatches the correct detail renderer per letter type', async () => {
@@ -165,16 +167,16 @@ describe('Mahasiswa Riwayat list integration (CP6A)', () => {
         await renderRiwayatPengajuan();
         await flush();
 
-        // Click the Magang row's detail button.
+        // Click the Magang card's detail button.
         const magangBtn = Array.from(rowsRoot()?.querySelectorAll('button[data-action="view-detail"]') ?? [])
             .find((b) => (b as HTMLElement).dataset.type === 'surat-pengantar-magang') as HTMLElement;
         magangBtn.click();
         expect(m.detailCalls).toContainEqual({ renderer: 'magang', id: '3' });
 
-        // Click the Surat Tugas row body.
-        const stRow = Array.from(rowsRoot()?.querySelectorAll('tr[data-row-action="view-detail"]') ?? [])
-            .find((r) => (r as HTMLElement).dataset.type === 'surat-tugas') as HTMLElement;
-        stRow.click();
+        // Click the Surat Tugas card body.
+        const stCard = Array.from(cards() ?? [])
+            .find((card) => (card as HTMLElement).dataset.type === 'surat-tugas') as HTMLElement;
+        stCard.click();
         expect(m.detailCalls).toContainEqual({ renderer: 'surat-tugas', id: '5' });
     });
 

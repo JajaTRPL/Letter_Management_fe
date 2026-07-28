@@ -1,4 +1,11 @@
 import { renderDashboardLayout } from './DashboardLayout';
+import { escapeFormHtml } from '../shared/form-primitives';
+import { renderDashboardSection, renderDashboardStatCard, renderDashboardStatGrid, renderDashboardTable } from '../shared/ui-primitives';
+import {
+    hydrateReviewPerformance,
+    reviewPerformanceShell,
+    type ReviewPerformanceWidgetConfig,
+} from '../shared/review-performance-widget';
 import { getGreetingName } from '../utils/nameHelper';
 import { apiFetch } from '../shared/api-client';
 import { renderReviewScholarshipAkademik } from '../akademik/ReviewScholarshipAkademik';
@@ -18,12 +25,9 @@ import {
     type TendikTaskRow,
 } from '../shared/letter-workflow';
 
-const escapeHtml = (value: unknown): string => String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+// The shared escaper is the single owner; this alias keeps the local call sites
+// short without maintaining a second, drift-prone copy of the same five rules.
+const escapeHtml = (value: unknown): string => escapeFormHtml(value as string | number | null | undefined);
 
 const firstText = (...values: unknown[]): string => {
     for (const value of values) {
@@ -58,6 +62,31 @@ const buildRoleLabel = (role: string, profileUser: Record<string, any> | null | 
 interface RiwayatRow extends TendikTaskRow {
     action_at?: string | null;
 }
+
+
+/**
+ * A reviewer's own stage — an action prompt, not a scorecard.
+ *
+ * Deliberately links to their queue rather than to the analytics page: reviewers
+ * get something to do, SuperAdmin gets something to analyse. The endpoint scopes
+ * itself from the session, so a Kaprodi sees their own program and a Kadep
+ * sees their own department, with no parameter either could change. An
+ * academic account with no scope resolves to `eligible:false` and the card
+ * removes itself rather than rendering an empty shell.
+ */
+const SELF_REVIEW_CARD: ReviewPerformanceWidgetConfig = {
+    mountId: 'akademik-review-performance',
+    endpoint: '/api/akademik/review-performance/me?period=1month',
+    variant: 'self',
+    title: 'Pemeriksaan Anda Bulan Ini',
+    subtitle: 'Ringkasan tahap pemeriksaan yang Anda tangani — bukan penilaian per orang.',
+};
+
+
+// Static icons for the shared dashboard stat cards.
+const STAT_ICON_INBOX = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>';
+const STAT_ICON_ALERT = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+const STAT_ICON_DONE = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
 
 export const renderAkademikDashboard = async (role: string) => {
     const fullName = localStorage.getItem('auth_name') || '';
@@ -126,130 +155,77 @@ export const renderAkademikDashboard = async (role: string) => {
                 </div>
             </div>
 
+            ${reviewPerformanceShell(SELF_REVIEW_CARD)}
+
             <!-- Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-8">
-                <div class="bg-[#EFF6FF] border border-blue-100 p-5 rounded-[20px] flex justify-between items-center shadow-sm hover:shadow-md transition-all">
-                    <div>
-                        <h3 class="text-[38px] font-black text-[#0EA5E9] leading-none mb-1">${stats.total_incoming ?? 0}</h3>
-                        <p class="text-xs font-semibold text-gray-600">Total Antrean Masuk</p>
-                    </div>
-                    <div class="w-14 h-14 bg-blue-400/20 rounded-xl flex items-center justify-center text-blue-600">
-                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                    </div>
-                </div>
+            ${renderDashboardStatGrid(
+                    renderDashboardStatCard({ label: 'Total Antrean Masuk', value: stats.total_incoming ?? 0, tone: 'info', iconSvg: STAT_ICON_INBOX })
+                    + renderDashboardStatCard({ label: 'Perlu Persetujuan Anda', value: stats.needs_verification ?? 0, tone: 'warning', iconSvg: STAT_ICON_ALERT })
+                    + renderDashboardStatCard({ label: 'Selesai Bulan Ini', value: stats.finished_this_month ?? 0, tone: 'success', iconSvg: STAT_ICON_DONE }),
+                )}
 
-                <div class="bg-[#FFF8F1] border border-orange-200/60 p-5 rounded-[20px] flex justify-between items-center shadow-sm hover:shadow-md transition-all">
-                    <div>
-                        <h3 class="text-[38px] font-black text-[#F59E0B] leading-none mb-1">${stats.needs_verification ?? 0}</h3>
-                        <p class="text-xs font-semibold text-gray-600">Perlu Persetujuan Anda</p>
-                    </div>
-                    <div class="w-14 h-14 bg-[#FEF08A]/60 rounded-xl flex items-center justify-center text-[#D97706]">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                    </div>
-                </div>
-
-                <div class="bg-[#F0FDF4] border border-green-200/60 p-5 rounded-[20px] flex justify-between items-center shadow-sm hover:shadow-md transition-all">
-                    <div>
-                        <h3 class="text-[38px] font-black text-[#10B981] leading-none mb-1">${stats.finished_this_month ?? 0}</h3>
-                        <p class="text-xs font-semibold text-gray-600">Selesai Bulan Ini</p>
-                    </div>
-                    <div class="w-14 h-14 bg-green-300/40 rounded-xl flex items-center justify-center text-green-600">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Antrean Perlu Tindakan -->
+                            <!-- Antrean Perlu Tindakan -->
             <div class="mt-10">
-                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div class="px-7 py-5 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                        <div class="flex gap-3">
+                ${renderDashboardSection({
+                        title: 'Antrean Perlu Dikerjakan',
+                        subtitle: 'Daftar pengajuan surat yang memerlukan persetujuan Anda',
+                        iconHtml: `
                             <div class="w-6 h-6 rounded-full border border-red-500 text-red-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="6" x2="12" y2="14"></line><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-                            </div>
-                            <div>
-                                <h2 class="text-[17px] font-bold text-gray-800">Antrean Perlu Dikerjakan</h2>
-                                <p class="text-[11px] text-gray-500 mt-1">Daftar pengajuan surat yang memerlukan persetujuan Anda</p>
-                                ${limitedTaskNote ? `<p class="text-[11px] font-medium text-amber-700 mt-2">${escapeHtml(limitedTaskNote)}</p>` : ''}
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-3">
+                            </div>`,
+                        noteHtml: limitedTaskNote ? `<p class="text-[11px] font-medium text-amber-700 mt-2">${escapeHtml(limitedTaskNote)}</p>` : '',
+                        actionHtml: `
                             <div class="relative">
                                 <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                                 <input id="akademik-queue-search" type="text" placeholder="Cari nama, NIM, atau jenis surat" class="pl-9 pr-3 py-2 text-xs font-medium border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 w-[260px]">
                             </div>
-                            <button id="akademik-queue-see-more" type="button" class="text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline">Lihat Selengkapnya</button>
-                        </div>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left bg-white">
-                            <thead>
-                                <tr class="border-b border-gray-100 bg-white">
-                                    <th class="px-7 py-4 text-xs font-bold text-gray-700 whitespace-nowrap w-[220px]">Tanggal Masuk</th>
-                                    <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Mahasiswa</th>
-                                    <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Jenis Surat</th>
-                                    <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Status</th>
-                                    <th class="px-7 py-4 w-40"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="akademik-queue-tbody" class="divide-y divide-gray-100">
-                                ${tasks.length === 0 ? `
-                                    <tr>
-                                        <td colspan="5" class="px-7 py-12 text-center text-gray-400">
-                                            Belum ada pengajuan yang memerlukan persetujuan Anda saat ini.
-                                        </td>
-                                    </tr>
-                                ` : tasks.map(queueRow).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                            <button id="akademik-queue-see-more" type="button" class="text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline">Lihat Selengkapnya</button>`,
+                        bodyHtml: renderDashboardTable({
+                            columns: [
+                                { label: 'Tanggal Masuk', className: 'w-[220px]' },
+                                { label: 'Mahasiswa' },
+                                { label: 'Jenis Surat' },
+                                { label: 'Status' },
+                                { label: '', className: 'w-40' },
+                            ],
+                            rowsHtml: tasks.map(queueRow).join(''),
+                            emptyMessage: 'Belum ada pengajuan yang memerlukan persetujuan Anda saat ini.',
+                            tbodyId: 'akademik-queue-tbody',
+                        }),
+                    })}
             </div>
 
             <!-- Riwayat Persetujuan (real top-5 from /api/akademik/riwayat) -->
             <div class="mt-12">
-                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div class="px-7 py-5 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                        <div class="flex gap-3 items-start">
-                            <div class="w-6 h-6 rounded-full border border-blue-500 text-blue-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                            </div>
-                            <div>
-                                <h2 class="text-[17px] font-bold text-gray-800">Riwayat</h2>
-                                <p class="text-[11px] text-gray-500 mt-1">Pengajuan terbaru yang telah Anda proses</p>
-                            </div>
-                        </div>
-                        <button id="akademik-riwayat-see-more" type="button" class="text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline">Lihat Selengkapnya</button>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left">
-                            <thead>
-                                <tr class="border-b border-gray-100 bg-white">
-                                    <th class="px-7 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Tanggal Tindakan</th>
-                                    <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Nomor Surat</th>
-                                    <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Mahasiswa</th>
-                                    <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Jenis Surat</th>
-                                    <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Status</th>
-                                    <th class="px-7 py-4 text-right text-xs font-bold text-gray-700">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100">
-                                ${recentRiwayat.length === 0 ? `
-                                    <tr>
-                                        <td colspan="6" class="px-7 py-12 text-center text-gray-400">
-                                            Belum ada riwayat persetujuan.
-                                        </td>
-                                    </tr>
-                                ` : recentRiwayat.map(riwayatRow).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                ${renderDashboardSection({
+                    title: 'Riwayat',
+                    subtitle: 'Pengajuan terbaru yang telah Anda proses',
+                    iconHtml: `
+                        <div class="w-6 h-6 rounded-full border border-blue-500 text-blue-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        </div>`,
+                    actionHtml: `<button id="akademik-riwayat-see-more" type="button" class="text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline">Lihat Selengkapnya</button>`,
+                    bodyHtml: renderDashboardTable({
+                        columns: [
+                            { label: 'Tanggal Tindakan' },
+                            { label: 'Nomor Surat' },
+                            { label: 'Mahasiswa' },
+                            { label: 'Jenis Surat' },
+                            { label: 'Status' },
+                            { label: 'Aksi', className: 'text-right' },
+                        ],
+                        rowsHtml: recentRiwayat.map(riwayatRow).join(''),
+                        emptyMessage: 'Belum ada riwayat persetujuan.',
+                    }),
+                })}
             </div>
         </div>
         `;
         renderDashboardLayout('Dashboard', content, role, 'dashboard');
+
+        // Self-view only; failure-isolated and removed entirely when this
+        // account reviews nothing.
+        void hydrateReviewPerformance(SELF_REVIEW_CARD);
 
         bindQueueSearch();
         bindReviewButtons();

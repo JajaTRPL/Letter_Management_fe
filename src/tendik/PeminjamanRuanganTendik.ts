@@ -4,11 +4,17 @@ import {
     approveTendikBooking,
     downloadSuratPeminjamanPdf,
     getTendikBooking,
+    getTendikBookingCalendar,
     getTendikBookings,
     getTendikReviewerProfile,
     PeminjamanApiError,
     rejectTendikBooking,
     reviseTendikBooking,
+    getTendikOperationalOccurrences,
+    issueRoomKey,
+    decideRoomReturn,
+    generateRoomBookingIdempotencyKey,
+    fetchReturnEvidenceObjectUrl,
 } from '../mahasiswa/peminjaman/api';
 import { renderSuratPeminjamanPanel } from '../mahasiswa/peminjaman/views';
 import {
@@ -17,22 +23,37 @@ import {
 } from '../mahasiswa/peminjaman/detail';
 import type {
     BookingStatus,
+    BookingCalendarStatusScope,
     PaginationMeta,
     Room,
     RoomType,
     TendikBooking,
     TendikBookingFilters,
+    TendikCalendarFilters,
+    TendikCalendarItem,
     TendikReviewerProfile,
     TendikReviewerRole,
+    TendikOperationalOccurrence,
 } from '../mahasiswa/peminjaman/types';
 import {
+    formatDateKey,
+    formatIsoDateKeyInJakarta,
     formatTimeRange,
+    getCalendarKeyboardTargetDateKey,
     getBookingStatusLabel,
     getBookingStatusTone,
     getRoomTypeLabel,
 } from '../shared/peminjaman-calendar';
-import { listManagedRooms } from '../shared/room-management/api';
 import {
+    renderBookingCalendarGridCells,
+    renderBookingCalendarSelectedDatePanel,
+    renderBookingCalendarView,
+    type BookingCalendarItemAction,
+    type BookingCalendarViewItem,
+} from '../shared/peminjaman-calendar-view';
+import { bulkDeleteRooms, listManagedRooms } from '../shared/room-management/api';
+import {
+    attachRoomSelectionListeners,
     attachRoomTableListeners,
     hydrateRoomTableCovers,
     renderRoomManagementTable,
@@ -53,7 +74,92 @@ import type {
 
 const PER_PAGE = 10;
 
-type TendikTab = 'queue' | 'rooms';
+type TendikTab = 'queue' | 'operations' | 'calendar' | 'rooms';
+type OperationalTab = 'today' | 'key_handover' | 'returns' | 'overdue' | 'all';
+type CalendarStatusFilter = BookingCalendarStatusScope;
+type CalendarRole = 'sarpras' | 'kepala_lab' | 'laboran';
+
+interface SarprasCalendarState {
+    cursor: Date;
+    status: CalendarStatusFilter;
+    laboratoryId: number | null;
+    roomId: number | null;
+    selectedDateKey: string | null;
+}
+
+interface CalendarRoomOption {
+    id: number;
+    code: string;
+    name: string;
+    type: RoomType;
+    laboratoryId: number | null;
+}
+
+interface CalendarLaboratoryOption {
+    id: number;
+    name: string;
+}
+
+interface TendikCalendarCopy {
+    title: string;
+    helper: string;
+    densityHelper: string;
+    totalNoun: string;
+    statusAriaNoun: string;
+    roomTypeFilterAriaLabel: string;
+    loadingText: string;
+    monthEmptyText: string;
+    upcomingTitle: string;
+    upcomingLoadingText: string;
+    upcomingEmptyText: string;
+    dayEyebrow: string;
+    dayCountNoun: string;
+    dayEmptyText: string;
+    calendarErrorFallback: string;
+    upcomingErrorFallback: string;
+}
+
+const CALENDAR_STATUS_FILTERS: CalendarStatusFilter[] = [
+    'active',
+    'revision_requested',
+    'rejected',
+    'cancelled',
+    'history',
+];
+const SARPRAS_CALENDAR_DATE_ATTRIBUTE = 'data-sarpras-calendar-date';
+const SARPRAS_CALENDAR_DETAIL_ACTION: BookingCalendarItemAction = {
+    label: 'Lihat Detail',
+    dataAttribute: 'data-sarpras-calendar-detail',
+    value: (item) => item.id,
+    requiredCapability: 'view',
+};
+
+const defaultCalendarStatus = (_role: CalendarRole | null): CalendarStatusFilter => 'active';
+
+const createInitialSarprasCalendarState = (
+    role: CalendarRole | null = null,
+): SarprasCalendarState => {
+    const now = new Date();
+
+    return {
+        cursor: new Date(now.getFullYear(), now.getMonth(), 1),
+        status: defaultCalendarStatus(role),
+        laboratoryId: null,
+        roomId: null,
+        selectedDateKey: null,
+    };
+};
+
+const createResetSarprasCalendarState = (
+    role: CalendarRole | null = null,
+): SarprasCalendarState => {
+    const now = new Date();
+
+    return {
+        ...createInitialSarprasCalendarState(role),
+        selectedDateKey: formatDateKey(now),
+    };
+};
 
 let renderSequence = 0;
 let reviewerProfile: TendikReviewerProfile | null = null;
@@ -75,11 +181,41 @@ let drawerEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
 let actionEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
 // "Kelola Ruangan" tab state (management roles only).
 let activeTab: TendikTab = 'queue';
+let operationalTab: OperationalTab = 'today';
+let operationalItems: TendikOperationalOccurrence[] = [];
+let operationalLoading = false;
+let operationalLoaded = false;
+let operationalError: string | null = null;
+let sarprasCalendarState: SarprasCalendarState = createInitialSarprasCalendarState();
+let sarprasCalendarItems: TendikCalendarItem[] = [];
+let sarprasCalendarStatusCounts: Partial<Record<BookingStatus, number>> = {};
+let sarprasCalendarActiveCount = 0;
+let sarprasCalendarHistoryCount = 0;
+let sarprasCalendarUpcomingItemsState: TendikCalendarItem[] = [];
+let sarprasCalendarRoomMap = new Map<number, CalendarRoomOption>();
+let sarprasCalendarLaboratoryMap = new Map<number, CalendarLaboratoryOption>();
+let sarprasCalendarLoading = false;
+let sarprasCalendarLoaded = false;
+let sarprasCalendarError: string | null = null;
+let sarprasCalendarUpcomingLoading = false;
+let sarprasCalendarUpcomingError: string | null = null;
+let sarprasCalendarRequestSequence = 0;
+let calendarDayEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
 let managedRooms: ManagedRoom[] = [];
 let managedRoomsLoaded = false;
 let managedRoomsLoading = false;
 let managedRoomsError: string | null = null;
 const roomCoverCache = new Map<string, string>();
+// Bulk room selection — only rooms the backend says this reviewer may remove
+// (management_flags.can_deactivate) are selectable. For Sarpras that is every
+// classroom in scope; Kepala Lab / Laboran get no selectable rows at all.
+const roomSelection = new Set<number>();
+let bulkConfirmEscape: ((event: KeyboardEvent) => void) | null = null;
+
+const canBulkDelete = (room: ManagedRoom): boolean => room.management_flags?.can_deactivate === true;
+const bulkSelectableRooms = (): ManagedRoom[] => managedRooms.filter(canBulkDelete);
+const roomsAreBulkSelectable = (): boolean => bulkSelectableRooms().length > 0;
+const clearRoomSelection = (): void => { roomSelection.clear(); };
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -126,6 +262,20 @@ const canManageRooms = (): boolean =>
     reviewerRole() === 'sarpras'
     || reviewerRole() === 'kepala_lab'
     || reviewerRole() === 'laboran';
+
+const canUseCalendar = (): boolean =>
+    reviewerRole() === 'sarpras'
+    || reviewerRole() === 'kepala_lab'
+    || reviewerRole() === 'laboran';
+
+const calendarRole = (): CalendarRole | null => {
+    const role = reviewerRole();
+
+    return role === 'sarpras' || role === 'kepala_lab' || role === 'laboran' ? role : null;
+};
+
+const calendarRoomType = (): RoomType =>
+    calendarRole() === 'sarpras' ? 'classroom' : 'laboratory';
 
 /** Room types this reviewer may create (create stays with sarpras/classroom). */
 const allowedCreateTypes = (): ManagedRoomType[] =>
@@ -176,8 +326,237 @@ const errorMessage = (error: unknown, fallback: string): string => {
 const rememberRooms = (items: TendikBooking[]): void => {
     items.forEach((booking) => {
         knownRooms.set(booking.room.id, booking.room);
+        if (booking.room.type === 'laboratory' && booking.room.owning_laboratory) {
+            sarprasCalendarLaboratoryMap.set(booking.room.owning_laboratory.id, {
+                id: booking.room.owning_laboratory.id,
+                name: booking.room.owning_laboratory.name,
+            });
+        }
+        if (booking.room.type === calendarRoomType()) {
+            sarprasCalendarRoomMap.set(booking.room.id, {
+                id: booking.room.id,
+                code: booking.room.code,
+                name: booking.room.name,
+                type: booking.room.type,
+                laboratoryId: booking.room.owning_laboratory?.id ?? null,
+            });
+        }
     });
 };
+
+const rememberSarprasCalendarRooms = (items: TendikCalendarItem[]): void => {
+    items.forEach((item) => {
+        if (item.room_type === 'laboratory' && item.laboratory_id !== null && item.laboratory_name) {
+            sarprasCalendarLaboratoryMap.set(item.laboratory_id, {
+                id: item.laboratory_id,
+                name: item.laboratory_name,
+            });
+        }
+        if (item.room_type !== calendarRoomType()) return;
+        sarprasCalendarRoomMap.set(item.room_id, {
+            id: item.room_id,
+            code: item.room_code,
+            name: item.room_name,
+            type: item.room_type,
+            laboratoryId: item.laboratory_id,
+        });
+    });
+};
+
+const tendikCalendarCopy = (): TendikCalendarCopy => {
+    if (calendarRole() === 'laboran') {
+        return {
+            title: 'Jadwal Laboratorium',
+            helper: 'Pantau jadwal peminjaman laboratorium untuk membantu kesiapan ruang dan fasilitas.',
+            densityHelper: 'Kepadatan dihitung dari jumlah jadwal laboratorium sesuai filter aktif.',
+            totalNoun: 'jadwal laboratorium',
+            statusAriaNoun: 'jadwal laboratorium',
+            roomTypeFilterAriaLabel: 'Filter jenis ruangan kalender Laboran',
+            loadingText: 'Memuat jadwal laboratorium...',
+            monthEmptyText: 'Belum ada jadwal laboratorium untuk bulan dan filter ini.',
+            upcomingTitle: 'Jadwal Lab Terdekat',
+            upcomingLoadingText: 'Memuat jadwal lab terdekat...',
+            upcomingEmptyText: 'Belum ada jadwal lab terdekat untuk filter aktif.',
+            dayEyebrow: 'Jadwal Laboratorium',
+            dayCountNoun: 'jadwal laboratorium',
+            dayEmptyText: 'Belum ada jadwal laboratorium pada tanggal ini untuk filter aktif.',
+            calendarErrorFallback: 'Jadwal laboratorium gagal dimuat.',
+            upcomingErrorFallback: 'Jadwal lab terdekat gagal dimuat.',
+        };
+    }
+    if (calendarRole() === 'kepala_lab') {
+        return {
+            title: 'Kalender Peminjaman Laboratorium Saya',
+            helper: 'Pantau pengajuan laboratorium yang menjadi tanggung jawab Anda berdasarkan tanggal, status, dan ruangan.',
+            densityHelper: 'Kepadatan dihitung dari jumlah pengajuan laboratorium sesuai filter aktif.',
+            totalNoun: 'pengajuan laboratorium',
+            statusAriaNoun: 'pengajuan laboratorium',
+            roomTypeFilterAriaLabel: 'Filter jenis ruangan kalender Kepala Lab',
+            loadingText: 'Memuat kalender peminjaman laboratorium...',
+            monthEmptyText: 'Belum ada pengajuan laboratorium untuk bulan dan filter ini.',
+            upcomingTitle: 'Pengajuan Lab Terdekat',
+            upcomingLoadingText: 'Memuat pengajuan lab terdekat...',
+            upcomingEmptyText: 'Belum ada pengajuan lab terdekat untuk filter aktif.',
+            dayEyebrow: 'Peminjaman Laboratorium',
+            dayCountNoun: 'pengajuan laboratorium',
+            dayEmptyText: 'Belum ada pengajuan laboratorium pada tanggal ini untuk filter aktif.',
+            calendarErrorFallback: 'Kalender peminjaman laboratorium gagal dimuat.',
+            upcomingErrorFallback: 'Pengajuan lab terdekat gagal dimuat.',
+        };
+    }
+
+    return {
+        title: 'Kalender Review Ruang Kelas',
+        helper: 'Pantau pengajuan ruang kelas berdasarkan tanggal, status, dan ruangan untuk membantu proses review.',
+        densityHelper: 'Kepadatan dihitung dari jumlah pengajuan ruang kelas sesuai filter aktif.',
+        totalNoun: 'pengajuan ruang kelas',
+        statusAriaNoun: 'pengajuan ruang kelas',
+        roomTypeFilterAriaLabel: 'Filter jenis ruangan kalender Sarpras',
+        loadingText: 'Memuat kalender review ruang kelas...',
+        monthEmptyText: 'Belum ada pengajuan ruang kelas untuk bulan dan filter ini.',
+        upcomingTitle: 'Pengajuan Ruang Kelas Terdekat',
+        upcomingLoadingText: 'Memuat pengajuan ruang kelas terdekat...',
+        upcomingEmptyText: 'Belum ada pengajuan ruang kelas terdekat untuk filter aktif.',
+        dayEyebrow: 'Peminjaman Ruang Kelas',
+        dayCountNoun: 'pengajuan ruang kelas',
+        dayEmptyText: 'Belum ada pengajuan ruang kelas pada tanggal ini untuk filter aktif.',
+        calendarErrorFallback: 'Kalender review ruang kelas gagal dimuat.',
+        upcomingErrorFallback: 'Pengajuan ruang kelas terdekat gagal dimuat.',
+    };
+};
+
+const sarprasCalendarMonthKey = (): string => {
+    const year = sarprasCalendarState.cursor.getFullYear();
+    const month = String(sarprasCalendarState.cursor.getMonth() + 1).padStart(2, '0');
+
+    return `${year}-${month}`;
+};
+
+const sarprasCalendarScopedApiFilters = (
+    dateFilters: Pick<TendikCalendarFilters, 'month' | 'from' | 'to'>,
+): TendikCalendarFilters => ({
+    ...dateFilters,
+    status: sarprasCalendarState.status,
+    ...(calendarRole() === 'laboran' && sarprasCalendarState.laboratoryId !== null
+        ? { laboratoryId: sarprasCalendarState.laboratoryId }
+        : {}),
+    ...(sarprasCalendarState.roomId !== null ? { roomId: sarprasCalendarState.roomId } : {}),
+});
+
+const sarprasCalendarApiFilters = (): TendikCalendarFilters => sarprasCalendarScopedApiFilters({
+    month: sarprasCalendarMonthKey(),
+});
+
+const sarprasCalendarUpcomingApiFilters = (): TendikCalendarFilters => {
+    const from = new Date();
+    const to = new Date(from);
+    to.setDate(from.getDate() + 89);
+
+    return sarprasCalendarScopedApiFilters({
+        from: formatDateKey(from),
+        to: formatDateKey(to),
+    });
+};
+
+const toSarprasCalendarViewItem = (item: TendikCalendarItem): BookingCalendarViewItem => ({
+    id: item.id,
+    roomCode: item.room_code,
+    roomName: item.room_name,
+    status: item.status,
+    startAt: item.start_at,
+    endAt: item.end_at,
+    activityName: item.activity_name,
+    purpose: item.purpose,
+    requesterName: item.requester_name,
+    laboratoryName: item.laboratory_name,
+    conflictStatus: item.conflict_status,
+    hasConflict: item.has_conflict,
+    conflictLevel: item.conflict_level,
+    conflictMessage: item.conflict_message,
+    conflicts: item.conflicts,
+    capabilities: {
+        view: item.can_view,
+    },
+});
+
+const sarprasCalendarViewItems = (): BookingCalendarViewItem[] =>
+    sarprasCalendarItems.map(toSarprasCalendarViewItem);
+
+const sarprasCalendarItemsForDate = (dateKey: string): BookingCalendarViewItem[] =>
+    sarprasCalendarViewItems()
+        .filter((item) => formatIsoDateKeyInJakarta(item.startAt) === dateKey)
+        .sort((left, right) =>
+            new Date(left.startAt).getTime() - new Date(right.startAt).getTime());
+
+const sarprasCalendarUpcomingItems = (): TendikCalendarItem[] =>
+    [...sarprasCalendarUpcomingItemsState]
+        .filter((item) => new Date(item.end_at).getTime() >= Date.now())
+        .sort((left, right) =>
+            new Date(left.start_at).getTime() - new Date(right.start_at).getTime())
+        .slice(0, 5);
+
+const sarprasCalendarUpcomingViewItems = (): BookingCalendarViewItem[] =>
+    sarprasCalendarUpcomingItems().map(toSarprasCalendarViewItem);
+
+const sarprasCalendarStatusCount = (status: BookingStatus): number =>
+    Number(sarprasCalendarStatusCounts[status] ?? 0);
+
+const sarprasCalendarStatusOptions = () =>
+    CALENDAR_STATUS_FILTERS.map((value) => {
+        const copy = tendikCalendarCopy();
+        const label = value === 'active'
+            ? 'Aktif'
+            : value === 'history'
+                ? 'Selesai / Riwayat'
+                : getBookingStatusLabel(value);
+        const count = value === 'active'
+            ? sarprasCalendarActiveCount
+            : value === 'history'
+                ? sarprasCalendarHistoryCount
+                : sarprasCalendarStatusCount(value);
+
+        return {
+            value,
+            label,
+            count,
+            selected: sarprasCalendarState.status === value,
+            ariaLabel: `Filter status ${label}, ${count} ${copy.statusAriaNoun}.`,
+        };
+    });
+
+const sarprasCalendarRoomOptions = (): CalendarRoomOption[] =>
+    Array.from(sarprasCalendarRoomMap.values())
+        .filter((room) => room.type === calendarRoomType())
+        .filter((room) =>
+            calendarRole() !== 'laboran'
+            || sarprasCalendarState.laboratoryId === null
+            || room.laboratoryId === sarprasCalendarState.laboratoryId)
+        .sort((left, right) =>
+            `${left.code} ${left.name}`.localeCompare(`${right.code} ${right.name}`, 'id'));
+
+const sarprasCalendarManagedRoomOptions = () =>
+    sarprasCalendarRoomOptions().map((room) => ({
+        value: String(room.id),
+        label: `${room.code} - ${room.name}`,
+        selected: sarprasCalendarState.roomId === room.id,
+    }));
+
+const sarprasCalendarLaboratoryOptions = () =>
+    Array.from(sarprasCalendarLaboratoryMap.values())
+        .sort((left, right) => left.name.localeCompare(right.name, 'id'))
+        .map((laboratory) => ({
+            value: String(laboratory.id),
+            label: laboratory.name,
+            selected: sarprasCalendarState.laboratoryId === laboratory.id,
+        }));
+
+const renderSarprasCalendarGrid = (): string =>
+    renderBookingCalendarGridCells(
+        sarprasCalendarState.cursor,
+        sarprasCalendarState.selectedDateKey,
+        sarprasCalendarViewItems(),
+        SARPRAS_CALENDAR_DATE_ATTRIBUTE,
+    );
 
 const renderRoleNotice = (): string => {
     switch (reviewerRole()) {
@@ -359,14 +738,20 @@ const renderQueueState = (): string => {
 };
 
 const renderTabBar = (): string => {
-    if (!canManageRooms()) return '';
+    if (!canManageRooms() && !canUseCalendar()) return '';
     const tab = (id: TendikTab, label: string): string => `
         <button type="button" role="tab" data-tendik-tab="${id}" aria-selected="${activeTab === id}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === id ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">${label}</button>
     `;
+    const operationalLabel = reviewerRole() === 'kepala_lab'
+        ? 'Kondisi Operasional'
+        : 'Operasional Kunci & Pengembalian';
+    const tabs: Array<[TendikTab, string]> = [['queue', 'Pengajuan'], ['operations', operationalLabel]];
+    if (canUseCalendar()) tabs.push(['calendar', 'Kalender Peminjaman']);
+    if (canManageRooms()) tabs.push(['rooms', 'Kelola Ruangan']);
+
     return `
         <div class="flex flex-wrap gap-2" role="tablist" aria-label="Bagian Peminjaman Ruangan">
-            ${tab('queue', 'Pengajuan')}
-            ${tab('rooms', 'Kelola Ruangan')}
+            ${tabs.map(([id, label]) => tab(id, label)).join('')}
         </div>
     `;
 };
@@ -384,6 +769,86 @@ const renderQueueTab = (): string => `
         </section>
     </div>
 `;
+
+const renderSarprasCalendarTab = (): string => {
+    const copy = tendikCalendarCopy();
+
+    return renderBookingCalendarView({
+        copy: {
+            title: copy.title,
+            helper: copy.helper,
+            densityHelper: copy.densityHelper,
+            totalText: `${sarprasCalendarItems.length} ${copy.totalNoun} mengikuti filter aktif.`,
+            roomTypeFilterLabel: 'Jenis Ruangan',
+            roomTypeFilterAriaLabel: copy.roomTypeFilterAriaLabel,
+            statusFilterLabel: 'Status',
+            statusFilterAriaLabel: 'Filter status kalender Tendik',
+            laboratoryLabel: 'Laboratorium',
+            roomLabel: 'Ruangan',
+            allLaboratoriesLabel: 'Semua laboratorium',
+            allRoomsLabel: 'Semua ruangan',
+            resetLabel: 'Reset Kalender',
+            loadingText: copy.loadingText,
+            errorTitle: 'Kalender gagal dimuat',
+            retryLabel: 'Coba Lagi',
+            monthEmptyText: copy.monthEmptyText,
+        },
+        ids: {
+            previousMonthButton: 'sarpras-calendar-prev-month',
+            nextMonthButton: 'sarpras-calendar-next-month',
+            todayButton: 'sarpras-calendar-today',
+            resetButton: 'sarpras-calendar-reset',
+            monthHeading: 'sarpras-calendar-month-heading',
+            grid: 'sarpras-peminjaman-calendar-grid',
+            retryButton: 'sarpras-calendar-retry',
+            laboratorySelect: 'sarpras-calendar-laboratory',
+            roomSelect: 'sarpras-calendar-room',
+        },
+        dataAttributes: {
+            dateCell: SARPRAS_CALENDAR_DATE_ATTRIBUTE,
+            roomTypeFilter: 'data-sarpras-calendar-room-type',
+            statusFilter: 'data-sarpras-calendar-status',
+            calendarState: 'data-sarpras-calendar-state',
+            upcomingState: 'data-sarpras-calendar-upcoming-state',
+        },
+        navigation: {
+            previousMonthAriaLabel: 'Bulan sebelumnya',
+            nextMonthAriaLabel: 'Bulan berikutnya',
+            todayLabel: 'Hari Ini',
+            todayAriaLabel: 'Kembali ke bulan dan tanggal hari ini',
+        },
+        state: {
+            cursor: sarprasCalendarState.cursor,
+            selectedDateKey: sarprasCalendarState.selectedDateKey,
+            items: sarprasCalendarViewItems(),
+            loading: sarprasCalendarLoading,
+            loaded: sarprasCalendarLoaded,
+            error: sarprasCalendarError,
+        },
+        filters: {
+            roomTypeOptions: [],
+            statusOptions: sarprasCalendarStatusOptions(),
+            laboratoryOptions: sarprasCalendarLaboratoryOptions(),
+            roomOptions: sarprasCalendarManagedRoomOptions(),
+        },
+        filterVisibility: {
+            roomType: false,
+            laboratory: calendarRole() === 'laboran',
+            status: true,
+            room: true,
+        },
+        upcoming: {
+            title: copy.upcomingTitle,
+            subtitle: 'Mengikuti filter aktif, mulai hari ini.',
+            loading: sarprasCalendarUpcomingLoading,
+            error: sarprasCalendarUpcomingError,
+            loadingText: copy.upcomingLoadingText,
+            emptyText: copy.upcomingEmptyText,
+            items: sarprasCalendarUpcomingViewItems(),
+        },
+        actions: [SARPRAS_CALENDAR_DETAIL_ACTION],
+    });
+};
 
 const renderRoomsTabState = (): string => {
     if (managedRoomsLoading) {
@@ -411,8 +876,24 @@ const renderRoomsTabState = (): string => {
             </div>
         `;
     }
-    return `<div data-tendik-rooms-state="success">${renderRoomManagementTable(managedRooms)}</div>`;
+    return `<div data-tendik-rooms-state="success">${renderRoomManagementTable(managedRooms, {
+        selectable: roomsAreBulkSelectable(),
+        selectedIds: roomSelection,
+        canSelect: canBulkDelete,
+    })}</div>`;
 };
+
+// Bulk-selection toolbar (mirrors the SuperAdmin master pattern). Only rendered
+// when at least one visible room is removable; hidden until a row is selected.
+const renderRoomBulkBar = (): string => `
+    <div id="room-bulk-bar" class="hidden flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-teal-50/40 px-5 py-3">
+        <span id="room-bulk-count" class="text-sm font-semibold text-teal-800">0 ruangan dipilih</span>
+        <div class="flex items-center gap-2">
+            <button id="room-bulk-cancel" type="button" class="rounded-xl border border-gray-200 bg-white px-4 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-50">Batal</button>
+            <button id="room-bulk-delete" type="button" class="rounded-xl bg-red-500 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-600">Hapus</button>
+        </div>
+    </div>
+`;
 
 const renderRoomsTab = (): string => {
     const canCreate = allowedCreateTypes().length > 0;
@@ -431,24 +912,197 @@ const renderRoomsTab = (): string => {
                     </div>
                     ${canCreate ? '<button id="tendik-rooms-add" type="button" class="rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800">Tambah Ruang Kelas</button>' : ''}
                 </div>
+                ${roomsAreBulkSelectable() ? renderRoomBulkBar() : ''}
                 ${renderRoomsTabState()}
             </section>
         </div>
     `;
 };
 
+const operationalStatusLabel = (status: string): string => ({
+    scheduled: 'Akan digunakan', key_issued: 'Kunci telah diserahkan', in_use: 'Sedang digunakan',
+    return_due: 'Pengembalian jatuh tempo', awaiting_verification: 'Menunggu verifikasi',
+    revision_required: 'Perlu perbaikan bukti', returned_on_time: 'Selesai tepat waktu',
+    returned_late: 'Selesai terlambat', overdue: 'Terlambat', cancelled: 'Dibatalkan',
+}[status] ?? 'Status operasional');
+
+const renderOperationalTab = (): string => {
+    const tabs: Array<[OperationalTab, string]> = [
+        ['today', 'Hari Ini'], ['key_handover', 'Penyerahan Kunci'], ['returns', 'Pengembalian'],
+        ['overdue', 'Terlambat'], ['all', 'Semua'],
+    ];
+    const state = operationalLoading
+        ? '<div data-operational-state="loading" class="py-14 text-center text-sm font-semibold text-gray-600">Memuat operasional penggunaan...</div>'
+        : operationalError
+            ? `<div data-operational-state="error" role="alert" class="py-12 text-center"><p class="text-sm font-semibold text-red-700">${escapeHtml(operationalError)}</p><button id="retry-operational" type="button" class="mt-3 rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white">Coba Lagi</button></div>`
+            : operationalItems.length === 0
+                ? '<div data-operational-state="empty" class="py-14 text-center text-sm text-gray-500">Tidak ada penggunaan pada kategori ini.</div>'
+                : `<div data-operational-state="ready" class="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2">${operationalItems.map((item) => `
+                    <article class="min-w-0 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                        <div class="flex flex-wrap items-start justify-between gap-2"><div class="min-w-0"><h4 class="break-words text-sm font-bold text-gray-900">${escapeHtml(item.booking.room.code)} · ${escapeHtml(item.booking.room.name)}</h4><p class="mt-1 text-xs text-gray-500">${escapeHtml(item.booking.applicant_name ?? 'Pemohon')} · ${escapeHtml(item.booking.activity_name)}</p></div><span class="rounded-full border border-teal-100 bg-teal-50 px-2.5 py-1 text-[10px] font-bold text-teal-800">${escapeHtml(operationalStatusLabel(item.operational_status))}</span></div>
+                        <p class="mt-3 text-xs font-semibold text-gray-700">${escapeHtml(new Date(item.start_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))} – ${escapeHtml(new Date(item.end_at).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }))}</p>
+                        <p class="mt-1 text-xs text-gray-600">Tenggat pengembalian: ${escapeHtml(new Date(item.return_due_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>
+                        ${item.return ? `<p class="mt-2 text-xs text-gray-600">Bukti dikirim: ${escapeHtml(new Date(item.return.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>` : ''}
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            ${item.capabilities.can_issue_key ? `<button type="button" data-operation-issue="${escapeHtml(item.occurrence_ref)}" class="rounded-xl bg-teal-700 px-3 py-2 text-xs font-bold text-white">Serahkan Kunci</button>` : ''}
+                            ${item.capabilities.can_verify_return ? `<button type="button" data-operation-verify="${escapeHtml(item.occurrence_ref)}" class="rounded-xl bg-teal-700 px-3 py-2 text-xs font-bold text-white">Verifikasi Pengembalian</button>` : ''}
+                            ${item.return ? `<button type="button" data-operation-preview="${escapeHtml(item.occurrence_ref)}" class="rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700">Lihat Bukti</button>` : ''}
+                            ${!item.capabilities.can_issue_key && !item.capabilities.can_verify_return && item.responsible_label
+                                ? `<span data-operation-responsible class="inline-flex items-center rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-500">${escapeHtml(item.responsible_label)}</span>`
+                                : ''}
+                        </div>
+                    </article>`).join('')}</div>`;
+    const readOnly = reviewerRole() === 'kepala_lab';
+    const heading = readOnly ? 'Kondisi Operasional Lab' : 'Operasional Penggunaan dan Kunci';
+    const blurb = readOnly
+        ? 'Pantauan kunci dan pengembalian di lab Anda. Tindakan dilakukan oleh Laboran.'
+        : 'Serah terima kunci dan verifikasi pengembalian untuk ruangan dalam lingkup Anda.';
+    const notice = readOnly
+        ? `<div data-operational-readonly class="mx-5 mt-4 rounded-2xl border border-teal-100 bg-teal-50 px-5 py-4 text-sm text-teal-800"><strong>Akses baca saja.</strong> Anda memantau kunci dan pengembalian di lab Anda; tindakannya dilakukan oleh Laboran.</div>`
+        : '';
+    return `<section class="overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-sm"><div class="border-b border-gray-100 p-5"><h3 class="text-base font-bold text-gray-800">${escapeHtml(heading)}</h3><p class="mt-1 text-xs text-gray-500">${escapeHtml(blurb)}</p><div class="mt-4 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Filter operasional">${tabs.map(([id, label]) => `<button type="button" data-operational-tab="${id}" aria-pressed="${operationalTab === id}" class="shrink-0 rounded-xl px-3 py-2 text-xs font-bold ${operationalTab === id ? 'bg-teal-700 text-white' : 'border border-gray-200 text-gray-600'}">${label}</button>`).join('')}</div></div>${notice}${state}</section>`;
+};
+
+const loadOperational = async (): Promise<void> => {
+    operationalLoading = true; operationalError = null; renderMainState();
+    try {
+        operationalItems = await getTendikOperationalOccurrences(operationalTab);
+        operationalLoaded = true;
+    } catch (error) {
+        operationalError = errorMessage(error, 'Operasional penggunaan gagal dimuat.');
+    } finally {
+        operationalLoading = false; renderMainState();
+    }
+};
+
+const operationalItem = (ref: string): TendikOperationalOccurrence | undefined =>
+    operationalItems.find((item) => item.occurrence_ref === ref);
+
+const attachOperationalListeners = (): void => {
+    document.querySelectorAll<HTMLElement>('[data-operational-tab]').forEach((button) => button.addEventListener('click', () => {
+        operationalTab = button.dataset.operationalTab as OperationalTab;
+        void loadOperational();
+    }));
+    document.getElementById('retry-operational')?.addEventListener('click', () => void loadOperational());
+    document.querySelectorAll<HTMLElement>('[data-operation-issue]').forEach((button) => button.addEventListener('click', () => {
+        const item = operationalItem(button.dataset.operationIssue ?? '');
+        if (item) openOperationalAction(item, 'issue');
+    }));
+    document.querySelectorAll<HTMLElement>('[data-operation-verify]').forEach((button) => button.addEventListener('click', () => {
+        const item = operationalItem(button.dataset.operationVerify ?? '');
+        if (item) openOperationalAction(item, 'verify');
+    }));
+    document.querySelectorAll<HTMLElement>('[data-operation-preview]').forEach((button) => button.addEventListener('click', () => {
+        const item = operationalItem(button.dataset.operationPreview ?? '');
+        if (item?.return) void openOperationalEvidence(item);
+    }));
+};
+
+const openOperationalAction = (item: TendikOperationalOccurrence, mode: 'issue' | 'verify'): void => {
+    const defaultReceivedAt = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16);
+    const previousReturns = item.return_history ?? [];
+    const actionKey = generateRoomBookingIdempotencyKey();
+    let submitting = false;
+    const root = document.createElement('div');
+    root.id = 'operational-action-root';
+    root.innerHTML = `
+        <div class="fixed inset-0 z-[250] bg-black/50"></div>
+        <section role="dialog" aria-modal="true" aria-labelledby="operational-action-title" class="fixed left-1/2 top-1/2 z-[251] max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 id="operational-action-title" class="text-lg font-bold">${mode === 'issue' ? 'Serahkan Kunci' : 'Verifikasi Pengembalian'}</h2>
+            <p class="mt-2 text-xs text-gray-600">${escapeHtml(item.booking.room.code)} · ${escapeHtml(item.booking.activity_name)} · Tenggat ${escapeHtml(new Date(item.return_due_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>
+            <p id="operational-action-error" role="alert" aria-live="assertive" class="mt-2 hidden text-xs text-red-700"></p>
+            ${mode === 'verify' && item.return ? `<div class="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600"><p>Bukti dikirim ${escapeHtml(new Date(item.return.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p><button id="operational-action-preview" type="button" class="mt-2 font-bold text-teal-700">Lihat bukti pengembalian</button></div>` : ''}
+            ${mode === 'verify' && previousReturns.length > 0 ? `<div class="mt-3"><p class="text-xs font-bold text-gray-800">Riwayat bukti dan revisi</p><ol class="mt-1 space-y-1">${previousReturns.map((entry) => `<li class="text-xs text-gray-600">${escapeHtml(entry.status)} · ${escapeHtml(new Date(entry.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}${entry.decision_note ? ` · ${escapeHtml(entry.decision_note)}` : ''}</li>`).join('')}</ol></div>` : ''}
+            <form id="operational-action-form" class="mt-4 space-y-3">
+                ${mode === 'verify' ? `<label for="operational-decision" class="block text-sm font-bold">Keputusan</label><select id="operational-decision" class="w-full rounded-xl border px-3 py-2"><option value="accept">Terima</option><option value="revise">Minta Revisi</option><option value="reject">Tolak</option></select><label for="operational-received-at" class="block text-sm font-bold">Waktu fisik kunci diterima</label><input id="operational-received-at" type="datetime-local" value="${defaultReceivedAt}" class="w-full rounded-xl border px-3 py-2"><p id="operational-lateness-preview" aria-live="polite" class="text-xs font-semibold text-gray-700"></p><label for="operational-time-reason" class="block text-sm font-bold">Alasan perubahan waktu (jika bukan sekarang)</label><textarea id="operational-time-reason" class="w-full rounded-xl border px-3 py-2"></textarea>` : ''}
+                <label for="operational-note" class="block text-sm font-bold">Catatan</label><textarea id="operational-note" class="w-full rounded-xl border px-3 py-2" maxlength="2000"></textarea>
+                <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button id="operational-action-cancel" type="button" class="rounded-xl border px-4 py-2 text-sm font-bold">Batal</button><button id="operational-action-submit" type="submit" class="rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">Simpan</button></div>
+            </form>
+        </section>`;
+    document.body.appendChild(root);
+    const showFeedback = (message: string): void => {
+        const feedback = root.querySelector<HTMLElement>('#operational-action-error');
+        if (feedback) { feedback.textContent = message; feedback.classList.remove('hidden'); }
+    };
+    const updateLatenessPreview = (): void => {
+        const field = root.querySelector<HTMLInputElement>('#operational-received-at');
+        const preview = root.querySelector<HTMLElement>('#operational-lateness-preview');
+        if (!field || !preview || !field.value) return;
+        const minutes = Math.max(0, Math.ceil((new Date(`${field.value}:00+07:00`).getTime() - new Date(item.return_due_at).getTime()) / 60_000));
+        preview.textContent = minutes > 0 ? `Terlambat ${minutes} menit` : 'Tepat waktu berdasarkan waktu fisik kunci diterima';
+    };
+    updateLatenessPreview();
+    root.querySelector('#operational-received-at')?.addEventListener('change', updateLatenessPreview);
+    root.querySelector('#operational-action-preview')?.addEventListener('click', () => void openOperationalEvidence(item));
+    root.querySelector('#operational-action-cancel')?.addEventListener('click', () => root.remove());
+    root.querySelector('#operational-action-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (submitting) return;
+        const note = (root.querySelector('#operational-note') as HTMLTextAreaElement).value;
+        const decision = mode === 'verify'
+            ? (root.querySelector('#operational-decision') as HTMLSelectElement).value as 'accept' | 'revise' | 'reject'
+            : null;
+        const local = mode === 'verify' ? (root.querySelector('#operational-received-at') as HTMLInputElement).value : '';
+        const receivedTimeReason = mode === 'verify' ? (root.querySelector('#operational-time-reason') as HTMLTextAreaElement).value : '';
+        if (decision && decision !== 'accept' && note.trim() === '') {
+            showFeedback('Catatan keputusan wajib diisi untuk revisi atau penolakan.');
+            return;
+        }
+        if (decision === 'accept' && local && Math.abs(new Date(`${local}:00+07:00`).getTime() - Date.now()) > 60_000 && receivedTimeReason.trim() === '') {
+            showFeedback('Alasan perubahan waktu penerimaan kunci wajib diisi.');
+            return;
+        }
+        submitting = true;
+        const submitButton = root.querySelector<HTMLButtonElement>('#operational-action-submit');
+        if (submitButton) submitButton.disabled = true;
+        try {
+            if (mode === 'issue') await issueRoomKey(item, note, actionKey);
+            else if (decision) {
+                await decideRoomReturn(item, decision, {
+                    note,
+                    keyReceivedAt: local ? `${local}:00+07:00` : undefined,
+                    receivedTimeReason,
+                }, actionKey);
+            }
+            root.remove(); await loadOperational();
+        } catch (error) {
+            showFeedback(errorMessage(error, 'Tindakan gagal disimpan.'));
+            submitting = false;
+            if (submitButton) submitButton.disabled = false;
+        }
+    });
+};
+
+const openOperationalEvidence = async (item: TendikOperationalOccurrence): Promise<void> => {
+    if (!item.return) return;
+    const root = document.createElement('div'); root.id = 'operational-evidence-root';
+    root.className = 'fixed inset-0 z-[260] flex items-center justify-center bg-black/70 p-4';
+    root.innerHTML = '<div class="rounded-xl bg-white p-6">Memuat bukti...</div>'; document.body.appendChild(root);
+    try {
+        const url = await fetchReturnEvidenceObjectUrl(item.return.evidence.preview_url);
+        root.innerHTML = `<div class="max-h-full max-w-3xl overflow-auto rounded-xl bg-white p-3"><button id="close-operational-evidence" type="button" class="mb-2 rounded-lg border px-3 py-1 text-sm">Tutup</button><img src="${url}" alt="Bukti pengembalian ${escapeHtml(item.booking.room.name)}" class="max-h-[80vh] object-contain"></div>`;
+        root.querySelector('#close-operational-evidence')?.addEventListener('click', () => { URL.revokeObjectURL(url); root.remove(); });
+    } catch (error) { root.innerHTML = `<div role="alert" class="rounded-xl bg-white p-6 text-red-700">${errorMessage(error, 'Bukti gagal dimuat.')}</div>`; }
+};
+
 const renderMainState = (): void => {
     const root = document.getElementById('tendik-peminjaman-page-state');
     if (!root) return;
+    if (activeTab === 'calendar' && !canUseCalendar()) activeTab = 'queue';
+    if (activeTab === 'rooms' && !canManageRooms()) activeTab = 'queue';
+    const showCalendar = canUseCalendar() && activeTab === 'calendar';
     const showRooms = canManageRooms() && activeTab === 'rooms';
+    const showOperations = activeTab === 'operations';
     root.innerHTML = `
         <div class="space-y-5">
             ${renderTabBar()}
-            ${showRooms ? renderRoomsTab() : renderQueueTab()}
+            ${showCalendar ? renderSarprasCalendarTab() : showRooms ? renderRoomsTab() : showOperations ? renderOperationalTab() : renderQueueTab()}
         </div>
     `;
     attachTabListeners();
-    if (showRooms) attachRoomsListeners();
+    if (showCalendar) attachSarprasCalendarListeners();
+    else if (showRooms) attachRoomsListeners();
+    else if (showOperations) attachOperationalListeners();
     else attachMainListeners();
 };
 
@@ -458,10 +1112,239 @@ const attachTabListeners = (): void => {
             const tab = button.dataset.tendikTab as TendikTab;
             if (tab === activeTab) return;
             activeTab = tab;
+            clearRoomSelection();
             renderMainState();
+            if (tab === 'calendar' && !sarprasCalendarLoaded) void loadSarprasCalendar();
             if (tab === 'rooms' && !managedRoomsLoaded) void loadManagedRooms();
+            if (tab === 'operations' && !operationalLoaded) void loadOperational();
         });
     });
+};
+
+const reloadSarprasCalendarForFilterChange = (): void => {
+    sarprasCalendarState.selectedDateKey = null;
+    closeSarprasCalendarDayDrawer();
+    void loadSarprasCalendar();
+};
+
+const focusSarprasCalendarDateButton = (dateKey: string): void => {
+    document.querySelector<HTMLElement>(`[${SARPRAS_CALENDAR_DATE_ATTRIBUTE}="${dateKey}"]`)?.focus();
+};
+
+const moveSarprasCalendarFocus = (dateKey: string, key: string): void => {
+    const targetDateKey = getCalendarKeyboardTargetDateKey(dateKey, key);
+    if (!targetDateKey) return;
+
+    const [targetYear, targetMonth] = targetDateKey.split('-').map(Number);
+    if (!targetYear || !targetMonth) return;
+
+    const monthChanged = targetYear !== sarprasCalendarState.cursor.getFullYear()
+        || targetMonth - 1 !== sarprasCalendarState.cursor.getMonth();
+
+    if (!monthChanged) {
+        focusSarprasCalendarDateButton(targetDateKey);
+        return;
+    }
+
+    sarprasCalendarState.cursor = new Date(targetYear, targetMonth - 1, 1);
+    sarprasCalendarState.selectedDateKey = null;
+    closeSarprasCalendarDayDrawer();
+    void loadSarprasCalendar().then(() => focusSarprasCalendarDateButton(targetDateKey));
+};
+
+const selectSarprasCalendarDate = (dateKey: string): void => {
+    sarprasCalendarState.selectedDateKey = dateKey;
+    const grid = document.getElementById('sarpras-peminjaman-calendar-grid');
+    if (grid) grid.innerHTML = renderSarprasCalendarGrid();
+    openSarprasCalendarDayDrawer(dateKey);
+};
+
+const closeSarprasCalendarDayDrawer = (refreshGrid = false): void => {
+    document.getElementById('sarpras-calendar-day-drawer-root')?.remove();
+    if (calendarDayEscapeHandler) {
+        document.removeEventListener('keydown', calendarDayEscapeHandler);
+        calendarDayEscapeHandler = null;
+    }
+    if (refreshGrid) {
+        sarprasCalendarState.selectedDateKey = null;
+        const grid = document.getElementById('sarpras-peminjaman-calendar-grid');
+        if (grid) grid.innerHTML = renderSarprasCalendarGrid();
+    }
+};
+
+const attachSarprasCalendarDetailButtons = (root: ParentNode = document): void => {
+    root.querySelectorAll<HTMLElement>('[data-sarpras-calendar-detail]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const id = Number(button.dataset.sarprasCalendarDetail);
+            if (!Number.isInteger(id) || id <= 0) return;
+            closeSarprasCalendarDayDrawer();
+            void openDetail(id);
+        });
+    });
+};
+
+const openSarprasCalendarDayDrawer = (dateKey: string): void => {
+    closeSarprasCalendarDayDrawer();
+    const items = sarprasCalendarItemsForDate(dateKey);
+    const copy = tendikCalendarCopy();
+    const root = document.createElement('div');
+    root.id = 'sarpras-calendar-day-drawer-root';
+    root.innerHTML = renderBookingCalendarSelectedDatePanel({
+        dateKey,
+        items,
+        titleEyebrow: copy.dayEyebrow,
+        titleId: 'sarpras-calendar-day-title',
+        closeButtonId: 'close-sarpras-calendar-day',
+        closeButtonLabel: 'Tutup detail tanggal',
+        overlayDataAttribute: 'data-sarpras-calendar-day-overlay',
+        countText: sarprasCalendarState.status === 'active'
+            ? `${items.length} ${copy.dayCountNoun} aktif pada tanggal ini.`
+            : `${items.length} ${copy.dayCountNoun} pada tanggal ini mengikuti filter terpilih.`,
+        emptyText: copy.dayEmptyText,
+        actions: [SARPRAS_CALENDAR_DETAIL_ACTION],
+    });
+    document.body.appendChild(root);
+
+    const close = (): void => closeSarprasCalendarDayDrawer(true);
+    root.querySelector('[data-sarpras-calendar-day-overlay]')?.addEventListener('click', close);
+    root.querySelector('#close-sarpras-calendar-day')?.addEventListener('click', close);
+    attachSarprasCalendarDetailButtons(root);
+    calendarDayEscapeHandler = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') close();
+    };
+    document.addEventListener('keydown', calendarDayEscapeHandler);
+    root.querySelector<HTMLButtonElement>('#close-sarpras-calendar-day')?.focus();
+};
+
+const attachSarprasCalendarListeners = (): void => {
+    document.querySelectorAll<HTMLElement>('[data-sarpras-calendar-status]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const value = button.dataset.sarprasCalendarStatus as CalendarStatusFilter | undefined;
+            if (!value || sarprasCalendarState.status === value) return;
+            sarprasCalendarState.status = value;
+            reloadSarprasCalendarForFilterChange();
+        });
+    });
+    document.getElementById('sarpras-calendar-room')?.addEventListener('change', () => {
+        const value = (document.getElementById('sarpras-calendar-room') as HTMLSelectElement | null)?.value ?? '';
+        sarprasCalendarState.roomId = value ? Number(value) : null;
+        reloadSarprasCalendarForFilterChange();
+    });
+    document.getElementById('sarpras-calendar-laboratory')?.addEventListener('change', () => {
+        const value = (document.getElementById('sarpras-calendar-laboratory') as HTMLSelectElement | null)?.value ?? '';
+        sarprasCalendarState.laboratoryId = value ? Number(value) : null;
+        if (
+            sarprasCalendarState.roomId !== null
+            && !sarprasCalendarRoomOptions().some((room) => room.id === sarprasCalendarState.roomId)
+        ) {
+            sarprasCalendarState.roomId = null;
+        }
+        reloadSarprasCalendarForFilterChange();
+    });
+    document.getElementById('sarpras-calendar-reset')?.addEventListener('click', () => {
+        sarprasCalendarState = createResetSarprasCalendarState(calendarRole());
+        closeSarprasCalendarDayDrawer();
+        void loadSarprasCalendar();
+    });
+    document.getElementById('sarpras-calendar-prev-month')?.addEventListener('click', () => {
+        sarprasCalendarState.cursor = new Date(
+            sarprasCalendarState.cursor.getFullYear(),
+            sarprasCalendarState.cursor.getMonth() - 1,
+            1,
+        );
+        reloadSarprasCalendarForFilterChange();
+    });
+    document.getElementById('sarpras-calendar-next-month')?.addEventListener('click', () => {
+        sarprasCalendarState.cursor = new Date(
+            sarprasCalendarState.cursor.getFullYear(),
+            sarprasCalendarState.cursor.getMonth() + 1,
+            1,
+        );
+        reloadSarprasCalendarForFilterChange();
+    });
+    document.getElementById('sarpras-calendar-today')?.addEventListener('click', () => {
+        const now = new Date();
+        sarprasCalendarState.cursor = new Date(now.getFullYear(), now.getMonth(), 1);
+        sarprasCalendarState.selectedDateKey = formatDateKey(now);
+        closeSarprasCalendarDayDrawer();
+        void loadSarprasCalendar();
+    });
+    document.getElementById('sarpras-peminjaman-calendar-grid')?.addEventListener('click', (event) => {
+        const target = (event.target as HTMLElement).closest<HTMLElement>(`[${SARPRAS_CALENDAR_DATE_ATTRIBUTE}]`);
+        const dateKey = target?.getAttribute(SARPRAS_CALENDAR_DATE_ATTRIBUTE);
+        if (!dateKey) return;
+        selectSarprasCalendarDate(dateKey);
+    });
+    document.getElementById('sarpras-peminjaman-calendar-grid')?.addEventListener('keydown', (event) => {
+        const target = (event.target as HTMLElement).closest<HTMLElement>(`[${SARPRAS_CALENDAR_DATE_ATTRIBUTE}]`);
+        const dateKey = target?.getAttribute(SARPRAS_CALENDAR_DATE_ATTRIBUTE);
+        if (!dateKey) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectSarprasCalendarDate(dateKey);
+            return;
+        }
+        if (!getCalendarKeyboardTargetDateKey(dateKey, event.key)) return;
+        event.preventDefault();
+        moveSarprasCalendarFocus(dateKey, event.key);
+    });
+    document.getElementById('sarpras-calendar-retry')?.addEventListener('click', () => {
+        void loadSarprasCalendar();
+    });
+    attachSarprasCalendarDetailButtons();
+};
+
+const loadSarprasCalendar = async (): Promise<void> => {
+    const sequence = ++sarprasCalendarRequestSequence;
+    const copy = tendikCalendarCopy();
+    sarprasCalendarLoading = true;
+    sarprasCalendarUpcomingLoading = true;
+    sarprasCalendarError = null;
+    sarprasCalendarUpcomingError = null;
+    renderMainState();
+
+    const [monthResult, upcomingResult] = await Promise.allSettled([
+        getTendikBookingCalendar(sarprasCalendarApiFilters()),
+        getTendikBookingCalendar(sarprasCalendarUpcomingApiFilters()),
+    ]);
+
+    if (sequence !== sarprasCalendarRequestSequence) return;
+
+    if (monthResult.status === 'fulfilled') {
+        sarprasCalendarItems = monthResult.value.items;
+        sarprasCalendarStatusCounts = monthResult.value.summary.counts_by_status ?? {};
+        sarprasCalendarActiveCount = Number(monthResult.value.summary.active_total ?? 0);
+        sarprasCalendarHistoryCount = Number(monthResult.value.summary.history_total ?? 0);
+        rememberSarprasCalendarRooms(monthResult.value.items);
+        sarprasCalendarError = null;
+    } else {
+        sarprasCalendarItems = [];
+        sarprasCalendarStatusCounts = {};
+        sarprasCalendarActiveCount = 0;
+        sarprasCalendarHistoryCount = 0;
+        sarprasCalendarError = errorMessage(monthResult.reason, copy.calendarErrorFallback);
+    }
+
+    if (upcomingResult.status === 'fulfilled') {
+        sarprasCalendarUpcomingItemsState = upcomingResult.value.items;
+        rememberSarprasCalendarRooms(upcomingResult.value.items);
+        sarprasCalendarUpcomingError = null;
+    } else {
+        sarprasCalendarUpcomingItemsState = [];
+        sarprasCalendarUpcomingError = errorMessage(upcomingResult.reason, copy.upcomingErrorFallback);
+    }
+
+    if (
+        sarprasCalendarState.roomId !== null
+        && !sarprasCalendarRoomOptions().some((room) => room.id === sarprasCalendarState.roomId)
+    ) {
+        sarprasCalendarState.roomId = null;
+    }
+
+    sarprasCalendarLoaded = true;
+    sarprasCalendarLoading = false;
+    sarprasCalendarUpcomingLoading = false;
+    renderMainState();
 };
 
 const attachRoomsListeners = (): void => {
@@ -486,11 +1369,111 @@ const attachRoomsListeners = (): void => {
         attachRoomTableListeners(tableRoot, (id) => {
             void openRoomManagementDrawer(id, roomDrawerOptions());
         });
+        attachRoomSelectionListeners(tableRoot, {
+            onToggleRow: (id, checked) => {
+                if (checked) roomSelection.add(id);
+                else roomSelection.delete(id);
+                updateRoomBulkBar();
+            },
+            onToggleAll: (checked) => {
+                bulkSelectableRooms().forEach((room) => {
+                    if (checked) roomSelection.add(room.id);
+                    else roomSelection.delete(room.id);
+                });
+                document.querySelectorAll<HTMLInputElement>('.room-checkbox')
+                    .forEach((checkbox) => { checkbox.checked = checked; });
+                updateRoomBulkBar();
+            },
+        });
         hydrateRoomTableCovers(tableRoot, roomCoverCache, () => activeTab === 'rooms');
+    }
+
+    document.getElementById('room-bulk-cancel')?.addEventListener('click', () => {
+        roomSelection.clear();
+        document.querySelectorAll<HTMLInputElement>('.room-checkbox').forEach((checkbox) => { checkbox.checked = false; });
+        updateRoomBulkBar();
+    });
+    document.getElementById('room-bulk-delete')?.addEventListener('click', () => openRoomBulkConfirm());
+    updateRoomBulkBar();
+};
+
+/** Show/hide the bulk bar and sync the select-all header from roomSelection. */
+const updateRoomBulkBar = (): void => {
+    const bar = document.getElementById('room-bulk-bar');
+    if (!bar) return;
+    const count = roomSelection.size;
+    if (count > 0) {
+        bar.classList.remove('hidden');
+        const label = document.getElementById('room-bulk-count');
+        if (label) label.textContent = `${count} ruangan dipilih`;
+    } else {
+        bar.classList.add('hidden');
+    }
+    const selectAll = document.querySelector<HTMLInputElement>('[data-room-select-all]');
+    if (selectAll) {
+        const ids = bulkSelectableRooms().map((room) => room.id);
+        selectAll.checked = ids.length > 0 && ids.every((id) => roomSelection.has(id));
+    }
+};
+
+const openRoomBulkConfirm = (): void => {
+    const count = roomSelection.size;
+    if (count === 0) return;
+    document.getElementById('room-bulk-confirm-root')?.remove();
+
+    const root = document.createElement('div');
+    root.id = 'room-bulk-confirm-root';
+    root.innerHTML = `
+        <div data-room-bulk-overlay class="fixed inset-0 z-[240] bg-black/50"></div>
+        <section role="alertdialog" aria-modal="true" aria-labelledby="room-bulk-confirm-title" class="fixed left-1/2 top-1/2 z-[241] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 id="room-bulk-confirm-title" class="text-lg font-bold text-gray-900">Hapus Ruangan Terpilih?</h2>
+            <p class="mt-3 text-sm text-gray-600">Anda akan menghapus <strong>${count}</strong> ruangan terpilih. Foto dan data fasilitas ruangan akan ikut terhapus. Ruangan yang memiliki riwayat peminjaman <strong>tidak dihapus permanen</strong> — ruangan tersebut diarsipkan (dinonaktifkan) agar tidak muncul di katalog, sementara data peminjaman tetap tersimpan. Tindakan ini tidak dapat dibatalkan.</p>
+            <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button id="room-bulk-confirm-cancel" type="button" class="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-50">Batal</button>
+                <button id="room-bulk-confirm-ok" type="button" class="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-red-700">Hapus</button>
+            </div>
+        </section>
+    `;
+    document.body.appendChild(root);
+
+    const close = (): void => {
+        root.remove();
+        if (bulkConfirmEscape) { document.removeEventListener('keydown', bulkConfirmEscape); bulkConfirmEscape = null; }
+    };
+    bulkConfirmEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    document.addEventListener('keydown', bulkConfirmEscape);
+    root.querySelector('[data-room-bulk-overlay]')?.addEventListener('click', close);
+    root.querySelector('#room-bulk-confirm-cancel')?.addEventListener('click', close);
+    root.querySelector('#room-bulk-confirm-ok')?.addEventListener('click', () => { close(); void performBulkDelete(); });
+    root.querySelector<HTMLButtonElement>('#room-bulk-confirm-ok')?.focus();
+};
+
+const performBulkDelete = async (): Promise<void> => {
+    const ids = [...roomSelection];
+    if (ids.length === 0) return;
+    try {
+        const result = await bulkDeleteRooms(ids);
+        const { deleted, archived } = result.summary;
+        const message = deleted > 0 && archived > 0
+            ? `${deleted} ruangan dihapus, ${archived} diarsipkan (memiliki riwayat peminjaman).`
+            : archived > 0
+                ? `${archived} ruangan diarsipkan karena memiliki riwayat peminjaman.`
+                : `${deleted} ruangan berhasil dihapus.`;
+        showToast(message, true);
+        roomSelection.clear();
+        // A deleted/archived room's detail drawer must not linger.
+        closeRoomManagementDrawer();
+        await loadManagedRooms();
+    } catch (error) {
+        // Keep the selection so the user can see the failed rows and retry.
+        showToast(errorMessage(error, 'Gagal menghapus ruangan.'), false);
     }
 };
 
 const loadManagedRooms = async (): Promise<void> => {
+    // A reload (retry / post-create / post-delete) drops the selection so we
+    // never act on rows that are no longer visible.
+    clearRoomSelection();
     managedRoomsLoading = true;
     managedRoomsError = null;
     if (activeTab === 'rooms') renderMainState();
@@ -601,6 +1584,28 @@ const renderActionButtons = (booking: TendikBooking): string => {
     `;
 };
 
+const renderConflictNotice = (booking: TendikBooking): string => {
+    if (booking.conflict_status === 'approved_overlap') {
+        const count = booking.conflicts?.length ?? 0;
+        const countText = count > 0 ? ` ${count} jadwal bentrok terdeteksi.` : '';
+
+        return `
+            <p role="status" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">Pengajuan ini bentrok dengan peminjaman yang sudah disetujui. Persetujuan tetap dicegah oleh sistem sampai konflik diselesaikan.${escapeHtml(countText)}</p>
+        `;
+    }
+
+    if (booking.conflict_status === 'pending_overlap') {
+        const count = booking.conflicts?.length ?? 0;
+        const countText = count > 0 ? ` ${count} pengajuan lain terdeteksi.` : '';
+
+        return `
+            <p role="status" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Ada pengajuan lain pada ruang dan waktu yang sama. Periksa detail sebelum mengambil keputusan.${escapeHtml(countText)}</p>
+        `;
+    }
+
+    return '';
+};
+
 const renderDetailDrawer = (
     booking: TendikBooking | null,
     loading: boolean,
@@ -636,6 +1641,7 @@ const renderDetailDrawer = (
                             <span class="inline-flex rounded-full border px-3 py-1 text-xs font-bold ${getBookingStatusTone(booking.status)}">${escapeHtml(getBookingStatusLabel(booking.status))}</span>
                             <span class="text-xs font-semibold text-gray-500">${escapeHtml(getRoomTypeLabel(booking.room.type))}</span>
                         </div>
+                        ${renderConflictNotice(booking)}
                         <section>
                             <h3 class="text-sm font-bold text-gray-800">Informasi Pengajuan</h3>
                             <dl class="mt-2">${renderDetailRows(booking)}</dl>
@@ -905,6 +1911,7 @@ const refreshAfterAction = async (bookingId: number): Promise<void> => {
     }
     queueLoading = false;
     renderMainState();
+    if (sarprasCalendarLoaded) void loadSarprasCalendar();
     if (detailResult.status === 'fulfilled') {
         renderDetailDrawer(detailResult.value, false, null);
     } else {
@@ -954,7 +1961,10 @@ const attachMainListeners = (): void => {
     });
 };
 
-export const renderPeminjamanRuanganTendik = async (role = 'tendik'): Promise<void> => {
+export const renderPeminjamanRuanganTendik = async (
+    role = 'tendik',
+    initialTab?: 'queue' | 'operations',
+): Promise<void> => {
     const sequence = ++renderSequence;
     reviewerProfile = null;
     queue = [];
@@ -971,13 +1981,37 @@ export const renderPeminjamanRuanganTendik = async (role = 'tendik'): Promise<vo
     filterError = null;
     knownRooms = new Map();
     actionDeniedBookingIds = new Set();
-    activeTab = 'queue';
+    // Default landing is the review queue; a notification deep-link may request
+    // the operations tab (key/return workbench) instead.
+    activeTab = initialTab === 'operations' ? 'operations' : 'queue';
+    operationalTab = 'today';
+    operationalItems = [];
+    operationalLoading = false;
+    operationalLoaded = false;
+    operationalError = null;
+    sarprasCalendarState = createInitialSarprasCalendarState();
+    sarprasCalendarItems = [];
+    sarprasCalendarStatusCounts = {};
+    sarprasCalendarActiveCount = 0;
+    sarprasCalendarHistoryCount = 0;
+    sarprasCalendarUpcomingItemsState = [];
+    sarprasCalendarRoomMap = new Map();
+    sarprasCalendarLaboratoryMap = new Map();
+    sarprasCalendarLoading = false;
+    sarprasCalendarLoaded = false;
+    sarprasCalendarError = null;
+    sarprasCalendarUpcomingLoading = false;
+    sarprasCalendarUpcomingError = null;
+    sarprasCalendarRequestSequence = 0;
     managedRooms = [];
     managedRoomsLoaded = false;
     managedRoomsLoading = false;
     managedRoomsError = null;
     roomCoverCache.forEach((url) => URL.revokeObjectURL(url));
     roomCoverCache.clear();
+    clearRoomSelection();
+    document.getElementById('room-bulk-confirm-root')?.remove();
+    closeSarprasCalendarDayDrawer();
     closeActionDialog();
     closeDrawer();
     closeRoomManagementDrawer();
@@ -1000,6 +2034,7 @@ export const renderPeminjamanRuanganTendik = async (role = 'tendik'): Promise<vo
     reviewerProfile = profileResult.status === 'fulfilled'
         ? profileResult.value
         : null;
+    sarprasCalendarState = createInitialSarprasCalendarState(calendarRole());
     if (queueResult.status === 'fulfilled') {
         queue = queueResult.value.data;
         pagination = queueResult.value.meta;

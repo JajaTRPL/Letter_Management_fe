@@ -7,15 +7,101 @@ import { getGreetingName } from '../utils/nameHelper';
 import Toastify from 'toastify-js';
 import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
 import { clearAllAuthenticationState } from '../login/password-rotation-state';
+import { fetchUnreadCount } from '../shared/notifications-api';
+
+/**
+ * Populate the bell's unread badge from the C7N1 backbone. Best-effort and
+ * failure-isolated: any error (network, auth, malformed body) leaves the badge
+ * hidden and never disrupts the dashboard chrome.
+ */
+const refreshNotificationBadge = async (): Promise<void> => {
+    const badge = document.getElementById('notif-badge');
+    if (!badge) return;
+    try {
+        const unread = await fetchUnreadCount();
+        if (unread > 0) {
+            badge.textContent = unread > 99 ? '99+' : String(unread);
+            badge.classList.remove('hidden');
+            badge.classList.add('flex');
+            badge.setAttribute('aria-label', `${unread} notifikasi belum dibaca`);
+        } else {
+            badge.textContent = '';
+            badge.classList.add('hidden');
+            badge.classList.remove('flex');
+            badge.removeAttribute('aria-label');
+        }
+    } catch {
+        // Silent: the bell still works; only the count is unavailable.
+    }
+};
 
 let dashboardLayoutAvatarObjectUrl: string | null = null;
 let dashboardLayoutDrawerCleanup: (() => void) | null = null;
+let dashboardLayoutUserMenuCleanup: (() => void) | null = null;
 
 const isNarrowDashboardViewport = (): boolean => window.innerWidth < 1024;
 
 export const cleanupDashboardLayout = (): void => {
     dashboardLayoutDrawerCleanup?.();
     dashboardLayoutDrawerCleanup = null;
+    dashboardLayoutUserMenuCleanup?.();
+    dashboardLayoutUserMenuCleanup = null;
+};
+
+/**
+ * Account menu: hover remains a visual shortcut (group-hover classes), but the
+ * controlled open state below is what makes it operable by keyboard — the
+ * trigger is a real button (Enter/Space fire click natively), Escape closes
+ * and returns focus, and clicking outside or choosing an item closes it.
+ */
+const attachDashboardUserMenu = (): (() => void) => {
+    const trigger = document.getElementById('user-menu-trigger');
+    const menu = document.getElementById('user-menu');
+    if (!trigger || !menu) return () => undefined;
+
+    let isOpen = false;
+
+    const syncMenu = (): void => {
+        menu.classList.toggle('opacity-100', isOpen);
+        menu.classList.toggle('visible', isOpen);
+        menu.classList.toggle('opacity-0', !isOpen);
+        menu.classList.toggle('invisible', !isOpen);
+        trigger.setAttribute('aria-expanded', String(isOpen));
+    };
+    const closeMenu = (restoreFocus = false): void => {
+        if (!isOpen) return;
+        isOpen = false;
+        syncMenu();
+        if (restoreFocus) trigger.focus();
+    };
+    const onTriggerClick = (): void => {
+        isOpen = !isOpen;
+        syncMenu();
+    };
+    const onDocumentClick = (event: MouseEvent): void => {
+        if (!isOpen) return;
+        const target = event.target as Node | null;
+        if (target && (trigger.contains(target) || menu.contains(target))) return;
+        closeMenu();
+    };
+    const onKeydown = (event: KeyboardEvent): void => {
+        if (event.key === 'Escape' && isOpen) closeMenu(true);
+    };
+    const menuItems = Array.from(menu.querySelectorAll<HTMLElement>('a, button'));
+    const onItemClick = (): void => closeMenu();
+
+    trigger.addEventListener('click', onTriggerClick);
+    document.addEventListener('click', onDocumentClick);
+    document.addEventListener('keydown', onKeydown);
+    menuItems.forEach((item) => item.addEventListener('click', onItemClick));
+    syncMenu();
+
+    return (): void => {
+        trigger.removeEventListener('click', onTriggerClick);
+        document.removeEventListener('click', onDocumentClick);
+        document.removeEventListener('keydown', onKeydown);
+        menuItems.forEach((item) => item.removeEventListener('click', onItemClick));
+    };
 };
 
 const attachDashboardSidebarDrawer = (): (() => void) => {
@@ -126,15 +212,16 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                         </div>
                         
                         <div class="flex items-center gap-6">
-                            <button id="notif-btn" class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                            <button id="notif-btn" type="button" aria-label="Notifikasi" class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-200 rounded-lg">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
                                     <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
                                 </svg>
+                                <span id="notif-badge" role="status" aria-live="polite" class="absolute -right-0.5 -top-0.5 hidden min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-[18px] text-white"></span>
                             </button>
                             
                             <div class="relative group">
-                                <div class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                                <button id="user-menu-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu" class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-teal/60">
                                     <div class="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden text-teal-700 font-bold shrink-0">
                                         <img id="header-user-avatar" src="/ugm-logo.png" alt="Profile" class="w-8 h-8 object-contain">
                                     </div>
@@ -142,10 +229,10 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                                         <p class="text-sm font-semibold text-gray-900 leading-none">${getGreetingName(localStorage.getItem('auth_name'))}</p>
                                         <p class="text-[10px] text-gray-500 font-medium uppercase mt-1 tracking-wider">${role.replace('_', ' ')}</p>
                                     </div>
-                                </div>
-                                
-                                <div class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                                    <a href="#/profile" id="profile-btn" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-teal-600 transition-colors">
+                                </button>
+
+                                <div id="user-menu" role="menu" aria-label="Menu akun" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                                    <a href="#/profile" id="profile-btn" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-teal-600 transition-colors">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                                             <circle cx="12" cy="7" r="4"></circle>
@@ -153,7 +240,7 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                                         Profil
                                     </a>
                                     <div class="h-px bg-gray-100 my-1"></div>
-                                    <button id="logout-btn" class="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                                    <button id="logout-btn" type="button" role="menuitem" class="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                                             <polyline points="16 17 21 12 16 7"></polyline>
@@ -179,6 +266,7 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
     `;
 
     dashboardLayoutDrawerCleanup = attachDashboardSidebarDrawer();
+    dashboardLayoutUserMenuCleanup = attachDashboardUserMenu();
 
     // Async-load the header avatar from the auth-protected storage endpoint.
     // The img always renders the default logo first; if a real photo exists
@@ -259,6 +347,11 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         });
     });
 
+    // Live unread badge on the bell — reads the C7N1 backbone via the shared
+    // client. Best-effort: a failed count silently leaves the badge hidden and
+    // never blocks the dashboard from rendering.
+    void refreshNotificationBadge();
+
     document.getElementById('sidebar-users-link')?.addEventListener('click', (e) => {
         e.preventDefault();
         if (role === 'super_admin') {
@@ -274,6 +367,14 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         (window as any).clearDashboardInterval?.();
         import('../superadmin/LetterMonitoring').then(({ renderLetterMonitoring }) => {
             renderLetterMonitoring();
+        });
+    });
+
+    document.getElementById('sidebar-review-performance-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        (window as any).clearDashboardInterval?.();
+        import('../superadmin/ReviewPerformance').then(({ renderReviewPerformance }) => {
+            renderReviewPerformance();
         });
     });
 

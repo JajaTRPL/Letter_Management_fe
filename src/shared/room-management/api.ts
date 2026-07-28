@@ -4,12 +4,14 @@ import { normalizeRoom, normalizeRoomDetail } from './utils';
 import type {
     FacilitySyncEntry,
     FacilityTypeOption,
+    FacilityUsage,
     ManagedRoom,
     ManagedRoomDetail,
     ManagedRoomFacility,
     ManagedRoomPhoto,
     ManagedRoomTemplate,
     RoomAuditEntry,
+    RoomFacilitySyncResult,
     RoomInfoPayload,
 } from './types';
 
@@ -68,6 +70,25 @@ export async function getManagedRoom(roomId: number): Promise<ManagedRoomDetail>
     return normalizeRoomDetail(
         (await readJson<Envelope<ManagedRoomDetail>>(response, 'Gagal memuat detail ruangan.')).data,
     );
+}
+
+export interface RoomBulkDeleteResult {
+    deleted: { id: number; code: string }[];
+    archived: { id: number; code: string; reason: string }[];
+    summary: { deleted: number; archived: number; total: number };
+}
+
+/**
+ * Bulk remove selected rooms. The backend hard-deletes rooms with no booking
+ * history and archives (deactivates) rooms that have bookings, preserving
+ * historical data + FK integrity. Returns a per-outcome summary.
+ */
+export async function bulkDeleteRooms(roomIds: number[]): Promise<RoomBulkDeleteResult> {
+    const response = await apiFetch(`${BASE}/rooms/bulk`, {
+        method: 'DELETE',
+        body: JSON.stringify({ room_ids: roomIds }),
+    });
+    return (await readJson<Envelope<RoomBulkDeleteResult>>(response, 'Gagal menghapus ruangan.')).data;
 }
 
 export async function createManagedRoom(payload: RoomInfoPayload): Promise<ManagedRoom> {
@@ -150,8 +171,12 @@ export async function fetchRoomPhotoObjectUrl(mediaUrl: string): Promise<string>
 
 // ─────────────────────────── facilities ───────────────────────────
 
-export async function listFacilityTypes(): Promise<FacilityTypeOption[]> {
-    const response = await apiFetch(`${BASE}/facility-types`);
+/**
+ * Facility types. `activeOnly` (room-assignment dropdown) returns only active
+ * types; omitting it (Master Fasilitas view) returns all with usage counts.
+ */
+export async function listFacilityTypes(activeOnly = false): Promise<FacilityTypeOption[]> {
+    const response = await apiFetch(`${BASE}/facility-types${activeOnly ? '?active=1' : ''}`);
     return (await readJson<Envelope<FacilityTypeOption[]>>(response, 'Gagal memuat jenis fasilitas.')).data;
 }
 
@@ -163,6 +188,41 @@ export async function createFacilityType(name: string): Promise<FacilityTypeOpti
     return (await readJson<Envelope<FacilityTypeOption>>(response, 'Gagal menambahkan jenis fasilitas.')).data;
 }
 
+export interface FacilityTypeUpdate {
+    name?: string;
+    is_active?: boolean;
+}
+
+export async function updateFacilityType(
+    id: number,
+    payload: FacilityTypeUpdate,
+): Promise<FacilityTypeOption> {
+    const response = await apiFetch(`${BASE}/facility-types/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+    });
+    return (await readJson<Envelope<FacilityTypeOption>>(response, 'Gagal memperbarui jenis fasilitas.')).data;
+}
+
+/**
+ * Hard-delete a facility type. The backend only permits this for UNUSED types;
+ * a type in use returns 409 (facility_in_use) and must be archived via
+ * updateFacilityType({ is_active: false }) instead.
+ */
+export async function deleteFacilityType(id: number): Promise<void> {
+    const response = await apiFetch(`${BASE}/facility-types/${id}`, { method: 'DELETE' });
+    await readJson<Envelope<unknown>>(response, 'Gagal menghapus jenis fasilitas.');
+}
+
+/**
+ * Rooms that use a facility type, with counts by room type — powers the
+ * Master Fasilitas "Lihat Penggunaan" drawer. SuperAdmin-only on the backend.
+ */
+export async function getFacilityUsage(id: number): Promise<FacilityUsage> {
+    const response = await apiFetch(`${BASE}/facility-types/${id}/rooms`);
+    return (await readJson<Envelope<FacilityUsage>>(response, 'Gagal memuat penggunaan fasilitas.')).data;
+}
+
 export async function getRoomFacilities(roomId: number): Promise<ManagedRoomFacility[]> {
     const response = await apiFetch(`${BASE}/rooms/${roomId}/facilities`);
     return (await readJson<Envelope<ManagedRoomFacility[]>>(response, 'Gagal memuat fasilitas ruangan.')).data;
@@ -171,12 +231,19 @@ export async function getRoomFacilities(roomId: number): Promise<ManagedRoomFaci
 export async function syncRoomFacilities(
     roomId: number,
     facilities: FacilitySyncEntry[],
-): Promise<ManagedRoomFacility[]> {
+): Promise<RoomFacilitySyncResult> {
     const response = await apiFetch(`${BASE}/rooms/${roomId}/facilities`, {
         method: 'PUT',
         body: JSON.stringify({ facilities }),
     });
-    return (await readJson<Envelope<ManagedRoomFacility[]>>(response, 'Gagal menyimpan fasilitas.')).data;
+    const payload = await readJson<Envelope<ManagedRoomFacility[]> & {
+        delegated_activity_acknowledgement?: RoomFacilitySyncResult['delegated_activity_acknowledgement'];
+    }>(response, 'Gagal menyimpan fasilitas.');
+
+    return {
+        data: payload.data,
+        delegated_activity_acknowledgement: payload.delegated_activity_acknowledgement ?? null,
+    };
 }
 
 // ─────────────────────────── templates ───────────────────────────

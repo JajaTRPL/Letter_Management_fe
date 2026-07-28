@@ -3,6 +3,8 @@ import type {
     RetentionActionLog,
     RetentionActionResult,
     RetentionArchive,
+    RetentionAutomationStatus,
+    RetentionAutomationUpdate,
     RetentionDryRunResult,
     RetentionFilters,
     RetentionListResponse,
@@ -43,7 +45,7 @@ async function apiGet<T>(path: string): Promise<ApiEnvelope<T>> {
     return readJson<ApiEnvelope<T>>(response);
 }
 
-async function apiSend<T>(path: string, method: 'POST' | 'PUT', body: unknown): Promise<ApiEnvelope<T>> {
+async function apiSend<T>(path: string, method: 'POST' | 'PUT' | 'PATCH', body: unknown): Promise<ApiEnvelope<T>> {
     const response = await apiFetch(`${RETENTION_BASE}${path}`, {
         method,
         body: JSON.stringify(body),
@@ -73,6 +75,14 @@ export async function getRetentionPolicy(): Promise<RetentionPolicyPayload> {
 
 export async function updateRetentionPolicy(values: RetentionPolicyValues): Promise<RetentionPolicyPayload> {
     return (await apiSend<RetentionPolicyPayload>('/policy', 'PUT', values)).data;
+}
+
+export async function getRetentionAutomation(): Promise<RetentionAutomationStatus> {
+    return (await apiGet<RetentionAutomationStatus>('/automation')).data;
+}
+
+export async function updateRetentionAutomation(payload: RetentionAutomationUpdate): Promise<RetentionAutomationStatus> {
+    return (await apiSend<RetentionAutomationStatus>('/automation', 'PATCH', payload)).data;
 }
 
 export async function getRetentionCandidates(filters: RetentionFilters): Promise<RetentionListResponse<RetentionActionResult>> {

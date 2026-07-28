@@ -2,8 +2,6 @@ import {
     formatIndonesianDate,
     formatIsoDateKeyInJakarta,
     formatTimeRange,
-    getBookingStatusLabel,
-    getBookingStatusTone,
     getRoomTypeLabel,
     parseDateKey,
 } from '../../shared/peminjaman-calendar';
@@ -12,20 +10,29 @@ import type {
     BookingFormValues,
 } from './workflow';
 import {
+    bookingLifecycleStatus,
+    buildLifecycleTimeline,
     canCancelBooking,
     canEditBooking,
     canReplaceSuratPdf,
     canResubmitBooking,
     formatFileSize,
+    getCancellationRequestLabel,
+    getLifecycleStatusLabel,
+    getLifecycleStatusTone,
     hasSuratPeminjamanPdf,
+    isActiveLifecycleBooking,
+    MAX_CANCELLATION_REASON_LENGTH,
+    type LifecycleTimelineEntry,
 } from './workflow';
 import type {
-    BookingStatusHistory,
     MahasiswaBooking,
+    BookingOccurrence,
     Room,
     RoomType,
 } from './types';
-import { badgeClass, buttonClass, cx, surfaceClass, textClass } from '../../shared/design-system';
+import { buttonClass, cx, surfaceClass, textClass } from '../../shared/design-system';
+import { buildTrackingStages, renderTrackingCard } from '../../shared/ui-primitives';
 
 export const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -33,6 +40,31 @@ export const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+
+export interface RoomSummaryPresentation {
+    coverUrl: string | null;
+    facilities: string[];
+    facilityCount: number;
+    remainingFacilityCount: number;
+    hasActiveTemplate: boolean;
+}
+
+/** Shared catalog/application projection for compact room summaries. */
+export const roomSummaryPresentation = (
+    room: Room,
+    facilityLimit: number,
+): RoomSummaryPresentation => {
+    const facilities = (room.facilities_summary?.items ?? []).slice(0, facilityLimit);
+    const facilityCount = room.facilities_summary?.count ?? facilities.length;
+
+    return {
+        coverUrl: room.cover_photo?.thumb_url ?? room.cover_photo?.display_url ?? null,
+        facilities,
+        facilityCount,
+        remainingFacilityCount: Math.max(0, facilityCount - facilities.length),
+        hasActiveTemplate: room.has_active_template === true,
+    };
+};
 
 const inputClass = (hasError: boolean): string =>
     `w-full rounded-xl border px-3.5 py-2.5 text-sm outline-none transition-colors ${
@@ -179,23 +211,88 @@ const formatSchedule = (start: string, end: string): string => {
 };
 
 /**
- * Active = the requester still has something in-flight: waiting review,
- * needs revision, or an approved booking that has not finished yet.
- * Terminal rejected/cancelled and past approved bookings are history-only.
+ * Active = the requester still has something in-flight: waiting review, under
+ * review, needs revision, or an approved booking that has not finished yet.
+ * Terminal rejected/cancelled/expired/completed bookings are history-only.
+ * Derived from the authoritative lifecycle status, never the stored one.
  */
 export const isActivePeminjamanBooking = (
     booking: MahasiswaBooking,
     now = new Date(),
-): boolean =>
-    booking.status === 'submitted'
-    || booking.status === 'revision_requested'
-    || (booking.status === 'approved'
-        && new Date(booking.end_at).getTime() >= now.getTime());
+): boolean => isActiveLifecycleBooking(booking, now);
 
 /**
- * Dashboard active tracking cards. Uses the Peminjaman status
- * vocabulary (getBookingStatusLabel/Tone) — intentionally NOT the
- * Administrasi Surat letter-workflow labels or timeline.
+ * Per-usage operational state → applicant-facing label + pill tone. Shared by
+ * the dashboard tracking card and the booking detail dialog so one usage state
+ * never reads two different ways.
+ */
+const occurrenceStatusPresentation = (occurrence: BookingOccurrence): { label: string; tone: string } => {
+    const deadline = new Date(occurrence.return_due_at).toLocaleTimeString('id-ID', {
+        timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    switch (occurrence.operational_status) {
+        case 'scheduled': return { label: 'Akan digunakan', tone: 'border-gray-200 bg-gray-50 text-gray-700' };
+        case 'key_issued': return { label: 'Kunci telah diserahkan', tone: 'border-blue-200 bg-blue-50 text-blue-700' };
+        case 'in_use': return { label: 'Sedang digunakan', tone: 'border-blue-200 bg-blue-50 text-blue-700' };
+        case 'return_due': return { label: `Kembalikan sebelum ${deadline} WIB`, tone: 'border-amber-200 bg-amber-50 text-amber-800' };
+        case 'awaiting_verification': return { label: 'Menunggu verifikasi', tone: 'border-indigo-200 bg-indigo-50 text-indigo-700' };
+        case 'revision_required': return { label: 'Perlu memperbaiki bukti', tone: 'border-amber-200 bg-amber-50 text-amber-800' };
+        case 'returned_on_time': return { label: 'Selesai tepat waktu', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
+        case 'returned_late': return { label: 'Selesai terlambat', tone: 'border-orange-200 bg-orange-50 text-orange-800' };
+        case 'overdue': return { label: 'Pengembalian melewati tenggat', tone: 'border-red-200 bg-red-50 text-red-700' };
+        case 'cancelled': return { label: 'Penggunaan dibatalkan', tone: 'border-gray-200 bg-gray-100 text-gray-600' };
+        // A booking that is not approved owns occurrence rows for compatibility
+        // only — never promise a key handover that cannot happen.
+        case 'not_actionable': return { label: 'Belum berlaku', tone: 'border-gray-200 bg-gray-50 text-gray-600' };
+        default: return { label: 'Status Tidak Dikenal', tone: 'border-gray-200 bg-gray-50 text-gray-600' };
+    }
+};
+
+/**
+ * Peminjaman stage rail. Every node label comes from the Peminjaman status
+ * vocabulary itself (`getLifecycleStatusLabel`) — no invented stage names, and
+ * never the Administrasi Surat reviewer chain. Only the rail's visual grammar
+ * is shared with the letter cards.
+ *   Diajukan → Sedang Ditinjau → Disetujui → Selesai
+ */
+const PEMINJAMAN_STAGE_LABELS = [
+    getLifecycleStatusLabel('submitted'),
+    getLifecycleStatusLabel('under_review'),
+    getLifecycleStatusLabel('approved'),
+    getLifecycleStatusLabel('completed'),
+];
+
+const buildPeminjamanStages = (lifecycle: string) => {
+    // `completedThrough` = highest index rendered as done, `activeIndex` = the
+    // in-progress node, `interrupt` = the attention marker replacing it.
+    let completedThrough = 0; // "Diajukan" is always done for a tracked booking
+    let activeIndex = 1;
+    let interrupt: { label: string } | null = null;
+
+    switch (lifecycle) {
+        case 'submitted':
+        case 'under_review': completedThrough = 0; activeIndex = 1; break;
+        case 'approved':     completedThrough = 2; activeIndex = 3; break;
+        case 'completed':    completedThrough = 3; activeIndex = -1; break;
+        case 'revision_requested':
+        case 'rejected':
+        case 'cancelled':
+        case 'expired':
+            completedThrough = 0;
+            activeIndex = 1;
+            interrupt = { label: getLifecycleStatusLabel(lifecycle) };
+            break;
+        default:             completedThrough = 0; activeIndex = 1; break;
+    }
+
+    return buildTrackingStages(PEMINJAMAN_STAGE_LABELS, { completedThrough, activeIndex, interrupt });
+};
+
+/**
+ * Dashboard active tracking cards. Renders through the SHARED tracking card in
+ * ui-primitives, so a booking tile is the Administrasi Surat card exactly —
+ * while keeping the Peminjaman status vocabulary (getLifecycleStatusLabel/Tone),
+ * never the letter workflow's.
  */
 export const renderPeminjamanTrackingCards = (
     bookings: readonly MahasiswaBooking[],
@@ -209,31 +306,45 @@ export const renderPeminjamanTrackingCards = (
         `;
     }
 
-    return bookings.map((booking) => `
-        <article class="${surfaceClass('interactive', 'flex h-full flex-col gap-4 p-6')}">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-                <div class="min-w-0">
-                    <p class="${badgeClass('info')}">Peminjaman Ruangan</p>
-                    <h4 class="mt-1 break-words text-base font-bold text-gray-800">${escapeHtml(booking.room.code)} · ${escapeHtml(booking.room.name)}</h4>
-                </div>
-                <span class="shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-bold ${getBookingStatusTone(booking.status)}">${getBookingStatusLabel(booking.status)}</span>
-            </div>
-            <p class="break-words text-sm font-semibold text-gray-700">${escapeHtml(booking.activity_name)}</p>
+    return bookings.map((booking) => {
+        const lifecycle = bookingLifecycleStatus(booking);
+        const nextStep = lifecycle === 'revision_requested'
+            ? 'Perlu perbaikan sebelum pengajuan dikirim ulang.'
+            : lifecycle === 'under_review'
+                ? 'Sedang ditinjau oleh pengelola ruangan.'
+                : lifecycle === 'approved'
+                    ? 'Peminjaman ruangan sudah disetujui.'
+                    : 'Menunggu pemeriksaan ketersediaan dan persetujuan ruangan.';
+
+        const bodyHtml = `
             <p class="text-xs text-gray-500">${getRoomTypeLabel(booking.room.type)} · ${escapeHtml(formatSchedule(booking.start_at, booking.end_at))}</p>
-            ${booking.status === 'revision_requested' && booking.revision_note ? `
+            ${lifecycle === 'revision_requested' && booking.revision_note ? `
                 <div class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
                     <p class="text-xs font-semibold text-amber-800">Catatan Revisi: <span class="font-medium text-amber-700">${escapeHtml(booking.revision_note)}</span></p>
                 </div>
             ` : ''}
-            <div class="${surfaceClass('muted', 'mt-auto rounded-xl px-4 py-3')}">
-                <p class="text-sm font-semibold text-gray-800">${booking.status === 'submitted' ? 'Menunggu pemeriksaan ketersediaan dan persetujuan ruangan.' : booking.status === 'revision_requested' ? 'Perlu perbaikan sebelum pengajuan dikirim ulang.' : 'Peminjaman ruangan sudah disetujui.'}</p>
-                <p class="${cx(textClass.helper, 'mt-1')}">${booking.status === 'revision_requested' ? 'Buka detail untuk memperbaiki dan mengirim ulang.' : 'Buka detail untuk melihat jadwal dan tindakan yang tersedia.'}</p>
+            <div class="${surfaceClass('muted', 'rounded-xl px-4 py-3')}">
+                <p class="text-sm font-semibold text-gray-800">${nextStep}</p>
+                <p class="${cx(textClass.helper, 'mt-1')}">${lifecycle === 'revision_requested' ? 'Buka detail untuk memperbaiki dan mengirim ulang.' : 'Buka detail untuk melihat jadwal dan tindakan yang tersedia.'}</p>
             </div>
-            <button type="button" data-action="open-peminjaman-detail" data-booking-id="${booking.id}" class="${buttonClass('secondary', 'sm', 'w-full')}">
-                Lihat Detail
-            </button>
-        </article>
-    `).join('');
+        `;
+
+        return renderTrackingCard({
+            badgeLabel: 'Peminjaman Ruangan',
+            badgeTone: 'info',
+            title: `${booking.room.code} · ${booking.room.name}`,
+            subtitle: booking.activity_name,
+            statusLabel: getLifecycleStatusLabel(lifecycle),
+            statusToneClass: getLifecycleStatusTone(lifecycle),
+            stages: buildPeminjamanStages(lifecycle),
+            bodyHtml,
+            actionsHtml: `
+                <button type="button" data-action="open-peminjaman-detail" data-booking-id="${booking.id}" class="${buttonClass('secondary', 'sm', 'w-full')}">
+                    Lihat Detail
+                </button>
+            `,
+        });
+    }).join('');
 };
 
 /**
@@ -271,7 +382,7 @@ export const renderPeminjamanRiwayatSection = (
                                 <p class="mt-1 break-words text-xs text-gray-500">${escapeHtml(booking.activity_name)}</p>
                             </td>
                             <td class="px-8 py-5 text-xs text-gray-600">${escapeHtml(formatSchedule(booking.start_at, booking.end_at))}</td>
-                            <td class="px-8 py-5"><span class="rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${getBookingStatusTone(booking.status)}">${getBookingStatusLabel(booking.status)}</span></td>
+                            <td class="px-8 py-5"><span data-lifecycle-status class="rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${getLifecycleStatusTone(bookingLifecycleStatus(booking))}">${escapeHtml(getLifecycleStatusLabel(bookingLifecycleStatus(booking)))}</span></td>
                             <td class="px-8 py-5 text-right">
                                 <button type="button" data-action="open-peminjaman-detail" data-booking-id="${booking.id}" class="text-xs font-bold text-primary-teal hover:underline">Lihat Detail</button>
                             </td>
@@ -299,20 +410,108 @@ const detailRow = (label: string, value: string): string => `
     </div>
 `;
 
-const renderHistory = (histories: readonly BookingStatusHistory[]): string => histories.length === 0
+const primaryOccurrenceAction = (occurrence: BookingOccurrence): string => {
+    if (occurrence.capabilities.can_submit_return || occurrence.capabilities.can_resubmit_return) {
+        return `<button type="button" data-return-submit="${escapeHtml(occurrence.occurrence_ref)}" class="${buttonClass('primary', 'sm')}">${occurrence.capabilities.can_resubmit_return ? 'Perbaiki Bukti Pengembalian' : 'Kirim Bukti Pengembalian'}</button>`;
+    }
+    if (occurrence.capabilities.can_withdraw_return) {
+        return `<button type="button" data-return-withdraw="${escapeHtml(occurrence.occurrence_ref)}" class="${buttonClass('outline', 'sm')}">Tarik Pengajuan Pengembalian</button>`;
+    }
+    return '';
+};
+
+const renderOccurrenceJourney = (booking: MahasiswaBooking): string => {
+    const occurrences = booking.occurrences ?? [];
+    if (occurrences.length === 0) return '';
+    const nextActionOccurrence = occurrences.find((occurrence) =>
+        occurrence.capabilities.can_submit_return
+        || occurrence.capabilities.can_resubmit_return
+        || occurrence.capabilities.can_withdraw_return);
+    const nearest = booking.occurrence_summary?.nearest_deadline;
+
+    return `
+        <section class="rounded-2xl border border-teal-100 bg-teal-50/40 p-4">
+            <h3 class="text-sm font-bold text-gray-900">Tindakan berikutnya</h3>
+            <p class="mt-1 text-xs text-gray-600">${escapeHtml(booking.occurrence_summary?.progress_label ?? `${occurrences.length} penggunaan`)}</p>
+            ${nearest ? `<p class="mt-1 text-xs font-semibold text-gray-700">Tenggat terdekat: ${escapeHtml(formatSchedule(nearest, nearest))}</p>` : ''}
+            ${nextActionOccurrence ? `<div class="mt-3">${primaryOccurrenceAction(nextActionOccurrence)}</div>` : '<p class="mt-2 text-xs font-semibold text-gray-700">Belum ada tindakan yang perlu dilakukan saat ini.</p>'}
+        </section>
+        <section>
+            <h3 class="mb-3 text-sm font-bold text-gray-800">Ringkasan Ruangan dan Jadwal</h3>
+            <dl>
+                ${detailRow('Ruangan', `${booking.room.code} · ${booking.room.name}`)}
+                ${detailRow('Rentang', formatSchedule(occurrences[0].start_at, occurrences[occurrences.length - 1].end_at))}
+                ${detailRow('Pola', booking.booking_mode === 'consecutive_days' ? `${occurrences.length} hari berturut-turut` : 'Satu penggunaan')}
+                ${detailRow('Kegiatan', booking.activity_name)}
+            </dl>
+        </section>
+        <section>
+            <h3 class="mb-3 text-sm font-bold text-gray-800">Daftar Tugas per Penggunaan</h3>
+            <ol class="space-y-3">
+                ${occurrences.map((occurrence) => {
+                    const status = occurrenceStatusPresentation(occurrence);
+                    return `<li data-occurrence-row="${escapeHtml(occurrence.occurrence_ref)}" class="rounded-xl border border-gray-100 p-3">
+                        <div class="flex flex-wrap items-start justify-between gap-2">
+                            <div><p class="text-sm font-bold text-gray-800">Penggunaan ${occurrence.sequence} · ${escapeHtml(formatIndonesianDate(parseDateKey(occurrence.date)))}</p><p class="mt-1 text-xs text-gray-500">${escapeHtml(formatTimeRange(occurrence.start_at, occurrence.end_at))} · Tenggat ${escapeHtml(formatTimeRange(occurrence.end_at, occurrence.return_due_at))}</p></div>
+                            <span class="rounded-full border px-2.5 py-1 text-[10px] font-bold ${status.tone}">${escapeHtml(status.label)}</span>
+                        </div>
+                        ${occurrence.key_issuance.issued ? `<p class="mt-2 text-xs text-gray-600">Kunci diserahkan ${escapeHtml(formatUpdatedDate(occurrence.key_issuance.issued_at))}${occurrence.key_issuance.issued_by?.name ? ` oleh ${escapeHtml(occurrence.key_issuance.issued_by.name)}` : ''}.</p>` : ''}
+                    </li>`;
+                }).join('')}
+            </ol>
+        </section>
+        <section>
+            <h3 class="mb-3 text-sm font-bold text-gray-800">Bukti dan Keputusan Pengembalian</h3>
+            <div class="space-y-2">
+                ${occurrences.map((occurrence) => occurrence.return ? `<div class="rounded-xl border border-gray-100 p-3 text-xs text-gray-600"><p class="font-bold text-gray-800">Penggunaan ${occurrence.sequence} · ${escapeHtml(occurrence.return.evidence.original_name)}</p><p class="mt-1">Dikirim ${escapeHtml(formatUpdatedDate(occurrence.return.submitted_at))} · ${escapeHtml(occurrence.return.status)}</p>${occurrence.return.decision_note ? `<p class="mt-1 text-amber-800">Catatan: ${escapeHtml(occurrence.return.decision_note)}</p>` : ''}<button type="button" data-return-preview="${escapeHtml(occurrence.occurrence_ref)}" class="mt-2 text-xs font-bold text-teal-700 hover:underline">Lihat bukti</button></div>` : `<p class="rounded-xl border border-dashed border-gray-200 p-3 text-xs text-gray-500">Penggunaan ${occurrence.sequence}: bukti belum dikirim.</p>`).join('')}
+            </div>
+        </section>
+    `;
+};
+
+const renderUsageTimeline = (booking: MahasiswaBooking): string => {
+    const events = booking.usage_timeline ?? [];
+    return `<section><h3 class="mb-3 text-sm font-bold text-gray-800">Linimasa Penggunaan dan Kunci</h3>${events.length === 0 ? '<p class="text-xs text-gray-500">Belum ada aktivitas penggunaan.</p>' : `<ol class="space-y-2">${events.map((event) => `<li class="rounded-lg border border-gray-100 px-3 py-2 text-xs text-gray-600"><span class="font-bold text-gray-800">${escapeHtml(event.label ?? event.type)}</span>${event.occurred_at ? ` · ${escapeHtml(formatUpdatedDate(event.occurred_at))}` : ''}</li>`).join('')}</ol>`}</section>`;
+};
+
+const renderTimeline = (entries: readonly LifecycleTimelineEntry[]): string => entries.length === 0
     ? '<p class="text-sm text-gray-500">Riwayat status belum tersedia.</p>'
     : `
         <ol class="space-y-4">
-            ${histories.map((history) => `
+            ${entries.map((entry) => `
                 <li class="relative border-l-2 border-teal-100 pl-4">
-                    <span class="absolute -left-[5px] top-1 h-2 w-2 rounded-full bg-teal-600"></span>
-                    <p class="text-sm font-bold text-gray-800">${getBookingStatusLabel(history.to_status)}</p>
-                    <p class="mt-1 text-xs text-gray-500">${escapeHtml(formatUpdatedDate(history.created_at))}</p>
-                    ${history.note ? `<p class="mt-2 text-sm text-gray-600 break-words">${escapeHtml(history.note)}</p>` : ''}
+                    <span class="absolute -left-[5px] top-1 h-2 w-2 rounded-full bg-teal-600" aria-hidden="true"></span>
+                    <p class="text-sm font-bold text-gray-800">${escapeHtml(entry.label)}</p>
+                    <p class="mt-1 text-xs text-gray-500">${escapeHtml(formatUpdatedDate(entry.at))}</p>
+                    ${entry.note ? `<p class="mt-2 text-sm text-gray-600 break-words">${escapeHtml(entry.note)}</p>` : ''}
                 </li>
             `).join('')}
         </ol>
     `;
+
+/**
+ * Applicant-facing cancellation-request panel: rendered only when the API
+ * returns a summary. Informational in C7C1 — creating/withdrawing the
+ * request is C7C2 scope, so no interactive control appears here.
+ */
+const renderCancellationRequestPanel = (booking: MahasiswaBooking): string => {
+    const request = booking.cancellation_request;
+    if (!request) return '';
+
+    const pending = request.status === 'pending';
+    const tone = pending
+        ? 'border-amber-200 bg-amber-50 text-amber-900'
+        : 'border-gray-200 bg-gray-50 text-gray-700';
+
+    return `
+        <section data-cancellation-request-panel class="rounded-xl border px-4 py-3 ${tone}">
+            <p class="text-sm font-bold">${escapeHtml(getCancellationRequestLabel(request.status))}</p>
+            ${request.reason ? `<p class="mt-1 break-words text-xs">Alasan: ${escapeHtml(request.reason)}</p>` : ''}
+            ${pending ? `<p class="mt-1 text-xs">Menunggu keputusan ${request.responsible_role === 'sarpras' ? 'Sarpras' : 'Kepala Lab'}. Status peminjaman belum berubah sampai permohonan diputuskan.</p>` : ''}
+            ${request.decided_at && request.decision_note ? `<p class="mt-1 break-words text-xs">Catatan keputusan: ${escapeHtml(request.decision_note)}</p>` : ''}
+        </section>
+    `;
+};
 
 /**
  * Surat peminjaman panel for the booking detail: safe metadata + protected
@@ -393,28 +592,35 @@ export const renderBookingDetailDialog = (
             ${error ? `<div data-detail-state="error" class="rounded-xl border border-red-100 bg-red-50 px-4 py-4 text-sm font-medium text-red-700">${escapeHtml(error)}</div>` : ''}
             ${booking ? `
                 <div data-detail-state="success" class="space-y-6">
+                    ${renderOccurrenceJourney(booking)}
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <h3 class="text-lg font-bold text-gray-900 break-words">${escapeHtml(booking.room.code)} · ${escapeHtml(booking.room.name)}</h3>
                             <p class="mt-1 text-xs text-gray-500">${getRoomTypeLabel(booking.room.type)} · Kapasitas ${booking.room.capacity} orang</p>
                         </div>
-                        <span class="rounded-full border px-3 py-1 text-xs font-bold ${getBookingStatusTone(booking.status)}">${getBookingStatusLabel(booking.status)}</span>
+                        <div class="flex flex-col items-end gap-1">
+                            <span data-lifecycle-status class="rounded-full border px-3 py-1 text-xs font-bold ${getLifecycleStatusTone(bookingLifecycleStatus(booking))}">${escapeHtml(getLifecycleStatusLabel(bookingLifecycleStatus(booking)))}</span>
+                            ${(booking.submission_iteration ?? 1) > 1 ? `<span class="rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700">Pengajuan ke-${booking.submission_iteration}</span>` : ''}
+                        </div>
                     </div>
+                    ${renderCancellationRequestPanel(booking)}
                     <dl>
+                        ${detailRow('Nomor Pengajuan', `#${booking.id}`)}
                         ${detailRow('Kegiatan', booking.activity_name)}
                         ${detailRow('Tujuan', booking.purpose)}
                         ${detailRow('Peserta', `${booking.participant_count} orang`)}
-                        ${detailRow('Jadwal', formatSchedule(booking.start_at, booking.end_at))}
                         ${detailRow('Lokasi', booking.room.location)}
+                        ${booking.review_started_at ? detailRow('Mulai Ditinjau', formatUpdatedDate(booking.review_started_at)) : ''}
                         ${booking.revision_note ? detailRow('Catatan Revisi', booking.revision_note) : ''}
                         ${booking.rejection_reason ? detailRow('Alasan Penolakan', booking.rejection_reason) : ''}
                         ${booking.cancellation_reason ? detailRow('Alasan Pembatalan', booking.cancellation_reason) : ''}
                     </dl>
                     ${renderSuratPeminjamanPanel(booking)}
                     <section>
-                        <h3 class="mb-4 text-sm font-bold text-gray-800">Riwayat Status</h3>
-                        ${renderHistory(booking.status_histories ?? [])}
+                        <h3 class="mb-4 text-sm font-bold text-gray-800">Linimasa Persetujuan</h3>
+                        ${renderTimeline(buildLifecycleTimeline(booking))}
                     </section>
+                    ${renderUsageTimeline(booking)}
                 </div>
             ` : ''}
         </div>
@@ -440,9 +646,10 @@ export const renderCancelDialog = (
             <p class="mt-1 text-sm text-gray-500">Pengajuan ${escapeHtml(booking.activity_name)} akan dibatalkan. Tindakan ini tidak menghapus riwayat.</p>
         </header>
         <form id="peminjaman-cancel-form" class="px-6 py-5">
-            ${error ? `<div role="alert" class="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">${escapeHtml(error)}</div>` : ''}
+            ${error ? `<div id="peminjaman-cancel-error" role="alert" class="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">${escapeHtml(error)}</div>` : ''}
             <label for="peminjaman-cancel-reason" class="text-sm font-bold text-gray-700">Alasan Pembatalan</label>
-            <textarea id="peminjaman-cancel-reason" rows="4" maxlength="5000" class="mt-2 w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm outline-none focus:border-red-400" placeholder="Tuliskan alasan pembatalan."></textarea>
+            <textarea id="peminjaman-cancel-reason" rows="4" maxlength="${MAX_CANCELLATION_REASON_LENGTH}"${error ? ' aria-invalid="true" aria-describedby="peminjaman-cancel-error peminjaman-cancel-reason-help"' : ' aria-describedby="peminjaman-cancel-reason-help"'} class="mt-2 w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm outline-none focus:border-red-400" placeholder="Tuliskan alasan pembatalan."></textarea>
+            <p id="peminjaman-cancel-reason-help" class="mt-1 text-xs text-gray-500">Maksimal ${MAX_CANCELLATION_REASON_LENGTH} karakter.</p>
             <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button id="close-peminjaman-cancel" type="button" class="${buttonClass('outline', 'sm')}">Kembali</button>
                 <button type="submit" ${submitting ? 'disabled' : ''} class="${buttonClass('danger', 'sm')}">${submitting ? 'Membatalkan...' : 'Ya, Batalkan'}</button>

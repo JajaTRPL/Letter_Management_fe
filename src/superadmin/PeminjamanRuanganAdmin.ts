@@ -3,6 +3,7 @@ import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import {
     downloadSuratPeminjamanPdf,
     getSuperAdminBooking,
+    getSuperAdminBookingCalendar,
     getSuperAdminBookings,
     getSuperAdminLaboratories,
     PeminjamanApiError,
@@ -13,24 +14,39 @@ import {
     openSuratPreview,
 } from '../mahasiswa/peminjaman/detail';
 import type {
+    BookingCalendarStatusScope,
     BookingStatus,
     LaboratorySummary,
     PaginationMeta,
     RoomType,
     SuperAdminBooking,
+    SuperAdminCalendarFilters,
+    SuperAdminCalendarItem,
     SuperAdminBookingFilters,
 } from '../mahasiswa/peminjaman/types';
 import {
+    formatDateKey,
+    formatIsoDateKeyInJakarta,
     formatTimeRange,
+    getCalendarKeyboardTargetDateKey,
     getBookingStatusLabel,
     getBookingStatusTone,
     getRoomTypeLabel,
 } from '../shared/peminjaman-calendar';
 import {
+    renderBookingCalendarGridCells,
+    renderBookingCalendarSelectedDatePanel,
+    renderBookingCalendarView,
+    type BookingCalendarItemAction,
+    type BookingCalendarViewItem,
+} from '../shared/peminjaman-calendar-view';
+import {
+    bulkDeleteRooms,
     listManagedRooms,
     type RoomListFilters,
 } from '../shared/room-management/api';
 import {
+    attachRoomSelectionListeners,
     attachRoomTableListeners,
     hydrateRoomTableCovers,
     renderRoomManagementTable,
@@ -43,16 +59,64 @@ import {
     closeRoomFormModal,
     openRoomFormModal,
 } from '../shared/room-management/room-form';
+import { renderFacilityMaster } from '../shared/room-management/facility-master';
 import type { ManagedRoom } from '../shared/room-management/types';
 
-type ActiveTab = 'rooms' | 'monitoring';
+type ActiveTab = 'rooms' | 'facilities' | 'monitoring' | 'calendar';
+type CalendarRoomTypeFilter = 'all' | RoomType;
+type CalendarStatusFilter = BookingCalendarStatusScope;
+
+interface CalendarViewState {
+    cursor: Date;
+    roomType: CalendarRoomTypeFilter;
+    status: CalendarStatusFilter;
+    laboratoryId: number | null;
+    roomId: number | null;
+    selectedDateKey: string | null;
+}
 
 const PER_PAGE = 10;
+const CALENDAR_STATUS_FILTERS: CalendarStatusFilter[] = [
+    'active',
+    'revision_requested',
+    'rejected',
+    'cancelled',
+    'history',
+];
+const CALENDAR_DATE_ATTRIBUTE = 'data-admin-calendar-date';
+const CALENDAR_DETAIL_ACTION: BookingCalendarItemAction = {
+    label: 'Lihat Detail',
+    dataAttribute: 'data-admin-calendar-detail',
+    value: (item) => item.id,
+    requiredCapability: 'view',
+};
 const EMPTY_META: PaginationMeta = {
     current_page: 1,
     per_page: PER_PAGE,
     total: 0,
     last_page: 1,
+};
+
+const createInitialCalendarState = (): CalendarViewState => {
+    const now = new Date();
+
+    return {
+        cursor: new Date(now.getFullYear(), now.getMonth(), 1),
+        roomType: 'all',
+        status: 'active',
+        laboratoryId: null,
+        roomId: null,
+        selectedDateKey: null,
+    };
+};
+
+const createResetCalendarState = (): CalendarViewState => {
+    const now = new Date();
+
+    return {
+        ...createInitialCalendarState(),
+        selectedDateKey: formatDateKey(now),
+    };
 };
 
 let renderSequence = 0;
@@ -72,8 +136,29 @@ let bookingMeta: PaginationMeta = { ...EMPTY_META };
 let bookingsLoading = true;
 let bookingsError: string | null = null;
 let bookingFilterError: string | null = null;
+let calendarState: CalendarViewState = createInitialCalendarState();
+let calendarItems: SuperAdminCalendarItem[] = [];
+let calendarStatusCounts: Partial<Record<BookingStatus, number>> = {};
+let calendarActiveCount = 0;
+let calendarHistoryCount = 0;
+let calendarUpcomingItemsState: SuperAdminCalendarItem[] = [];
+let calendarUpcomingLoading = false;
+let calendarUpcomingError: string | null = null;
+let calendarLoading = false;
+let calendarLoaded = false;
+let calendarError: string | null = null;
+let calendarRequestSequence = 0;
 let modalEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
 let drawerEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
+let calendarDayEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
+// Bulk room selection (SuperAdmin master). Holds ids of currently-selected
+// visible rooms; cleared on tab change, filter/search, and after a bulk action.
+const roomSelection = new Set<number>();
+let bulkConfirmEscape: ((event: KeyboardEvent) => void) | null = null;
+
+const clearRoomSelection = (): void => {
+    roomSelection.clear();
+};
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -132,6 +217,140 @@ const isRoomFilterActive = (): boolean =>
 const selected = (actual: unknown, expected: unknown): string =>
     actual === expected ? 'selected' : '';
 
+const calendarMonthKey = (): string => {
+    const year = calendarState.cursor.getFullYear();
+    const month = String(calendarState.cursor.getMonth() + 1).padStart(2, '0');
+
+    return `${year}-${month}`;
+};
+
+const calendarScopedApiFilters = (
+    dateFilters: Pick<SuperAdminCalendarFilters, 'month' | 'from' | 'to'>,
+): SuperAdminCalendarFilters => ({
+    ...dateFilters,
+    status: calendarState.status,
+    ...(calendarState.roomType !== 'all' ? { roomType: calendarState.roomType } : {}),
+    ...(calendarState.laboratoryId !== null ? { laboratoryId: calendarState.laboratoryId } : {}),
+    ...(calendarState.roomId !== null ? { roomId: calendarState.roomId } : {}),
+});
+
+const calendarApiFilters = (): SuperAdminCalendarFilters => calendarScopedApiFilters({
+    month: calendarMonthKey(),
+});
+
+const calendarUpcomingApiFilters = (): SuperAdminCalendarFilters => {
+    const from = new Date();
+    const to = new Date(from);
+    to.setDate(from.getDate() + 89);
+
+    return calendarScopedApiFilters({
+        from: formatDateKey(from),
+        to: formatDateKey(to),
+    });
+};
+
+const toCalendarViewItem = (item: SuperAdminCalendarItem): BookingCalendarViewItem => ({
+    id: item.id,
+    roomCode: item.room_code,
+    roomName: item.room_name,
+    status: item.status,
+    startAt: item.start_at,
+    endAt: item.end_at,
+    activityName: item.activity_name,
+    purpose: item.purpose,
+    requesterName: item.requester_name,
+    laboratoryName: item.laboratory_name,
+    conflictStatus: item.conflict_status,
+    hasConflict: item.has_conflict,
+    conflictLevel: item.conflict_level,
+    conflictMessage: item.conflict_message,
+    conflicts: item.conflicts,
+    capabilities: {
+        view: item.can_view,
+    },
+});
+
+const calendarViewItems = (): BookingCalendarViewItem[] =>
+    calendarItems.map(toCalendarViewItem);
+
+const calendarItemsForDate = (dateKey: string): BookingCalendarViewItem[] =>
+    calendarViewItems()
+        .filter((item) => formatIsoDateKeyInJakarta(item.startAt) === dateKey)
+        .sort((left, right) =>
+            new Date(left.startAt).getTime() - new Date(right.startAt).getTime());
+
+const calendarUpcomingItems = (): SuperAdminCalendarItem[] =>
+    [...calendarUpcomingItemsState]
+        .filter((item) => new Date(item.end_at).getTime() >= Date.now())
+        .sort((left, right) =>
+            new Date(left.start_at).getTime() - new Date(right.start_at).getTime())
+        .slice(0, 5);
+
+const calendarUpcomingViewItems = (): BookingCalendarViewItem[] =>
+    calendarUpcomingItems().map(toCalendarViewItem);
+
+const calendarStatusCount = (status: BookingStatus): number =>
+    Number(calendarStatusCounts[status] ?? 0);
+
+const calendarRoomOptions = (): ManagedRoom[] =>
+    roomCatalog.filter((room) =>
+        (calendarState.roomType === 'all' || room.type === calendarState.roomType)
+        && (calendarState.laboratoryId === null || room.owning_laboratory?.id === calendarState.laboratoryId),
+    );
+
+const calendarRoomTypeLabel = (filter: CalendarRoomTypeFilter): string =>
+    filter === 'all' ? 'Semua' : filter === 'classroom' ? 'Kelas' : 'Lab';
+
+const calendarRoomTypeOptions = () =>
+    (['all', 'classroom', 'laboratory'] as CalendarRoomTypeFilter[]).map((value) => ({
+        value,
+        label: calendarRoomTypeLabel(value),
+        selected: calendarState.roomType === value,
+    }));
+
+const calendarStatusOptions = () =>
+    CALENDAR_STATUS_FILTERS.map((value) => {
+        const label = value === 'active'
+            ? 'Aktif'
+            : value === 'history'
+                ? 'Selesai / Riwayat'
+                : getBookingStatusLabel(value);
+        const count = value === 'active'
+            ? calendarActiveCount
+            : value === 'history'
+                ? calendarHistoryCount
+                : calendarStatusCount(value);
+
+        return {
+            value,
+            label,
+            count,
+            selected: calendarState.status === value,
+        };
+    });
+
+const calendarLaboratoryOptions = () =>
+    laboratories.map((lab) => ({
+        value: String(lab.id),
+        label: `${lab.code} - ${lab.name}`,
+        selected: calendarState.laboratoryId === lab.id,
+    }));
+
+const calendarManagedRoomOptions = () =>
+    calendarRoomOptions().map((room) => ({
+        value: String(room.id),
+        label: `${room.code} - ${room.name}`,
+        selected: calendarState.roomId === room.id,
+    }));
+
+const renderAdminCalendarGrid = (): string =>
+    renderBookingCalendarGridCells(
+        calendarState.cursor,
+        calendarState.selectedDateKey,
+        calendarViewItems(),
+        CALENDAR_DATE_ATTRIBUTE,
+    );
+
 const pageContent = (): string => `
     <div class="mx-auto max-w-7xl space-y-6 pb-12">
         <section class="rounded-[24px] border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
@@ -147,11 +366,19 @@ const pageContent = (): string => `
             </div>
             <div class="mt-5 flex flex-wrap gap-2" role="tablist" aria-label="Bagian Peminjaman Ruangan">
                 <button id="admin-peminjaman-tab-rooms" type="button" role="tab" aria-selected="${activeTab === 'rooms'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'rooms' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Master Ruangan</button>
+                <button id="admin-peminjaman-tab-facilities" type="button" role="tab" aria-selected="${activeTab === 'facilities'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'facilities' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Master Fasilitas</button>
                 <button id="admin-peminjaman-tab-monitoring" type="button" role="tab" aria-selected="${activeTab === 'monitoring'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'monitoring' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Monitoring Pengajuan</button>
+                <button id="admin-peminjaman-tab-calendar" type="button" role="tab" aria-selected="${activeTab === 'calendar'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'calendar' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Kalender Peminjaman</button>
             </div>
         </section>
         <div id="admin-peminjaman-tab-content">
-            ${activeTab === 'rooms' ? renderRoomManagement() : renderMonitoring()}
+            ${activeTab === 'rooms'
+                ? renderRoomManagement()
+                : activeTab === 'facilities'
+                    ? '<div id="admin-facility-master-root"></div>'
+                    : activeTab === 'monitoring'
+                        ? renderMonitoring()
+                        : renderCalendarMonitoring()}
         </div>
     </div>
 `;
@@ -173,8 +400,21 @@ const renderRoomManagement = (): string => `
                 </div>
                 <button id="admin-peminjaman-add-room" type="button" class="rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800">Tambah Ruangan</button>
             </div>
+            ${renderRoomBulkBar()}
             ${renderRoomState()}
         </section>
+    </div>
+`;
+
+// Bulk-selection toolbar, mirroring the Manajemen Akun pattern. Hidden until at
+// least one room is selected; toggled live by updateRoomBulkBar().
+const renderRoomBulkBar = (): string => `
+    <div id="room-bulk-bar" class="hidden flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-teal-50/40 px-5 py-3">
+        <span id="room-bulk-count" class="text-sm font-semibold text-teal-800">0 ruangan dipilih</span>
+        <div class="flex items-center gap-2">
+            <button id="room-bulk-cancel" type="button" class="rounded-xl border border-gray-200 bg-white px-4 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-50">Batal</button>
+            <button id="room-bulk-delete" type="button" class="rounded-xl bg-red-500 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-600">Hapus</button>
+        </div>
     </div>
 `;
 
@@ -244,7 +484,7 @@ const renderRoomState = (): string => {
             </div>
         `;
     }
-    return `<div data-admin-room-state="success">${renderRoomManagementTable(rooms)}</div>`;
+    return `<div data-admin-room-state="success">${renderRoomManagementTable(rooms, { selectable: true, selectedIds: roomSelection })}</div>`;
 };
 
 const renderMonitoring = (): string => `
@@ -259,6 +499,76 @@ const renderMonitoring = (): string => `
         </section>
     </div>
 `;
+
+const renderCalendarMonitoring = (): string => renderBookingCalendarView({
+    copy: {
+        title: 'Kalender Peminjaman Ruangan',
+        helper: 'Pantau pengajuan dan jadwal ruangan berdasarkan tanggal, status, jenis ruangan, dan laboratorium.',
+        densityHelper: 'Kepadatan dihitung dari jumlah peminjaman sesuai filter aktif.',
+        totalText: `${calendarItems.length} peminjaman mengikuti filter aktif.`,
+        roomTypeFilterLabel: 'Jenis Ruangan',
+        roomTypeFilterAriaLabel: 'Filter jenis ruangan kalender',
+        statusFilterLabel: 'Status',
+        statusFilterAriaLabel: 'Filter status kalender',
+        laboratoryLabel: 'Laboratorium',
+        roomLabel: 'Ruangan',
+        allLaboratoriesLabel: 'Semua laboratorium',
+        allRoomsLabel: 'Semua ruangan',
+        resetLabel: 'Reset Kalender',
+        loadingText: 'Memuat kalender peminjaman...',
+        errorTitle: 'Kalender gagal dimuat',
+        retryLabel: 'Coba Lagi',
+        monthEmptyText: 'Belum ada peminjaman untuk bulan dan filter ini.',
+    },
+    ids: {
+        previousMonthButton: 'admin-calendar-prev-month',
+        nextMonthButton: 'admin-calendar-next-month',
+        todayButton: 'admin-calendar-today',
+        resetButton: 'admin-calendar-reset',
+        monthHeading: 'admin-calendar-month-heading',
+        grid: 'admin-peminjaman-calendar-grid',
+        retryButton: 'admin-calendar-retry',
+        laboratorySelect: 'admin-calendar-laboratory',
+        roomSelect: 'admin-calendar-room',
+    },
+    dataAttributes: {
+        dateCell: CALENDAR_DATE_ATTRIBUTE,
+        roomTypeFilter: 'data-admin-calendar-room-type',
+        statusFilter: 'data-admin-calendar-status',
+        calendarState: 'data-admin-calendar-state',
+        upcomingState: 'data-admin-calendar-upcoming-state',
+    },
+    navigation: {
+        previousMonthAriaLabel: 'Bulan sebelumnya',
+        nextMonthAriaLabel: 'Bulan berikutnya',
+        todayLabel: 'Hari Ini',
+        todayAriaLabel: 'Kembali ke bulan dan tanggal hari ini',
+    },
+    state: {
+        cursor: calendarState.cursor,
+        selectedDateKey: calendarState.selectedDateKey,
+        items: calendarViewItems(),
+        loading: calendarLoading,
+        loaded: calendarLoaded,
+        error: calendarError,
+    },
+    filters: {
+        roomTypeOptions: calendarRoomTypeOptions(),
+        statusOptions: calendarStatusOptions(),
+        laboratoryOptions: calendarLaboratoryOptions(),
+        roomOptions: calendarManagedRoomOptions(),
+    },
+    upcoming: {
+        title: 'Peminjaman Terdekat',
+        subtitle: 'Mengikuti filter aktif, mulai hari ini.',
+        loading: calendarUpcomingLoading,
+        error: calendarUpcomingError,
+        loadingText: 'Memuat peminjaman terdekat...',
+        emptyText: 'Belum ada peminjaman terdekat untuk filter aktif.',
+        items: calendarUpcomingViewItems(),
+    },
+    actions: [CALENDAR_DETAIL_ACTION],
+});
 
 const renderBookingFilters = (): string => `
     <form id="admin-peminjaman-booking-filters" class="rounded-[24px] border border-gray-100 bg-white p-5 shadow-sm">
@@ -400,14 +710,50 @@ const renderPage = (): void => {
 const attachPageListeners = (): void => {
     document.getElementById('admin-peminjaman-tab-rooms')?.addEventListener('click', () => {
         activeTab = 'rooms';
+        clearRoomSelection();
+        closeCalendarDayDrawer();
+        renderPage();
+    });
+    document.getElementById('admin-peminjaman-tab-facilities')?.addEventListener('click', () => {
+        activeTab = 'facilities';
+        clearRoomSelection();
+        closeCalendarDayDrawer();
         renderPage();
     });
     document.getElementById('admin-peminjaman-tab-monitoring')?.addEventListener('click', () => {
         activeTab = 'monitoring';
+        clearRoomSelection();
+        closeCalendarDayDrawer();
         renderPage();
+    });
+    document.getElementById('admin-peminjaman-tab-calendar')?.addEventListener('click', () => {
+        activeTab = 'calendar';
+        clearRoomSelection();
+        closeCalendarDayDrawer();
+        renderPage();
+        if (!calendarLoaded && !calendarLoading) void loadCalendar();
     });
     attachRoomListeners();
     attachBookingListeners();
+    attachCalendarListeners();
+
+    const facilityHost = document.getElementById('admin-facility-master-root');
+    if (facilityHost) void renderFacilityMaster(facilityHost, { onOpenRoom: openRoomFromFacilityUsage });
+};
+
+/**
+ * Jump from the Master Fasilitas usage drawer straight to a room's Kelola
+ * Ruangan drawer: switch to the Master Ruangan tab and open the drawer on the
+ * Fasilitas tab (the context the user came from). The drawer loads the room by
+ * id, so it works even when the room is filtered out of the current list, and
+ * surfaces its own error state if the room cannot be fetched.
+ */
+const openRoomFromFacilityUsage = (roomId: number): void => {
+    if (activeTab !== 'rooms') {
+        activeTab = 'rooms';
+        renderPage();
+    }
+    void openRoomManagementDrawer(roomId, { ...roomDrawerOptions(), initialTab: 'fasilitas' });
 };
 
 const attachRoomListeners = (): void => {
@@ -453,7 +799,104 @@ const attachRoomListeners = (): void => {
         attachRoomTableListeners(tableRoot, (id) => {
             void openRoomManagementDrawer(id, roomDrawerOptions());
         });
+        attachRoomSelectionListeners(tableRoot, {
+            onToggleRow: (id, checked) => {
+                if (checked) roomSelection.add(id);
+                else roomSelection.delete(id);
+                updateRoomBulkBar();
+            },
+            onToggleAll: (checked) => {
+                rooms.forEach((room) => {
+                    if (checked) roomSelection.add(room.id);
+                    else roomSelection.delete(room.id);
+                });
+                document.querySelectorAll<HTMLInputElement>('.room-checkbox')
+                    .forEach((checkbox) => { checkbox.checked = checked; });
+                updateRoomBulkBar();
+            },
+        });
         hydrateRoomTableCovers(tableRoot, roomCoverCache, () => activeTab === 'rooms');
+    }
+
+    document.getElementById('room-bulk-cancel')?.addEventListener('click', () => {
+        roomSelection.clear();
+        document.querySelectorAll<HTMLInputElement>('.room-checkbox').forEach((checkbox) => { checkbox.checked = false; });
+        updateRoomBulkBar();
+    });
+    document.getElementById('room-bulk-delete')?.addEventListener('click', () => openRoomBulkConfirm());
+    updateRoomBulkBar();
+};
+
+/** Show/hide the bulk bar and sync the select-all header from roomSelection. */
+const updateRoomBulkBar = (): void => {
+    const bar = document.getElementById('room-bulk-bar');
+    if (!bar) return;
+    const count = roomSelection.size;
+    if (count > 0) {
+        bar.classList.remove('hidden');
+        const label = document.getElementById('room-bulk-count');
+        if (label) label.textContent = `${count} ruangan dipilih`;
+    } else {
+        bar.classList.add('hidden');
+    }
+    const selectAll = document.querySelector<HTMLInputElement>('[data-room-select-all]');
+    if (selectAll) {
+        const ids = rooms.map((room) => room.id);
+        selectAll.checked = ids.length > 0 && ids.every((id) => roomSelection.has(id));
+    }
+};
+
+const openRoomBulkConfirm = (): void => {
+    const count = roomSelection.size;
+    if (count === 0) return;
+    document.getElementById('room-bulk-confirm-root')?.remove();
+
+    const root = document.createElement('div');
+    root.id = 'room-bulk-confirm-root';
+    root.innerHTML = `
+        <div data-room-bulk-overlay class="fixed inset-0 z-[240] bg-black/50"></div>
+        <section role="alertdialog" aria-modal="true" aria-labelledby="room-bulk-confirm-title" class="fixed left-1/2 top-1/2 z-[241] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 id="room-bulk-confirm-title" class="text-lg font-bold text-gray-900">Hapus Ruangan Terpilih?</h2>
+            <p class="mt-3 text-sm text-gray-600">Anda akan menghapus <strong>${count}</strong> ruangan terpilih. Foto dan data fasilitas ruangan akan ikut terhapus. Ruangan yang memiliki riwayat peminjaman <strong>tidak dihapus permanen</strong> — ruangan tersebut diarsipkan (dinonaktifkan) agar tidak muncul di katalog, sementara data peminjaman tetap tersimpan. Tindakan ini tidak dapat dibatalkan.</p>
+            <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button id="room-bulk-confirm-cancel" type="button" class="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-50">Batal</button>
+                <button id="room-bulk-confirm-ok" type="button" class="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-red-700">Hapus</button>
+            </div>
+        </section>
+    `;
+    document.body.appendChild(root);
+
+    const close = (): void => {
+        root.remove();
+        if (bulkConfirmEscape) { document.removeEventListener('keydown', bulkConfirmEscape); bulkConfirmEscape = null; }
+    };
+    bulkConfirmEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    document.addEventListener('keydown', bulkConfirmEscape);
+    root.querySelector('[data-room-bulk-overlay]')?.addEventListener('click', close);
+    root.querySelector('#room-bulk-confirm-cancel')?.addEventListener('click', close);
+    root.querySelector('#room-bulk-confirm-ok')?.addEventListener('click', () => { close(); void performBulkDelete(); });
+    root.querySelector<HTMLButtonElement>('#room-bulk-confirm-ok')?.focus();
+};
+
+const performBulkDelete = async (): Promise<void> => {
+    const ids = [...roomSelection];
+    if (ids.length === 0) return;
+    try {
+        const result = await bulkDeleteRooms(ids);
+        const { deleted, archived } = result.summary;
+        const message = deleted > 0 && archived > 0
+            ? `${deleted} ruangan dihapus, ${archived} diarsipkan (memiliki riwayat peminjaman).`
+            : archived > 0
+                ? `${archived} ruangan diarsipkan karena memiliki riwayat peminjaman.`
+                : `${deleted} ruangan berhasil dihapus.`;
+        showToast(message, true);
+        roomSelection.clear();
+        // A deleted/archived room's detail drawer must not linger.
+        closeRoomManagementDrawer();
+        await loadRooms(false);
+    } catch (error) {
+        // Keep the selection so the user can see the failed rows and retry.
+        showToast(errorMessage(error, 'Gagal menghapus ruangan.'), false);
     }
 };
 
@@ -517,7 +960,194 @@ const attachBookingListeners = (): void => {
     });
 };
 
+const reloadCalendarForFilterChange = (): void => {
+    calendarState.selectedDateKey = null;
+    closeCalendarDayDrawer();
+    void loadCalendar();
+};
+
+const focusCalendarDateButton = (dateKey: string): void => {
+    document.querySelector<HTMLElement>(`[${CALENDAR_DATE_ATTRIBUTE}="${dateKey}"]`)?.focus();
+};
+
+const moveCalendarFocus = (dateKey: string, key: string): void => {
+    const targetDateKey = getCalendarKeyboardTargetDateKey(dateKey, key);
+    if (!targetDateKey) return;
+
+    const [targetYear, targetMonth] = targetDateKey.split('-').map(Number);
+    if (!targetYear || !targetMonth) return;
+
+    const monthChanged = targetYear !== calendarState.cursor.getFullYear()
+        || targetMonth - 1 !== calendarState.cursor.getMonth();
+
+    if (!monthChanged) {
+        focusCalendarDateButton(targetDateKey);
+        return;
+    }
+
+    calendarState.cursor = new Date(targetYear, targetMonth - 1, 1);
+    calendarState.selectedDateKey = null;
+    closeCalendarDayDrawer();
+    void loadCalendar().then(() => focusCalendarDateButton(targetDateKey));
+};
+
+const selectCalendarDate = (dateKey: string): void => {
+    calendarState.selectedDateKey = dateKey;
+    const grid = document.getElementById('admin-peminjaman-calendar-grid');
+    if (grid) grid.innerHTML = renderAdminCalendarGrid();
+    openCalendarDayDrawer(dateKey);
+};
+
+const attachCalendarDetailButtons = (root: ParentNode = document): void => {
+    root.querySelectorAll<HTMLElement>('[data-admin-calendar-detail]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const id = Number(button.dataset.adminCalendarDetail);
+            if (!Number.isInteger(id) || id <= 0) return;
+            closeCalendarDayDrawer();
+            void openBookingDetail(id);
+        });
+    });
+};
+
+const attachCalendarListeners = (): void => {
+    document.querySelectorAll<HTMLElement>('[data-admin-calendar-room-type]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const value = button.dataset.adminCalendarRoomType as CalendarRoomTypeFilter | undefined;
+            if (!value || calendarState.roomType === value) return;
+            calendarState.roomType = value;
+            if (
+                calendarState.roomId !== null
+                && !calendarRoomOptions().some((room) => room.id === calendarState.roomId)
+            ) {
+                calendarState.roomId = null;
+            }
+            reloadCalendarForFilterChange();
+        });
+    });
+    document.querySelectorAll<HTMLElement>('[data-admin-calendar-status]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const value = button.dataset.adminCalendarStatus as CalendarStatusFilter | undefined;
+            if (!value || calendarState.status === value) return;
+            calendarState.status = value;
+            reloadCalendarForFilterChange();
+        });
+    });
+    document.getElementById('admin-calendar-laboratory')?.addEventListener('change', () => {
+        const value = (document.getElementById('admin-calendar-laboratory') as HTMLSelectElement | null)?.value ?? '';
+        calendarState.laboratoryId = value ? Number(value) : null;
+        if (
+            calendarState.roomId !== null
+            && !calendarRoomOptions().some((room) => room.id === calendarState.roomId)
+        ) {
+            calendarState.roomId = null;
+        }
+        reloadCalendarForFilterChange();
+    });
+    document.getElementById('admin-calendar-room')?.addEventListener('change', () => {
+        const value = (document.getElementById('admin-calendar-room') as HTMLSelectElement | null)?.value ?? '';
+        calendarState.roomId = value ? Number(value) : null;
+        reloadCalendarForFilterChange();
+    });
+    document.getElementById('admin-calendar-reset')?.addEventListener('click', () => {
+        calendarState = createResetCalendarState();
+        closeCalendarDayDrawer();
+        void loadCalendar();
+    });
+    document.getElementById('admin-calendar-prev-month')?.addEventListener('click', () => {
+        calendarState.cursor = new Date(
+            calendarState.cursor.getFullYear(),
+            calendarState.cursor.getMonth() - 1,
+            1,
+        );
+        reloadCalendarForFilterChange();
+    });
+    document.getElementById('admin-calendar-next-month')?.addEventListener('click', () => {
+        calendarState.cursor = new Date(
+            calendarState.cursor.getFullYear(),
+            calendarState.cursor.getMonth() + 1,
+            1,
+        );
+        reloadCalendarForFilterChange();
+    });
+    document.getElementById('admin-calendar-today')?.addEventListener('click', () => {
+        const now = new Date();
+        calendarState.cursor = new Date(now.getFullYear(), now.getMonth(), 1);
+        calendarState.selectedDateKey = formatDateKey(now);
+        closeCalendarDayDrawer();
+        void loadCalendar();
+    });
+    document.getElementById('admin-peminjaman-calendar-grid')?.addEventListener('click', (event) => {
+        const target = (event.target as HTMLElement).closest<HTMLElement>(`[${CALENDAR_DATE_ATTRIBUTE}]`);
+        const dateKey = target?.getAttribute(CALENDAR_DATE_ATTRIBUTE);
+        if (!dateKey) return;
+        selectCalendarDate(dateKey);
+    });
+    document.getElementById('admin-peminjaman-calendar-grid')?.addEventListener('keydown', (event) => {
+        const target = (event.target as HTMLElement).closest<HTMLElement>(`[${CALENDAR_DATE_ATTRIBUTE}]`);
+        const dateKey = target?.getAttribute(CALENDAR_DATE_ATTRIBUTE);
+        if (!dateKey) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectCalendarDate(dateKey);
+            return;
+        }
+        if (!getCalendarKeyboardTargetDateKey(dateKey, event.key)) return;
+        event.preventDefault();
+        moveCalendarFocus(dateKey, event.key);
+    });
+    document.getElementById('admin-calendar-retry')?.addEventListener('click', () => {
+        void loadCalendar();
+    });
+    attachCalendarDetailButtons();
+};
+
+const loadCalendar = async (): Promise<void> => {
+    const sequence = ++calendarRequestSequence;
+    calendarLoading = true;
+    calendarUpcomingLoading = true;
+    calendarError = null;
+    calendarUpcomingError = null;
+    renderPage();
+
+    const [monthResult, upcomingResult] = await Promise.allSettled([
+        getSuperAdminBookingCalendar(calendarApiFilters()),
+        getSuperAdminBookingCalendar(calendarUpcomingApiFilters()),
+    ]);
+
+    if (sequence !== calendarRequestSequence) return;
+
+    if (monthResult.status === 'fulfilled') {
+        calendarItems = monthResult.value.items;
+        calendarStatusCounts = monthResult.value.summary.counts_by_status ?? {};
+        calendarActiveCount = Number(monthResult.value.summary.active_total ?? 0);
+        calendarHistoryCount = Number(monthResult.value.summary.history_total ?? 0);
+        calendarError = null;
+    } else {
+        calendarItems = [];
+        calendarStatusCounts = {};
+        calendarActiveCount = 0;
+        calendarHistoryCount = 0;
+        calendarError = errorMessage(monthResult.reason, 'Kalender peminjaman gagal dimuat.');
+    }
+
+    if (upcomingResult.status === 'fulfilled') {
+        calendarUpcomingItemsState = upcomingResult.value.items;
+        calendarUpcomingError = null;
+    } else {
+        calendarUpcomingItemsState = [];
+        calendarUpcomingError = errorMessage(upcomingResult.reason, 'Peminjaman terdekat gagal dimuat.');
+    }
+
+    calendarLoaded = true;
+    calendarLoading = false;
+    calendarUpcomingLoading = false;
+    renderPage();
+};
+
 const loadRooms = async (showLoading = true): Promise<void> => {
+    // Any list refresh (filter/search/reset/retry/post-delete) drops the
+    // selection so we never act on rows that are no longer visible.
+    clearRoomSelection();
     if (showLoading) {
         roomsLoading = true;
         roomsError = null;
@@ -594,6 +1224,51 @@ const closeDrawer = (): void => {
     }
 };
 
+const closeCalendarDayDrawer = (refreshGrid = false): void => {
+    document.getElementById('admin-calendar-day-drawer-root')?.remove();
+    if (calendarDayEscapeHandler) {
+        document.removeEventListener('keydown', calendarDayEscapeHandler);
+        calendarDayEscapeHandler = null;
+    }
+    if (refreshGrid) {
+        calendarState.selectedDateKey = null;
+        const grid = document.getElementById('admin-peminjaman-calendar-grid');
+        if (grid) grid.innerHTML = renderAdminCalendarGrid();
+    }
+};
+
+const openCalendarDayDrawer = (dateKey: string): void => {
+    closeCalendarDayDrawer();
+    const items = calendarItemsForDate(dateKey);
+    const root = document.createElement('div');
+    root.id = 'admin-calendar-day-drawer-root';
+    root.innerHTML = renderBookingCalendarSelectedDatePanel({
+        dateKey,
+        items,
+        titleEyebrow: 'Peminjaman Ruangan',
+        titleId: 'admin-calendar-day-title',
+        closeButtonId: 'close-admin-calendar-day',
+        closeButtonLabel: 'Tutup detail tanggal',
+        overlayDataAttribute: 'data-admin-calendar-day-overlay',
+        countText: calendarState.status === 'active'
+            ? `${items.length} jadwal atau pengajuan aktif pada tanggal ini.`
+            : `${items.length} peminjaman pada tanggal ini mengikuti filter terpilih.`,
+        emptyText: 'Belum ada peminjaman pada tanggal ini untuk filter aktif.',
+        actions: [CALENDAR_DETAIL_ACTION],
+    });
+    document.body.appendChild(root);
+
+    const close = (): void => closeCalendarDayDrawer(true);
+    root.querySelector('[data-admin-calendar-day-overlay]')?.addEventListener('click', close);
+    root.querySelector('#close-admin-calendar-day')?.addEventListener('click', close);
+    attachCalendarDetailButtons(root);
+    calendarDayEscapeHandler = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') close();
+    };
+    document.addEventListener('keydown', calendarDayEscapeHandler);
+    root.querySelector<HTMLButtonElement>('#close-admin-calendar-day')?.focus();
+};
+
 const installDrawerEscape = (): void => {
     if (drawerEscapeHandler) document.removeEventListener('keydown', drawerEscapeHandler);
     drawerEscapeHandler = (event: KeyboardEvent) => {
@@ -615,6 +1290,28 @@ const drawerRoot = (): HTMLElement => {
     root.id = 'admin-peminjaman-drawer-root';
     document.body.appendChild(root);
     return root;
+};
+
+const renderConflictNotice = (booking: SuperAdminBooking): string => {
+    if (booking.conflict_status === 'approved_overlap') {
+        const count = booking.conflicts?.length ?? 0;
+        const countText = count > 0 ? ` ${count} jadwal bentrok terdeteksi.` : '';
+
+        return `
+            <p role="status" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">Pengajuan ini bentrok dengan peminjaman yang sudah disetujui. Super Admin hanya memantau; persetujuan tetap dicegah oleh sistem sampai konflik diselesaikan.${escapeHtml(countText)}</p>
+        `;
+    }
+
+    if (booking.conflict_status === 'pending_overlap') {
+        const count = booking.conflicts?.length ?? 0;
+        const countText = count > 0 ? ` ${count} pengajuan lain terdeteksi.` : '';
+
+        return `
+            <p role="status" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Ada pengajuan lain pada ruang dan waktu yang sama. Super Admin hanya memantau konflik ini.${escapeHtml(countText)}</p>
+        `;
+    }
+
+    return '';
 };
 
 const renderBookingDetail = (
@@ -650,6 +1347,7 @@ const renderBookingDetail = (
                             <span class="inline-flex rounded-full border px-3 py-1 text-xs font-bold ${getBookingStatusTone(booking.status)}">${escapeHtml(getBookingStatusLabel(booking.status))}</span>
                             <span class="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">Monitoring saja</span>
                         </div>
+                        ${renderConflictNotice(booking)}
                         <dl class="divide-y divide-gray-100">
                             ${[
                                 ['Pemohon', booking.requester?.name ?? '-'],
@@ -755,8 +1453,23 @@ export const renderPeminjamanRuanganAdmin = async (): Promise<void> => {
     bookingsLoading = true;
     bookingsError = null;
     bookingFilterError = null;
+    calendarState = createInitialCalendarState();
+    calendarItems = [];
+    calendarStatusCounts = {};
+    calendarActiveCount = 0;
+    calendarHistoryCount = 0;
+    calendarUpcomingItemsState = [];
+    calendarUpcomingLoading = false;
+    calendarUpcomingError = null;
+    calendarLoading = false;
+    calendarLoaded = false;
+    calendarError = null;
+    calendarRequestSequence = 0;
     roomCoverCache.forEach((url) => URL.revokeObjectURL(url));
     roomCoverCache.clear();
+    clearRoomSelection();
+    document.getElementById('room-bulk-confirm-root')?.remove();
+    closeCalendarDayDrawer();
     closeModal();
     closeDrawer();
     closeRoomManagementDrawer();

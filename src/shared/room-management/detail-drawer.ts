@@ -38,6 +38,7 @@ import {
 import { getRoomTypeLabel } from '../peminjaman-calendar';
 import type {
     FacilitySyncEntry,
+    FacilityDelegatedActivityAcknowledgementOutcome,
     FacilityTypeOption,
     ManagedLaboratory,
     ManagedRoomDetail,
@@ -56,6 +57,9 @@ type Tab = 'info' | 'foto' | 'fasilitas' | 'template' | 'riwayat';
 interface DrawerOptions {
     laboratories: ManagedLaboratory[];
     onRoomMutated?: () => void;
+    // Tab to open on first render (defaults to 'info'). Used e.g. when jumping
+    // in from the Master Fasilitas usage drawer, which lands on 'fasilitas'.
+    initialTab?: Tab;
 }
 
 interface FacilityRow {
@@ -76,6 +80,10 @@ interface DrawerState {
     // lazy tab caches
     photos: ManagedRoomPhoto[] | null;
     facilities: FacilityRow[] | null;
+    // Snapshot of the last-persisted facility rows, for saved/unsaved markers
+    // and dirty detection.
+    savedFacilities: FacilityRow[] | null;
+    facilityAcknowledgement: FacilityDelegatedActivityAcknowledgementOutcome | null;
     facilityTypes: FacilityTypeOption[];
     templates: ManagedRoomTemplate[] | null;
     audit: RoomAuditEntry[] | null;
@@ -121,13 +129,15 @@ export const openRoomManagementDrawer = async (
     state = {
         roomId,
         detail: null,
-        activeTab: 'info',
+        activeTab: options.initialTab ?? 'info',
         loadError: null,
         options,
         objectUrls: new Map(),
         escapeHandler: null,
         photos: null,
         facilities: null,
+        savedFacilities: null,
+        facilityAcknowledgement: null,
         facilityTypes: [],
         templates: null,
         audit: null,
@@ -250,6 +260,18 @@ const renderActiveTab = (): void => {
         case 'template': return void renderTemplateTab();
         case 'riwayat': return void renderAuditTab();
     }
+};
+
+/**
+ * Repaint the currently-open tab from already-loaded caches (no fetch). Used
+ * by withBusy() to guarantee the tab re-renders AFTER state.busy is cleared,
+ * so busy-labelled controls ("Mengunggah..."/"Menyimpan...") always reset.
+ */
+const repaintActiveTab = (): void => {
+    if (!state) return;
+    if (state.activeTab === 'foto' && state.photos !== null) paintPhotoTab();
+    else if (state.activeTab === 'fasilitas' && state.facilities !== null) paintFacilityTab();
+    else if (state.activeTab === 'template' && state.templates !== null) paintTemplateTab();
 };
 
 const notifyMutation = (): void => {
@@ -426,9 +448,9 @@ const paintPhotoTab = (): void => {
         <div class="space-y-5">
             ${canManage ? `
                 <div class="flex flex-wrap items-center justify-between gap-3">
-                    <p class="text-xs text-gray-500">Maksimal ${PHOTO_LIMIT} foto. Foto pertama otomatis menjadi sampul.</p>
+                    <p class="text-xs text-gray-500">Maksimal ${PHOTO_LIMIT} foto (JPG/PNG/WebP, maks 5 MB). Bisa pilih beberapa foto sekaligus. Foto pertama otomatis menjadi sampul.</p>
                     <div>
-                        <input id="room-photo-input" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" ${photos.length >= PHOTO_LIMIT || state.busy ? 'disabled' : ''}>
+                        <input id="room-photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple class="sr-only" ${photos.length >= PHOTO_LIMIT || state.busy ? 'disabled' : ''}>
                         <label for="room-photo-input" class="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800 ${photos.length >= PHOTO_LIMIT || state.busy ? 'cursor-not-allowed opacity-60' : ''}">
                             ${state.busy ? 'Mengunggah...' : 'Unggah Foto'}
                         </label>
@@ -443,8 +465,11 @@ const paintPhotoTab = (): void => {
 
     if (canManage) {
         body.querySelector('#room-photo-input')?.addEventListener('change', (event) => {
-            const file = (event.target as HTMLInputElement).files?.[0];
-            if (file) void handlePhotoUpload(file);
+            const input = event.target as HTMLInputElement;
+            const files = input.files ? Array.from(input.files) : [];
+            // Reset so re-selecting the same file(s) fires change again.
+            input.value = '';
+            if (files.length > 0) void handlePhotoUploadQueue(files);
         });
         photos.forEach((photo) => {
             body.querySelector(`[data-photo-cover="${photo.id}"]`)?.addEventListener('click', () => void handleSetCover(photo.id));
@@ -465,6 +490,7 @@ const paintPhotoTab = (): void => {
             const image = document.createElement('img');
             image.src = objectUrl;
             image.alt = `Foto ruangan ${escapeHtml(state?.detail?.code ?? '')}`;
+            image.loading = 'lazy';
             image.className = 'h-full w-full object-cover';
             container.replaceChildren(image);
         }).catch(() => { /* keep placeholder */ });
@@ -501,23 +527,101 @@ const withBusy = async (task: () => Promise<void>): Promise<void> => {
     try {
         await task();
     } finally {
-        if (state) state.busy = false;
+        if (state) {
+            // Clear busy THEN repaint, so busy-labelled controls reset even
+            // though the task painted its final state while busy was still true.
+            state.busy = false;
+            repaintActiveTab();
+        }
     }
 };
 
-const handlePhotoUpload = (file: File): Promise<void> => withBusy(async () => {
+const ALLOWED_PHOTO_MIME = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // mirrors backend max:5120 KB
+
+const photoFileError = (file: File): string | null => {
+    if (!ALLOWED_PHOTO_MIME.includes(file.type)) {
+        return `${file.name}: format harus JPG, PNG, atau WebP.`;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+        return `${file.name}: ukuran melebihi 5 MB.`;
+    }
+    return null;
+};
+
+const setUploadLabel = (text: string): void => {
+    const label = document.querySelector('label[for="room-photo-input"]');
+    if (label) label.textContent = text;
+};
+
+/**
+ * Sequentially uploads one or more selected photos through the single-file
+ * backend endpoint, enforcing the per-room cap and client-side type/size
+ * checks, with a live progress label and a per-outcome summary.
+ */
+const handlePhotoUploadQueue = (files: File[]): Promise<void> => withBusy(async () => {
     if (!state) return;
-    paintPhotoTab();
+
+    const remaining = PHOTO_LIMIT - (state.photos ?? []).length;
+    if (remaining <= 0) {
+        showToast(`Jumlah foto sudah mencapai batas ${PHOTO_LIMIT}.`, false);
+        return;
+    }
+
+    const valid: File[] = [];
+    const invalid: string[] = [];
+    for (const file of files) {
+        const error = photoFileError(file);
+        if (error) invalid.push(error);
+        else valid.push(file);
+    }
+
+    let skippedForLimit = 0;
+    let queue = valid;
+    if (valid.length > remaining) {
+        skippedForLimit = valid.length - remaining;
+        queue = valid.slice(0, remaining);
+    }
+
+    if (queue.length === 0) {
+        showToast(invalid[0] ?? 'Tidak ada foto valid untuk diunggah.', false);
+        return;
+    }
+
+    paintPhotoTab(); // lock the control (disabled + "Mengunggah...")
+
+    let succeeded = 0;
+    const failed: string[] = [];
+    for (let i = 0; i < queue.length; i++) {
+        setUploadLabel(`Mengunggah ${i + 1}/${queue.length}...`);
+        try {
+            await uploadRoomPhoto(state.roomId, queue[i]);
+            if (state === null) return;
+            succeeded += 1;
+        } catch (error) {
+            failed.push(`${queue[i].name}: ${apiMessage(error, 'gagal diunggah')}`);
+        }
+    }
+
     try {
-        await uploadRoomPhoto(state.roomId, file);
         state.photos = await listRoomPhotos(state.roomId);
-        showToast('Foto berhasil diunggah.', true);
+    } catch { /* keep last known list; final repaint still resets the control */ }
+
+    if (succeeded > 0) {
         notifyMutation();
         await reloadDetail();
-    } catch (error) {
-        showToast(apiMessage(error, 'Gagal mengunggah foto. Coba lagi.'), false);
+        showToast(`${succeeded} foto berhasil diunggah.`, true);
     }
-    paintPhotoTab();
+    if (failed.length > 0) {
+        showToast(`${failed.length} foto gagal diunggah. ${failed[0]}`, false);
+    }
+    if (skippedForLimit > 0) {
+        showToast(`${skippedForLimit} foto dilewati karena melebihi batas ${PHOTO_LIMIT} foto.`, false);
+    }
+    if (succeeded === 0 && failed.length === 0 && invalid.length > 0) {
+        showToast(invalid[0], false);
+    }
+    // withBusy's finally repaints the tab with busy=false → control resets.
 });
 
 const handleSetCover = (photoId: number): Promise<void> => withBusy(async () => {
@@ -574,6 +678,83 @@ const toFacilityRow = (facility: ManagedRoomFacility): FacilityRow => ({
     notes: facility.notes ?? '',
 });
 
+const cloneFacilityRows = (rows: FacilityRow[]): FacilityRow[] =>
+    rows.map((row) => ({ ...row }));
+
+/** Stable signature of a facility row, for saved/unsaved comparison. */
+const facilityRowSignature = (row: FacilityRow): string =>
+    `${row.facility_type_id}|${row.quantity.trim()}|${row.condition}|${row.notes.trim()}`;
+
+/** True when the row exactly matches a persisted (saved) row. */
+const facilityRowIsSaved = (row: FacilityRow): boolean => {
+    if (row.facility_type_id === '') return false;
+    const signature = facilityRowSignature(row);
+    return (state?.savedFacilities ?? []).some((saved) => facilityRowSignature(saved) === signature);
+};
+
+/** True when the current rows differ from the persisted snapshot. */
+const facilitiesAreDirty = (): boolean => {
+    const current = (state?.facilities ?? []).map(facilityRowSignature).sort();
+    const saved = (state?.savedFacilities ?? []).map(facilityRowSignature).sort();
+    if (current.length !== saved.length) return true;
+    return current.some((signature, index) => signature !== saved[index]);
+};
+
+const clearFacilityAcknowledgement = (): void => {
+    if (state) state.facilityAcknowledgement = null;
+};
+
+const facilityAcknowledgementCopy = (
+    acknowledgement: FacilityDelegatedActivityAcknowledgementOutcome,
+): { title: string; body: string | null } => {
+    if (acknowledgement.outcome === 'created') {
+        return {
+            title: 'Perubahan fasilitas tersimpan',
+            body: 'Aktivitas ini menunggu peninjauan Kepala Lab.',
+        };
+    }
+
+    if (acknowledgement.outcome === 'existing') {
+        return {
+            title: 'Perubahan fasilitas tersimpan',
+            body: 'Aktivitas peninjauan sudah tercatat sebelumnya.',
+        };
+    }
+
+    if (acknowledgement.reason === 'no_active_kepala_lab') {
+        return {
+            title: 'Perubahan fasilitas tersimpan',
+            body: 'Belum ada Kepala Lab aktif untuk peninjauan otomatis.',
+        };
+    }
+
+    if (acknowledgement.reason === 'no_effective_change') {
+        return {
+            title: 'Tidak ada perubahan baru',
+            body: 'Data fasilitas sudah sesuai, tidak ada aktivitas peninjauan baru.',
+        };
+    }
+
+    return {
+        title: acknowledgement.message || 'Perubahan fasilitas tersimpan',
+        body: null,
+    };
+};
+
+const renderFacilityAcknowledgementStatus = (): string => {
+    const acknowledgement = state?.facilityAcknowledgement;
+    if (!acknowledgement) return '';
+
+    const copy = facilityAcknowledgementCopy(acknowledgement);
+
+    return `
+        <section id="room-facility-delegated-status" role="status" aria-live="polite" data-facility-delegated-outcome="${escapeHtml(acknowledgement.outcome)}" class="rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+            <p class="font-bold">${escapeHtml(copy.title)}</p>
+            ${copy.body ? `<p class="mt-1 text-xs font-semibold text-teal-800">${escapeHtml(copy.body)}</p>` : ''}
+        </section>
+    `;
+};
+
 const renderFacilityTab = async (): Promise<void> => {
     if (!state) return;
     if (state.facilities === null) {
@@ -582,11 +763,28 @@ const renderFacilityTab = async (): Promise<void> => {
         try {
             const [facilities, types] = await Promise.all([
                 getRoomFacilities(state.roomId),
-                listFacilityTypes(),
+                // Only active types are offered for new assignments; inactive
+                // types already on the room stay via the saved facility rows.
+                listFacilityTypes(true),
             ]);
             if (state !== local) return;
-            state.facilities = facilityDisplayList(facilities).map(toFacilityRow);
-            state.facilityTypes = types;
+            const assigned = facilityDisplayList(facilities);
+            state.facilities = assigned.map(toFacilityRow);
+            state.savedFacilities = cloneFacilityRows(state.facilities);
+            // Keep already-assigned types selectable even if later deactivated,
+            // so saved rows still render their name.
+            const byId = new Map(types.map((type) => [type.id, type]));
+            for (const facility of assigned) {
+                if (!byId.has(facility.facility_type_id) && facility.name) {
+                    byId.set(facility.facility_type_id, {
+                        id: facility.facility_type_id,
+                        name: facility.name,
+                        slug: facility.slug ?? '',
+                        is_predefined: false,
+                    });
+                }
+            }
+            state.facilityTypes = Array.from(byId.values());
         } catch (error) {
             if (state !== local) return;
             const body = bodyEl();
@@ -608,20 +806,36 @@ const paintFacilityTab = (): void => {
             <option value="${value}" ${value === selectedValue ? 'selected' : ''}>${value === '' ? 'Kondisi (opsional)' : escapeHtml(facilityConditionLabel(value) ?? value)}</option>
         `).join('');
 
-    const typeOptions = (selectedId: number | ''): string =>
-        `<option value="">Pilih fasilitas</option>` + state!.facilityTypes.map((type) => `
-            <option value="${type.id}" ${type.id === selectedId ? 'selected' : ''}>${escapeHtml(type.name)}</option>
+    // Facility types already assigned in OTHER rows are disabled here to
+    // prevent a duplicate assignment the backend would reject.
+    const typeOptions = (selectedId: number | '', rowIndex: number): string => {
+        const usedElsewhere = new Set(
+            rows.filter((_, i) => i !== rowIndex)
+                .map((r) => r.facility_type_id)
+                .filter((id): id is number => id !== ''),
+        );
+        return `<option value="">Pilih fasilitas</option>` + state!.facilityTypes.map((type) => `
+            <option value="${type.id}" ${type.id === selectedId ? 'selected' : ''} ${usedElsewhere.has(type.id) ? 'disabled' : ''}>${escapeHtml(type.name)}${usedElsewhere.has(type.id) ? ' (sudah dipilih)' : ''}</option>
         `).join('');
+    };
+
+    const dirty = facilitiesAreDirty();
 
     body.innerHTML = `
         <div class="space-y-4">
             ${!canManage ? renderReadonlyFacilities(rows) : `
                 <div id="room-facility-rows" class="space-y-3">
                     ${rows.length === 0 ? '<p class="rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500">Fasilitas belum dicatat. Tambahkan fasilitas ruangan di bawah.</p>' : ''}
-                    ${rows.map((row, index) => `
-                        <div class="rounded-xl border border-gray-100 bg-gray-50 p-3" data-facility-row="${index}">
+                    ${rows.map((row, index) => {
+                        const saved = facilityRowIsSaved(row);
+                        return `
+                        <div class="rounded-xl border ${saved ? 'border-gray-100 bg-gray-50' : 'border-amber-200 bg-amber-50/50'} p-3" data-facility-row="${index}">
+                            <div class="mb-2 flex items-center justify-between gap-2">
+                                <span class="text-[10px] font-bold uppercase tracking-wide text-gray-400">Fasilitas ${index + 1}</span>
+                                <span class="rounded-full border px-2 py-0.5 text-[10px] font-bold ${saved ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-100 text-amber-700'}">${saved ? 'Tersimpan' : 'Belum disimpan'}</span>
+                            </div>
                             <div class="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_88px_140px]">
-                                <select data-facility-type="${index}" class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">${typeOptions(row.facility_type_id)}</select>
+                                <select data-facility-type="${index}" class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">${typeOptions(row.facility_type_id, index)}</select>
                                 <input data-facility-qty="${index}" type="number" min="1" max="10000" value="${escapeHtml(row.quantity)}" placeholder="Jumlah" class="rounded-lg border border-gray-200 px-3 py-2 text-sm">
                                 <select data-facility-condition="${index}" class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">${conditionOptions(row.condition)}</select>
                             </div>
@@ -630,11 +844,14 @@ const paintFacilityTab = (): void => {
                                 <button type="button" data-facility-remove="${index}" class="rounded-lg px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50">Hapus</button>
                             </div>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
+                ${dirty ? '<p data-facility-dirty class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800">Ada perubahan fasilitas yang belum disimpan.</p>' : ''}
+                ${renderFacilityAcknowledgementStatus()}
                 <div class="flex flex-wrap items-center gap-3">
                     <button id="room-facility-add" type="button" class="rounded-xl border border-teal-700 px-4 py-2 text-sm font-bold text-teal-700 hover:bg-teal-50">Tambah Fasilitas</button>
-                    <button id="room-facility-save" type="button" ${state.busy ? 'disabled' : ''} class="rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-60">${state.busy ? 'Menyimpan...' : 'Simpan Fasilitas'}</button>
+                    <button id="room-facility-save" type="button" ${state.busy || !dirty ? 'disabled' : ''} class="rounded-xl px-4 py-2 text-sm font-bold text-white disabled:opacity-60 ${dirty ? 'bg-teal-700 hover:bg-teal-800' : 'bg-gray-400'}">${state.busy ? 'Menyimpan...' : dirty ? 'Simpan Perubahan' : 'Tersimpan'}</button>
                 </div>
                 <details class="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
                     <summary class="cursor-pointer text-xs font-bold text-gray-600">Tambah jenis fasilitas baru</summary>
@@ -651,6 +868,7 @@ const paintFacilityTab = (): void => {
 
     body.querySelector('#room-facility-add')?.addEventListener('click', () => {
         syncFacilityInputsToState();
+        clearFacilityAcknowledgement();
         state?.facilities?.push({ facility_type_id: '', quantity: '', condition: '', notes: '' });
         paintFacilityTab();
     });
@@ -659,8 +877,18 @@ const paintFacilityTab = (): void => {
     (state.facilities ?? []).forEach((_row, index) => {
         body.querySelector(`[data-facility-remove="${index}"]`)?.addEventListener('click', () => {
             syncFacilityInputsToState();
+            clearFacilityAcknowledgement();
             state?.facilities?.splice(index, 1);
             paintFacilityTab();
+        });
+        // Recompute saved/unsaved badges + dirty state after each field edit.
+        // 'change' fires on blur/selection, so it never disrupts mid-typing.
+        ['type', 'qty', 'condition', 'notes'].forEach((field) => {
+            body.querySelector(`[data-facility-${field}="${index}"]`)?.addEventListener('change', () => {
+                syncFacilityInputsToState();
+                clearFacilityAcknowledgement();
+                paintFacilityTab();
+            });
         });
     });
 };
@@ -713,8 +941,11 @@ const handleFacilitySave = (): Promise<void> => withBusy(async () => {
     }
     paintFacilityTab();
     try {
+        clearFacilityAcknowledgement();
         const saved = await syncRoomFacilities(state.roomId, payload);
-        state.facilities = facilityDisplayList(saved).map(toFacilityRow);
+        state.facilities = facilityDisplayList(saved.data).map(toFacilityRow);
+        state.savedFacilities = cloneFacilityRows(state.facilities);
+        state.facilityAcknowledgement = saved.delegated_activity_acknowledgement ?? null;
         showToast('Fasilitas ruangan berhasil disimpan.', true);
         notifyMutation();
         await reloadDetail();
@@ -735,6 +966,7 @@ const handleCreateFacilityType = (): Promise<void> => withBusy(async () => {
     syncFacilityInputsToState();
     try {
         const created = await createFacilityType(name);
+        clearFacilityAcknowledgement();
         state.facilityTypes = [...state.facilityTypes, created];
         state.facilities?.push({ facility_type_id: created.id, quantity: '', condition: '', notes: '' });
         showToast('Jenis fasilitas berhasil ditambahkan.', true);

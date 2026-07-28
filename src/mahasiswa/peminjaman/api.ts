@@ -1,4 +1,10 @@
 import { apiFetch } from '../../shared/api-client';
+import {
+    isAvailabilityItem,
+    isTendikOperationalOccurrence,
+    isMahasiswaBooking,
+    isRoom,
+} from './booking-schema';
 import type {
     ApiEnvelope,
     AvailabilityItem,
@@ -12,17 +18,24 @@ import type {
     RoomTemplateInfo,
     RoomType,
     SuperAdminBooking,
+    SuperAdminCalendarEnvelope,
+    SuperAdminCalendarFilters,
     SuperAdminBookingFilters,
     SuperAdminBookingListEnvelope,
     SuperAdminRoomFilters,
     TendikBooking,
     TendikBookingFilters,
+    TendikCalendarEnvelope,
+    TendikCalendarFilters,
     TendikBookingListEnvelope,
     TendikReviewerProfile,
+    BookingOccurrence,
+    TendikOperationalOccurrence,
     ValidationErrors,
 } from './types';
 
 const BASE = '/api/mahasiswa/peminjaman-ruangan';
+const TENDIK_BASE = '/api/tendik/peminjaman-ruangan';
 const TENDIK_REQUESTS_BASE = '/api/tendik/peminjaman-ruangan/requests';
 const SUPER_ADMIN_BASE = '/api/super-admin/peminjaman-ruangan';
 // Protected surat-peminjaman attachment routes (role-gated inside the backend
@@ -87,12 +100,91 @@ async function readJson<T>(response: Response, fallbackMessage: string): Promise
     return payload as T;
 }
 
+/**
+ * Code carried by every rejection caused by a structurally invalid 2xx body.
+ * Callers use it to tell "the server said no" apart from "the server said yes
+ * but we cannot trust what it said" — the latter is never a confirmed success.
+ */
+export const MALFORMED_RESPONSE_CODE = 'malformed_response';
+
+/** Generate a browser-cryptographic key for one initial-submission intent. */
+export const generateRoomBookingIdempotencyKey = (): string => {
+    if (typeof globalThis.crypto.randomUUID === 'function') {
+        return globalThis.crypto.randomUUID();
+    }
+
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    return `booking-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+};
+
+/**
+ * True when a failed mutation leaves the real server-side outcome UNKNOWN:
+ * the request may or may not have been applied. Network faults, 5xx, and a
+ * malformed 2xx body all qualify. A definitive 4xx rejection does not — the
+ * server processed the request and declined it.
+ */
+export const isUncertainOutcome = (error: unknown): boolean => {
+    if (error instanceof PeminjamanApiError) {
+        return error.code === MALFORMED_RESPONSE_CODE
+            || error.status >= 500
+            || error.status === 0;
+    }
+
+    // Network/abort/unknown throw: the request may still have reached the API.
+    return true;
+};
+
+/**
+ * Read a list envelope and guarantee an array of VALID elements. A 2xx body
+ * without the expected `data` array — or with one malformed element — is a
+ * MALFORMED response, not an empty result: it must reject into the caller's
+ * error branch (banner + retry) rather than resolve to `undefined` for
+ * `.map()/.filter()` to crash on, or be faked into an empty list that would
+ * hide a server-side failure. An empty array stays a legitimate empty result.
+ */
+async function readArrayData<T>(
+    response: Response,
+    isValidElement: (value: unknown) => value is T,
+    fallbackMessage: string,
+): Promise<T[]> {
+    const payload = await readJson<ApiEnvelope<unknown>>(response, fallbackMessage);
+    const data = payload.data;
+    if (!Array.isArray(data) || !data.every(isValidElement)) {
+        throw new PeminjamanApiError(
+            fallbackMessage,
+            response.status,
+            MALFORMED_RESPONSE_CODE,
+        );
+    }
+
+    return data;
+}
+
+/**
+ * Same guarantee for single-object envelopes (booking detail, mutations). An
+ * array or `null` in `data` is a malformed object payload, never a booking.
+ */
+async function readObjectData<T>(
+    response: Response,
+    isValid: (value: unknown) => value is T,
+    fallbackMessage: string,
+): Promise<T> {
+    const payload = await readJson<ApiEnvelope<unknown>>(response, fallbackMessage);
+    if (!isValid(payload.data)) {
+        throw new PeminjamanApiError(
+            fallbackMessage,
+            response.status,
+            MALFORMED_RESPONSE_CODE,
+        );
+    }
+
+    return payload.data;
+}
+
 export async function getPeminjamanRooms(): Promise<Room[]> {
     const response = await apiFetch(`${BASE}/rooms`);
-    return (await readJson<RoomListEnvelope>(
-        response,
-        'Gagal memuat daftar ruangan aktif.',
-    )).data;
+    return readArrayData(response, isRoom, 'Gagal memuat daftar ruangan aktif.');
 }
 
 export async function getPeminjamanAvailability(
@@ -110,10 +202,11 @@ export async function getPeminjamanAvailability(
     }
 
     const response = await apiFetch(`${BASE}/availability?${params.toString()}`);
-    return (await readJson<ApiEnvelope<AvailabilityItem[]>>(
+    return readArrayData(
         response,
+        isAvailabilityItem,
         'Gagal memuat kalender ketersediaan ruangan.',
-    )).data;
+    );
 }
 
 export async function getPeminjamanRoomDetail(roomId: number): Promise<RoomDetail> {
@@ -184,31 +277,39 @@ export async function downloadRoomTemplate(
 
 export async function getMahasiswaBookings(): Promise<MahasiswaBooking[]> {
     const response = await apiFetch(`${BASE}/requests`);
-    return (await readJson<ApiEnvelope<MahasiswaBooking[]>>(
+    return readArrayData(
         response,
+        isMahasiswaBooking,
         'Gagal memuat daftar pengajuan peminjaman.',
-    )).data;
+    );
 }
 
 export async function getMahasiswaBooking(id: number): Promise<MahasiswaBooking> {
     const response = await apiFetch(`${BASE}/requests/${id}`);
-    return (await readJson<ApiEnvelope<MahasiswaBooking>>(
+    return readObjectData(
         response,
+        isMahasiswaBooking,
         'Gagal memuat detail pengajuan peminjaman.',
-    )).data;
+    );
 }
 
 export async function createMahasiswaBooking(
     payload: BookingPayload,
     suratPdf: File,
+    idempotencyKey: string,
 ): Promise<MahasiswaBooking> {
     const formData = new FormData();
+    formData.append('idempotency_key', idempotencyKey);
     formData.append('room_id', String(payload.room_id));
     formData.append('activity_name', payload.activity_name);
     formData.append('purpose', payload.purpose);
     formData.append('participant_count', String(payload.participant_count));
     formData.append('start_at', payload.start_at);
     formData.append('end_at', payload.end_at);
+    formData.append('booking_mode', payload.booking_mode ?? 'single_day');
+    if (payload.occurrence_end_date) {
+        formData.append('occurrence_end_date', payload.occurrence_end_date);
+    }
     formData.append('surat_peminjaman_pdf', suratPdf);
 
     const response = await apiFetch(`${BASE}/requests`, {
@@ -216,10 +317,118 @@ export async function createMahasiswaBooking(
         body: formData,
         isFormData: true,
     });
-    return (await readJson<ApiEnvelope<MahasiswaBooking>>(
+    // A create is only "successful" when the server hands back a booking we can
+    // actually show. A 2xx with an unusable body means we cannot tell whether
+    // the booking exists — the caller must treat that as an uncertain outcome,
+    // never as a confirmed submission.
+    return readObjectData(
         response,
+        isMahasiswaBooking,
         'Gagal membuat pengajuan peminjaman.',
-    )).data;
+    );
+}
+
+const readMutationBooking = async (
+    response: Response,
+    fallback: string,
+): Promise<MahasiswaBooking> => {
+    const envelope = await readJson<ApiEnvelope<unknown>>(response, fallback);
+    if (!envelope.data || typeof envelope.data !== 'object' || Array.isArray(envelope.data)) {
+        throw new PeminjamanApiError(fallback, response.status, MALFORMED_RESPONSE_CODE);
+    }
+    const booking = (envelope.data as Record<string, unknown>).booking;
+    if (!isMahasiswaBooking(booking)) {
+        throw new PeminjamanApiError(fallback, response.status, MALFORMED_RESPONSE_CODE);
+    }
+    return booking;
+};
+
+export async function submitRoomReturnEvidence(
+    occurrence: BookingOccurrence,
+    evidence: File,
+    idempotencyKey: string,
+): Promise<MahasiswaBooking> {
+    const body = new FormData();
+    body.append('expected_occurrence_version', String(occurrence.version));
+    body.append('idempotency_key', idempotencyKey);
+    body.append('evidence', evidence);
+    const response = await apiFetch(`${BASE}/occurrences/${encodeURIComponent(occurrence.occurrence_ref)}/return`, {
+        method: 'POST', body, isFormData: true,
+    });
+    return readMutationBooking(response, 'Bukti pengembalian gagal dikirim.');
+}
+
+export async function withdrawRoomReturn(
+    occurrence: BookingOccurrence,
+    idempotencyKey: string,
+): Promise<MahasiswaBooking> {
+    if (!occurrence.return) throw new PeminjamanApiError('Pengembalian aktif tidak ditemukan.', 409);
+    const response = await apiFetch(`${BASE}/occurrences/${encodeURIComponent(occurrence.occurrence_ref)}/return/withdraw`, {
+        method: 'POST',
+        body: JSON.stringify({
+            expected_occurrence_version: occurrence.version,
+            expected_return_version: occurrence.return.version,
+            idempotency_key: idempotencyKey,
+        }),
+    });
+    return readMutationBooking(response, 'Pengajuan pengembalian gagal ditarik.');
+}
+
+export async function fetchReturnEvidenceObjectUrl(url: string): Promise<string> {
+    if (!url.startsWith('/api/peminjaman-ruangan/returns/')) {
+        throw new PeminjamanApiError('Bukti pengembalian tidak dapat dimuat.', 0);
+    }
+    const response = await apiFetch(url, { cache: 'no-store' });
+    if (!response.ok) throw new PeminjamanApiError('Bukti pengembalian tidak dapat dimuat.', response.status);
+    return URL.createObjectURL(await response.blob());
+}
+
+export async function getTendikOperationalOccurrences(
+    tab: 'today' | 'key_handover' | 'returns' | 'overdue' | 'all',
+): Promise<TendikOperationalOccurrence[]> {
+    const response = await apiFetch(`${TENDIK_BASE}/operations?tab=${tab}`);
+    return readArrayData(
+        response,
+        isTendikOperationalOccurrence,
+        'Daftar operasional penggunaan ruangan gagal dimuat.',
+    );
+}
+
+export async function issueRoomKey(
+    occurrence: TendikOperationalOccurrence,
+    note: string,
+    idempotencyKey: string,
+): Promise<MahasiswaBooking> {
+    const response = await apiFetch(`${TENDIK_BASE}/operations/${encodeURIComponent(occurrence.occurrence_ref)}/issue-key`, {
+        method: 'POST',
+        body: JSON.stringify({
+            expected_occurrence_version: occurrence.version,
+            note: note.trim() || null,
+            idempotency_key: idempotencyKey,
+        }),
+    });
+    return readMutationBooking(response, 'Penyerahan kunci gagal disimpan.');
+}
+
+export async function decideRoomReturn(
+    occurrence: TendikOperationalOccurrence,
+    decision: 'accept' | 'revise' | 'reject',
+    input: { note: string; keyReceivedAt?: string; receivedTimeReason?: string },
+    idempotencyKey: string,
+): Promise<MahasiswaBooking> {
+    if (!occurrence.return) throw new PeminjamanApiError('Bukti pengembalian tidak ditemukan.', 409);
+    const response = await apiFetch(`${TENDIK_BASE}/operations/${encodeURIComponent(occurrence.occurrence_ref)}/return/${decision}`, {
+        method: 'POST',
+        body: JSON.stringify({
+            expected_occurrence_version: occurrence.version,
+            expected_return_version: occurrence.return.version,
+            note: input.note.trim() || null,
+            key_received_at: input.keyReceivedAt || null,
+            received_time_change_reason: input.receivedTimeReason?.trim() || null,
+            idempotency_key: idempotencyKey,
+        }),
+    });
+    return readMutationBooking(response, 'Keputusan pengembalian gagal disimpan.');
 }
 
 /**
@@ -238,10 +447,11 @@ export async function replaceSuratPeminjamanPdf(
         `${BASE}/${bookingId}/attachment/surat-peminjaman`,
         { method: 'POST', body: formData, isFormData: true },
     );
-    return (await readJson<ApiEnvelope<MahasiswaBooking>>(
+    return readObjectData(
         response,
+        isMahasiswaBooking,
         'Gagal mengganti surat peminjaman.',
-    )).data;
+    );
 }
 
 /**
@@ -288,34 +498,45 @@ export async function updateMahasiswaBooking(
         method: 'PUT',
         body: JSON.stringify(payload),
     });
-    return (await readJson<ApiEnvelope<MahasiswaBooking>>(
+    return readObjectData(
         response,
+        isMahasiswaBooking,
         'Gagal memperbarui pengajuan peminjaman.',
-    )).data;
+    );
 }
 
 export async function resubmitMahasiswaBooking(id: number): Promise<MahasiswaBooking> {
     const response = await apiFetch(`${BASE}/requests/${id}/submit`, {
         method: 'PATCH',
     });
-    return (await readJson<ApiEnvelope<MahasiswaBooking>>(
+    return readObjectData(
         response,
+        isMahasiswaBooking,
         'Gagal mengirim ulang pengajuan peminjaman.',
-    )).data;
+    );
 }
 
-export async function cancelMahasiswaBooking(
-    id: number,
+/**
+ * Requester withdrawal — the single canonical "tarik pengajuan" path (C9
+ * unified cancel→withdraw). Idempotent: the caller passes a stable key so a
+ * retry after an ambiguous network failure replays the first result instead of
+ * acting twice. `expected_workflow_version` gives optimistic-concurrency
+ * protection so a stale tab cannot withdraw against a moved-on booking.
+ */
+export async function withdrawMahasiswaBooking(
+    booking: MahasiswaBooking,
     reason: string,
+    idempotencyKey: string,
 ): Promise<MahasiswaBooking> {
-    const response = await apiFetch(`${BASE}/requests/${id}/cancel`, {
-        method: 'PATCH',
-        body: JSON.stringify({ reason }),
+    const response = await apiFetch(`${BASE}/requests/${booking.id}/withdraw`, {
+        method: 'POST',
+        body: JSON.stringify({
+            reason,
+            expected_workflow_version: booking.workflow_version ?? 1,
+            idempotency_key: idempotencyKey,
+        }),
     });
-    return (await readJson<ApiEnvelope<MahasiswaBooking>>(
-        response,
-        'Gagal membatalkan pengajuan peminjaman.',
-    )).data;
+    return readMutationBooking(response, 'Gagal menarik pengajuan peminjaman.');
 }
 
 export async function getTendikReviewerProfile(): Promise<TendikReviewerProfile> {
@@ -353,6 +574,28 @@ export async function getTendikBooking(id: number): Promise<TendikBooking> {
         response,
         'Gagal memuat detail review peminjaman.',
     )).data;
+}
+
+export async function getTendikBookingCalendar(
+    filters: TendikCalendarFilters = {},
+): Promise<TendikCalendarEnvelope> {
+    const params = new URLSearchParams();
+    if (filters.month !== undefined) params.set('month', filters.month);
+    if (filters.from !== undefined) params.set('from', filters.from);
+    if (filters.to !== undefined) params.set('to', filters.to);
+    if (filters.status !== undefined) params.set('status', filters.status);
+    if (filters.roomType !== undefined) params.set('room_type', filters.roomType);
+    if (filters.roomId !== undefined) params.set('room_id', String(filters.roomId));
+    if (filters.laboratoryId !== undefined) {
+        params.set('laboratory_id', String(filters.laboratoryId));
+    }
+
+    const query = params.toString();
+    const response = await apiFetch(`${TENDIK_BASE}/calendar${query ? `?${query}` : ''}`);
+    return readJson<TendikCalendarEnvelope>(
+        response,
+        'Gagal memuat kalender review peminjaman.',
+    );
 }
 
 export async function approveTendikBooking(id: number): Promise<TendikBooking> {
@@ -494,6 +737,28 @@ export async function getSuperAdminBookings(
     return readJson<SuperAdminBookingListEnvelope>(
         response,
         'Gagal memuat monitoring peminjaman.',
+    );
+}
+
+export async function getSuperAdminBookingCalendar(
+    filters: SuperAdminCalendarFilters = {},
+): Promise<SuperAdminCalendarEnvelope> {
+    const params = new URLSearchParams();
+    if (filters.month !== undefined) params.set('month', filters.month);
+    if (filters.from !== undefined) params.set('from', filters.from);
+    if (filters.to !== undefined) params.set('to', filters.to);
+    if (filters.status !== undefined) params.set('status', filters.status);
+    if (filters.roomType !== undefined) params.set('room_type', filters.roomType);
+    if (filters.roomId !== undefined) params.set('room_id', String(filters.roomId));
+    if (filters.laboratoryId !== undefined) {
+        params.set('laboratory_id', String(filters.laboratoryId));
+    }
+
+    const query = params.toString();
+    const response = await apiFetch(`${SUPER_ADMIN_BASE}/calendar${query ? `?${query}` : ''}`);
+    return readJson<SuperAdminCalendarEnvelope>(
+        response,
+        'Gagal memuat kalender peminjaman.',
     );
 }
 

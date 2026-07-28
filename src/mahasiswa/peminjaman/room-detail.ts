@@ -199,13 +199,25 @@ const renderGallery = (): string => {
         `;
     }
 
+    const multiple = state.photos.length > 1;
     return `
-        <div id="room-gallery-main" class="relative h-56 w-full overflow-hidden rounded-2xl bg-gray-100" data-photo-state="loading">
-            <div data-gallery-loading class="absolute inset-0 flex items-center justify-center">
-                <div class="h-8 w-8 ${SPINNER_CLASS}" aria-hidden="true"></div>
+        <div data-gallery-viewport class="relative" role="group" aria-label="Galeri foto ruangan" aria-roledescription="carousel">
+            <div id="room-gallery-main" class="relative h-56 w-full overflow-hidden rounded-2xl bg-gray-100" data-photo-state="loading">
+                <div data-gallery-loading class="absolute inset-0 flex items-center justify-center">
+                    <div class="h-8 w-8 ${SPINNER_CLASS}" aria-hidden="true"></div>
+                </div>
             </div>
+            ${multiple ? `
+                <button type="button" data-gallery-prev aria-label="Foto sebelumnya" class="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 text-gray-700 shadow hover:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <button type="button" data-gallery-next aria-label="Foto berikutnya" class="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 text-gray-700 shadow hover:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+                <span data-gallery-counter class="absolute bottom-2 right-2 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white" aria-live="polite">${state.selectedPhotoIndex + 1}/${state.photos.length}</span>
+            ` : ''}
         </div>
-        ${state.photos.length > 1 ? `
+        ${multiple ? `
             <div class="mt-3 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Pilih foto ruangan">
                 ${state.photos.map((_photo, index) => `
                     <button type="button" data-gallery-thumb="${index}" aria-label="Lihat foto ${index + 1}" aria-pressed="${index === state?.selectedPhotoIndex}" class="h-14 w-20 shrink-0 overflow-hidden rounded-lg border-2 bg-gray-100 transition-colors ${index === state?.selectedPhotoIndex ? 'border-teal-600' : 'border-transparent hover:border-teal-200'}"></button>
@@ -271,6 +283,28 @@ const renderTemplateBlock = (): string => {
     `;
 };
 
+/** Select a gallery photo by index, updating thumbs, counter, and main image. */
+const goToPhoto = (index: number): void => {
+    if (!state || !Number.isInteger(index) || !state.photos[index]) return;
+    state.selectedPhotoIndex = index;
+    document.querySelectorAll<HTMLElement>('[data-gallery-thumb]').forEach((thumb) => {
+        const active = Number(thumb.dataset.galleryThumb) === index;
+        thumb.setAttribute('aria-pressed', String(active));
+        thumb.classList.toggle('border-teal-600', active);
+        thumb.classList.toggle('border-transparent', !active);
+    });
+    const counter = document.querySelector('[data-gallery-counter]');
+    if (counter) counter.textContent = `${index + 1}/${state.photos.length}`;
+    void hydrateGalleryImage();
+};
+
+/** Move the gallery by a relative step, wrapping around the ends. */
+const stepPhoto = (delta: number): void => {
+    if (!state || state.photos.length < 2) return;
+    const count = state.photos.length;
+    goToPhoto((state.selectedPhotoIndex + delta + count) % count);
+};
+
 const attachBodyListeners = (): void => {
     document.getElementById('room-detail-apply')?.addEventListener('click', () => {
         const roomId = state?.roomId;
@@ -282,17 +316,29 @@ const attachBodyListeners = (): void => {
     document.querySelectorAll<HTMLElement>('[data-gallery-thumb]').forEach((button) => {
         button.addEventListener('click', () => {
             const index = Number(button.dataset.galleryThumb);
-            if (!state || !Number.isInteger(index) || !state.photos[index]) return;
-            state.selectedPhotoIndex = index;
-            document.querySelectorAll<HTMLElement>('[data-gallery-thumb]').forEach((thumb) => {
-                const active = Number(thumb.dataset.galleryThumb) === index;
-                thumb.setAttribute('aria-pressed', String(active));
-                thumb.classList.toggle('border-teal-600', active);
-                thumb.classList.toggle('border-transparent', !active);
-            });
-            void hydrateGalleryImage();
+            if (Number.isInteger(index)) goToPhoto(index);
         });
     });
+
+    // Prev/next arrows, keyboard, and touch swipe over the main viewport.
+    const viewport = document.querySelector<HTMLElement>('[data-gallery-viewport]');
+    viewport?.querySelector('[data-gallery-prev]')?.addEventListener('click', () => stepPhoto(-1));
+    viewport?.querySelector('[data-gallery-next]')?.addEventListener('click', () => stepPhoto(1));
+    if (viewport && (state?.photos.length ?? 0) > 1) {
+        viewport.tabIndex = 0;
+        viewport.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowLeft') { event.preventDefault(); stepPhoto(-1); }
+            else if (event.key === 'ArrowRight') { event.preventDefault(); stepPhoto(1); }
+        });
+        let touchStartX = 0;
+        viewport.addEventListener('touchstart', (event) => {
+            touchStartX = event.changedTouches[0]?.clientX ?? 0;
+        }, { passive: true });
+        viewport.addEventListener('touchend', (event) => {
+            const deltaX = (event.changedTouches[0]?.clientX ?? 0) - touchStartX;
+            if (Math.abs(deltaX) > 40) stepPhoto(deltaX < 0 ? 1 : -1);
+        }, { passive: true });
+    }
 
     const downloadButton = document.getElementById('room-template-download');
     downloadButton?.addEventListener('click', async () => {

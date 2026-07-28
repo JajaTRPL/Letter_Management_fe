@@ -84,22 +84,9 @@ export const formatTimeRange = (startISO: string, endISO: string): string => {
 export const normalizeAvailabilityByDate = (
     items: readonly AvailabilityItem[],
 ): AvailabilityByDate => {
-    const indexed: AvailabilityByDate = new Map();
+    const indexed = indexItemsByJakartaDate(items, (item) => item.start_at);
 
-    items.forEach((item) => {
-        const dateKey = formatIsoDateKeyInJakarta(item.start_at);
-        if (!dateKey) return;
-
-        const dayItems = indexed.get(dateKey) ?? [];
-        dayItems.push(item);
-        dayItems.sort(
-            (left, right) =>
-                new Date(left.start_at).getTime() - new Date(right.start_at).getTime(),
-        );
-        indexed.set(dateKey, dayItems);
-    });
-
-    return indexed;
+    return indexed as AvailabilityByDate;
 };
 
 export const filterApprovedAvailability = (
@@ -108,7 +95,7 @@ export const filterApprovedAvailability = (
 ): AvailabilityItem[] =>
     items.filter(
         (item) =>
-            item.status === 'approved'
+            item.lifecycle_category === 'approved'
             && (filter === 'all' || item.room.type === filter),
     );
 
@@ -204,3 +191,84 @@ export const DENSITY_LEGEND: ReadonlyArray<{ bucket: DensityBucket; label: strin
     { bucket: 'medium', label: 'Sedang' },
     { bucket: 'high', label: 'Padat' },
 ];
+
+export const indexItemsByJakartaDate = <T>(
+    items: readonly T[],
+    getStartAt: (item: T) => string,
+): Map<string, T[]> => {
+    const indexed = new Map<string, T[]>();
+
+    items.forEach((item) => {
+        const dateKey = formatIsoDateKeyInJakarta(getStartAt(item));
+        if (!dateKey) return;
+
+        const dayItems = indexed.get(dateKey) ?? [];
+        dayItems.push(item);
+        dayItems.sort(
+            (left, right) =>
+                new Date(getStartAt(left)).getTime() - new Date(getStartAt(right)).getTime(),
+        );
+        indexed.set(dateKey, dayItems);
+    });
+
+    return indexed;
+};
+
+export const getDensityLabelForCount = (count: number): string =>
+    DENSITY_LEGEND.find(({ bucket }) => bucket === getDensityBucket(count))?.label.toLowerCase() ?? 'kosong';
+
+export const getCalendarDateAriaLabel = (
+    date: Date,
+    count: number,
+    isSelected: boolean,
+    isToday: boolean,
+): string => {
+    const parts = [
+        formatIndonesianDate(date),
+        isSelected ? 'dipilih' : 'tidak dipilih',
+    ];
+
+    if (isToday) parts.push('hari ini');
+    parts.push(`${count} peminjaman`);
+    parts.push(`kepadatan ${getDensityLabelForCount(count)}`);
+
+    return `${parts.join(', ')}.`;
+};
+
+export const getCalendarKeyboardTargetDateKey = (
+    dateKey: string,
+    key: string,
+): string | null => {
+    const date = parseDateKey(dateKey);
+
+    switch (key) {
+        case 'ArrowLeft':
+            date.setDate(date.getDate() - 1);
+            break;
+        case 'ArrowRight':
+            date.setDate(date.getDate() + 1);
+            break;
+        case 'ArrowUp':
+            date.setDate(date.getDate() - 7);
+            break;
+        case 'ArrowDown':
+            date.setDate(date.getDate() + 7);
+            break;
+        case 'Home':
+            date.setDate(date.getDate() - date.getDay());
+            break;
+        case 'End':
+            date.setDate(date.getDate() + (6 - date.getDay()));
+            break;
+        case 'PageUp':
+            date.setMonth(date.getMonth() - 1);
+            break;
+        case 'PageDown':
+            date.setMonth(date.getMonth() + 1);
+            break;
+        default:
+            return null;
+    }
+
+    return formatDateKey(date);
+};
