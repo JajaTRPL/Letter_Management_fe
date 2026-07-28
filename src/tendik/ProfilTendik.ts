@@ -57,8 +57,8 @@ const roleLabel = (role?: string | null): string => {
 const statusLabel = (status?: string | null): string => {
     switch (status) {
         case 'Active': return 'Aktif';
-        case 'Suspended': return 'Disuspend';
-        case 'Pending_Profile': return 'Menunggu Profil';
+        case 'Suspended': return 'Ditangguhkan';
+        case 'Pending_Profile': return 'Profil belum lengkap';
         default: return status || '-';
     }
 };

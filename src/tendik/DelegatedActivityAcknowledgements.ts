@@ -1,4 +1,5 @@
 import { showError, showSuccess } from '../shared/toast';
+import { renderDashboardSection } from '../shared/ui-primitives';
 import {
     acknowledgeDelegatedActivity,
     DelegatedActivityApiError,
@@ -203,36 +204,28 @@ const dashboardCardInner = (state: DelegatedActivityDashboardCardState): string 
     const isEmpty = state.kind === 'empty';
 
     return `
-        <div class="rounded-2xl border border-teal-100 bg-white p-5 shadow-sm" aria-live="polite" data-delegated-activity-card-state="${state.kind}">
-            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2">
-                        <h3 class="text-base font-bold text-gray-900">Aktivitas Lab Perlu Ditinjau</h3>
-                        <span class="inline-flex rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-[11px] font-bold text-yellow-800">Menunggu Peninjauan Kepala Lab</span>
-                    </div>
-                    <p class="mt-2 text-sm text-gray-500">Tinjau aktivitas operasional laboratorium yang dilakukan melalui delegasi.</p>
-                </div>
-                <button id="delegated-activity-open" type="button" ${isLoading ? 'disabled' : ''} class="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-teal-800 disabled:opacity-60" aria-label="Tinjau aktivitas lab perlu ditinjau">
-                    Tinjau Aktivitas
-                </button>
-            </div>
-            ${isLoading ? `
-                <div role="status" class="mt-5 flex items-center gap-3 rounded-xl bg-gray-50 px-4 py-4 text-sm font-semibold text-gray-600">
+        <div aria-live="polite" data-delegated-activity-card-state="${state.kind}">${renderDashboardSection({
+            title: 'Aktivitas Lab Perlu Ditinjau',
+            subtitle: 'Tinjau aktivitas operasional laboratorium yang dilakukan melalui delegasi.',
+            noteHtml: '<span class="mt-2 inline-flex rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-[11px] font-bold text-yellow-800">Menunggu Peninjauan Kepala Lab</span>',
+            actionHtml: `<button id="delegated-activity-open" type="button" ${isLoading ? 'disabled' : ''} class="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-teal-800 disabled:opacity-60" aria-label="Tinjau aktivitas lab perlu ditinjau">Tinjau Aktivitas</button>`,
+            bodyHtml: `<div class="p-5">${isLoading ? `
+                <div role="status" class="flex items-center gap-3 rounded-xl bg-gray-50 px-4 py-4 text-sm font-semibold text-gray-600">
                     <span class="h-7 w-7 animate-spin rounded-full border-4 border-teal-100 border-t-teal-700" aria-hidden="true"></span>
                     Memuat ringkasan aktivitas delegasi...
                 </div>
             ` : isError ? `
-                <div role="alert" class="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                <div role="alert" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
                     ${escapeHtml(state.message ?? 'Ringkasan aktivitas delegasi belum dapat dimuat.')}
                 </div>
             ` : `
-                <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div class="rounded-xl bg-teal-50 px-4 py-3">
                         <p class="text-[11px] font-bold uppercase tracking-wide text-teal-700">Menunggu</p>
                         <p class="mt-1 text-2xl font-black text-teal-900">${summary.pending_count}</p>
                     </div>
                     <div class="rounded-xl bg-red-50 px-4 py-3">
-                        <p class="text-[11px] font-bold uppercase tracking-wide text-red-700">Melewati SLA</p>
+                        <p class="text-[11px] font-bold uppercase tracking-wide text-red-700">Melewati Batas Waktu</p>
                         <p class="mt-1 text-2xl font-black text-red-800">${summary.overdue_count}</p>
                     </div>
                     <div class="rounded-xl bg-gray-50 px-4 py-3">
@@ -241,8 +234,8 @@ const dashboardCardInner = (state: DelegatedActivityDashboardCardState): string 
                     </div>
                 </div>
                 ${isEmpty ? '<p class="mt-4 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500">Belum ada aktivitas delegasi yang perlu ditinjau.</p>' : ''}
-            `}
-        </div>
+            `}</div>`,
+        })}</div>
     `;
 };
 
@@ -650,7 +643,7 @@ const renderSummaryStrip = (): string => `
             <p class="mt-1 text-2xl font-black text-teal-900">${listState.summary.pending_count}</p>
         </div>
         <div class="rounded-2xl bg-white px-4 py-3 shadow-sm">
-            <p class="text-[11px] font-bold uppercase tracking-wide text-red-700">Melewati SLA</p>
+            <p class="text-[11px] font-bold uppercase tracking-wide text-red-700">Melewati Batas Waktu</p>
             <p class="mt-1 text-2xl font-black text-red-800">${listState.summary.overdue_count}</p>
         </div>
         <div class="rounded-2xl bg-white px-4 py-3 shadow-sm">

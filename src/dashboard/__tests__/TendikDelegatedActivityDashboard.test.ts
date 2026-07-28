@@ -95,6 +95,23 @@ const configureBaseApi = (delegatedStatus = 200): void => {
         if (url === '/api/tendik/riwayat?scope=mine') {
             return response({ tasks: [] });
         }
+        // Sarpras / Kepala Lab / Laboran now render the peminjaman dashboard,
+        // which reads the booking feed instead of the letter one.
+        if (url.startsWith('/api/tendik/peminjaman-ruangan/dashboard')) {
+            return response({ data: {
+                role: localStorage.getItem('auth_tendik_role'),
+                role_label: 'Kepala Laboratorium',
+                scope_label: 'LAB-01 · Lab Uji',
+                stats: { actionable: 0, overdue: 0, finished_this_month: 0 },
+                actionable: [],
+                awareness: [],
+                today: [],
+                history: [],
+            } });
+        }
+        if (url.startsWith('/api/tendik/review-performance/me')) {
+            return response({ data: { eligible: false, reason_label: '-' } });
+        }
         if (url.startsWith('/api/tendik/delegated-activity-acknowledgements')) {
             if (delegatedStatus === 403) {
                 return response({

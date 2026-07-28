@@ -1,7 +1,8 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { hydrateSlaGovernance, slaGovernanceShell } from './sla-governance';
 import { buttonClass, cx, inputClass, selectClass, surfaceClass, textClass, type UiTone } from '../shared/design-system';
 import { escapeFormAttribute, escapeFormHtml } from '../shared/form-primitives';
-import { renderEmptyState, renderErrorState, renderLoadingState, renderStatusBadge } from '../shared/ui-primitives';
+import { renderEmptyState, renderErrorState, renderLoadingState, renderMetricCard, renderStatusBadge } from '../shared/ui-primitives';
 import { showError, showSuccess } from '../shared/toast';
 import {
     executeRetentionItem,
@@ -182,8 +183,11 @@ async function loadAllData(): Promise<void> {
 }
 
 function renderPage(): void {
-    renderDashboardLayout('Retensi & Arsip Surat', renderPanelContent(), 'super_admin', 'retention');
+    renderDashboardLayout('Arsip & Masa Simpan', renderPanelContent(), 'super_admin', 'retention');
     attachPanelListeners();
+    // Self-contained governance section: it loads/saves its own SLA policies and
+    // is failure-isolated, so it never blocks the retention panel.
+    if (!state.loading && !state.error) void hydrateSlaGovernance();
 }
 
 function renderPanelContent(): string {
@@ -196,6 +200,7 @@ function renderPanelContent(): string {
             ${renderOverview()}
             ${renderAutomationCard()}
             ${renderPolicy()}
+            ${slaGovernanceShell()}
             ${renderOperationalSection()}
             <div id="retention-modal-container"></div>
         </div>
@@ -305,17 +310,6 @@ function renderOverview(): string {
                 ${renderMetricCard('Masa Simpan PDF Final', `${policyValues.final_pdf_active_days} hari`, 'sebelum dipindahkan ke arsip')}
             </div>
         </section>
-    `;
-}
-
-function renderMetricCard(label: string, value: string, detail: string, actionHtml = ''): string {
-    return `
-        <div class="${surfaceClass('muted', 'rounded-xl p-4')}">
-            <p class="text-xs font-bold uppercase tracking-wide text-gray-500">${escapeFormHtml(label)}</p>
-            <p class="mt-2 text-2xl font-bold text-gray-900">${escapeFormHtml(value)}</p>
-            <p class="${textClass.helper} mt-1">${escapeFormHtml(detail)}</p>
-            ${actionHtml}
-        </div>
     `;
 }
 

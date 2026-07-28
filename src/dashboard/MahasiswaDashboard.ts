@@ -20,7 +20,8 @@ import {
 } from '../shared/letter-workflow';
 import Toastify from 'toastify-js';
 import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
-import { badgeClass, buttonClass, cx, surfaceClass, textClass } from '../shared/design-system';
+import { buttonClass, cx, surfaceClass, textClass } from '../shared/design-system';
+import { buildTrackingStages, renderTrackingCard } from '../shared/ui-primitives';
 import { MAHASISWA_LETTER_ENDPOINTS, mahasiswaEndpointPrefixFor } from '../shared/letter-registry';
 import { loadMahasiswaApplications } from '../shared/mahasiswa-application-list';
 import { getMahasiswaBookings } from '../mahasiswa/peminjaman/api';
@@ -126,55 +127,20 @@ const toTrackingItem = (app: any): TrackingItem => {
 // Driven purely by `status`. `Ready_For_Student_Review` gets its own
 // "Tinjau Dokumen" node (it's still actionable — the student must review and
 // click "Selesaikan Pengajuan") and is NOT collapsed into "Selesai".
-type TimelineNodeKind = 'completed' | 'active' | 'pending' | 'interrupt';
+const LETTER_STAGE_LABELS = ['Diajukan', 'Tendik', 'Prodi', 'Departemen', 'Tinjau<br>Dokumen', 'Selesai'];
 
-const renderTimelineNode = (kind: TimelineNodeKind, label: string): string => {
-    const circle =
-        kind === 'completed' ? `
-            <div class="w-9 h-9 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            </div>`
-        : kind === 'active' ? `
-            <div class="w-9 h-9 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center border-4 border-white shadow-sm animate-pulse">
-                <div class="w-3 h-3 bg-amber-500 rounded-full"></div>
-            </div>`
-        : kind === 'interrupt' ? `
-            <div class="w-9 h-9 bg-red-500 text-white rounded-full flex items-center justify-center border-4 border-white shadow-md">
-                <div class="w-3 h-3 bg-white rounded-full"></div>
-            </div>`
-        : `
-            <div class="w-9 h-9 bg-gray-100 text-gray-400 rounded-full flex items-center justify-center border-4 border-white"></div>`;
-
-    const labelColor =
-        kind === 'active' ? 'text-amber-600'
-        : kind === 'interrupt' ? 'text-red-600'
-        : kind === 'pending' ? 'text-gray-400'
-        : 'text-gray-600';
-
-    const containerOpacity = kind === 'pending' ? ' opacity-30' : '';
-
-    return `
-        <div class="relative z-10 flex flex-col items-center gap-2${containerOpacity}">
-            ${circle}
-            <span class="text-[9px] font-bold ${labelColor} text-center leading-tight">${label}</span>
-        </div>
-    `;
-};
-
-const renderWorkflowTimeline = (status: string): string => {
+const buildLetterStages = (status: string) => {
     const {
         SUBMITTED, APPROVED_TENDIK, APPROVED_KAPRODI,
         READY_FOR_STUDENT_REVIEW, COMPLETED, REVISION, REJECTED,
     } = LETTER_WORKFLOW_STATUS;
-
-    const STAGE_LABELS = ['Diajukan', 'Tendik', 'Prodi', 'Departemen', 'Tinjau<br>Dokumen', 'Selesai'];
 
     // `completedThrough` = highest index rendered as completed (emerald).
     // `activeIndex` = the in-progress node (amber), or -1 when none.
     // `interrupt` swaps the active node for a red Revisi/Ditolak marker.
     let completedThrough = 0; // "Diajukan" is always done for any active card
     let activeIndex = 1;
-    let interrupt: 'revision' | 'rejected' | null = null;
+    let interrupt: { label: string } | null = null;
 
     switch (status) {
         case SUBMITTED:                 completedThrough = 0; activeIndex = 1; break;
@@ -182,26 +148,12 @@ const renderWorkflowTimeline = (status: string): string => {
         case APPROVED_KAPRODI:          completedThrough = 2; activeIndex = 3; break;
         case READY_FOR_STUDENT_REVIEW:  completedThrough = 3; activeIndex = 4; break;
         case COMPLETED:                 completedThrough = 5; activeIndex = -1; break;
-        case REVISION:                  completedThrough = 0; activeIndex = 1; interrupt = 'revision'; break;
-        case REJECTED:                  completedThrough = 0; activeIndex = 1; interrupt = 'rejected'; break;
+        case REVISION:                  completedThrough = 0; activeIndex = 1; interrupt = { label: 'Revisi' }; break;
+        case REJECTED:                  completedThrough = 0; activeIndex = 1; interrupt = { label: 'Ditolak' }; break;
         default:                        completedThrough = 0; activeIndex = 1; break;
     }
 
-    const nodes = STAGE_LABELS.map((label, i) => {
-        if (interrupt && i === activeIndex) {
-            return renderTimelineNode('interrupt', interrupt === 'revision' ? 'Revisi' : 'Ditolak');
-        }
-        if (i <= completedThrough) return renderTimelineNode('completed', label);
-        if (i === activeIndex)      return renderTimelineNode('active', label);
-        return renderTimelineNode('pending', label);
-    }).join('');
-
-    return `
-        <div class="relative flex justify-between items-start mb-8 px-1">
-            <div class="absolute top-[18px] left-[8%] right-[8%] h-0.5 border-t-2 border-dashed border-gray-200 -z-0"></div>
-            ${nodes}
-        </div>
-    `;
+    return buildTrackingStages(LETTER_STAGE_LABELS, { completedThrough, activeIndex, interrupt });
 };
 
 // Short human description of the current active stage, aligned to the six-node
@@ -238,6 +190,7 @@ const getActiveStageDescription = (status: string): string => {
 // Only the *action set* legitimately differs — Beasiswa keeps its extra
 // state-specific actions (Selesaikan Pengajuan / Perbaiki Revisi), but they
 // render through the same button-style constants as everything else.
+// The shell itself is `renderTrackingCard` in shared/ui-primitives.
 
 // Primary "Lihat Detail" CTA: white/outline teal (the Beasiswa style, now
 // global). Filled-teal and red are reserved for the Beasiswa-only secondary
@@ -274,40 +227,7 @@ const renderRevisionNoteBox = (note: string | null): string => `
     </div>
 `;
 
-interface TrackingCardParts {
-    label: string;
-    status: string;
-    statusLabel: string;
-    statusTone: string;
-    bodyHtml: string;
-    actionsHtml: string;
-}
-
-const renderTrackingCardShell = (parts: TrackingCardParts): string => `
-    <article class="${surfaceClass('interactive', 'flex h-full flex-col p-6')}">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <span class="${badgeClass('primary')}">Administrasi Surat</span>
-            <span class="${parts.statusTone} px-3 py-1.5 rounded-full font-bold text-[11px] border">${escapeHtml(parts.statusLabel)}</span>
-        </div>
-        <div class="mt-5">
-            <h4 class="break-words font-['Inter'] text-lg font-bold text-gray-900">${escapeHtml(parts.label)}</h4>
-            <p class="mt-1 text-sm font-semibold text-gray-600">Pengajuan surat administrasi</p>
-        </div>
-        <div class="mt-6 rounded-2xl border border-gray-100 bg-gray-50/60 p-4">
-            ${renderWorkflowTimeline(parts.status)}
-        </div>
-        <div class="mt-5 flex flex-1 flex-col justify-between gap-5">
-            <div class="space-y-4">
-                ${parts.bodyHtml}
-            </div>
-            <div>
-                ${parts.actionsHtml}
-            </div>
-        </div>
-    </article>
-`;
-
-const renderTrackingCard = (item: TrackingItem): string => {
+const renderLetterTrackingCard = (item: TrackingItem): string => {
     const metaRowHtml = renderTrackingMetaRow(item);
 
     // The detail button shares one style for every type; only the action name
@@ -368,11 +288,14 @@ const renderTrackingCard = (item: TrackingItem): string => {
         actionsHtml = detailButton;
     }
 
-    return renderTrackingCardShell({
-        label: item.label,
-        status: item.status,
+    return renderTrackingCard({
+        badgeLabel: 'Administrasi Surat',
+        badgeTone: 'primary',
+        title: item.label,
+        subtitle: 'Pengajuan surat administrasi',
         statusLabel: item.statusLabel,
-        statusTone: item.statusTone,
+        statusToneClass: item.statusTone,
+        stages: buildLetterStages(item.status),
         bodyHtml,
         actionsHtml,
     });
@@ -465,7 +388,7 @@ export const renderMahasiswaDashboard = async () => {
             </div>
         `;
     } else {
-        trackingHtml = `${activeItems.map(renderTrackingCard).join('')}${peminjamanTrackingHtml}`;
+        trackingHtml = `${activeItems.map(renderLetterTrackingCard).join('')}${peminjamanTrackingHtml}`;
     }
 
     const content = `

@@ -4,6 +4,56 @@ import {
     attachSuperAdminDelegatedActivityDashboardCard,
     renderSuperAdminDelegatedActivityDashboardCard,
 } from '../superadmin/DelegatedActivityMonitoring';
+import {
+    hydrateNotificationWidget,
+    notificationWidgetShell,
+    type NotificationWidgetConfig,
+} from '../shared/notification-widget';
+import {
+    hydrateReviewPerformance,
+    reviewPerformanceShell,
+    type ReviewPerformanceWidgetConfig,
+} from '../shared/review-performance-widget';
+
+/**
+ * Replaces the old "Rata-Rata Durasi Persetujuan Surat" card, which showed two
+ * boxes permanently reading 00 Hari 00 Jam 00 Menit — one of them because it read
+ * a database column nothing has written since the workflow moved to Kaprodi/Kadep.
+ *
+ * "Pemeriksaan" rather than "Persetujuan": the same vocabulary the SLA governance
+ * panel already uses, and it correctly covers files that were returned for
+ * revision rather than approved.
+ */
+const REVIEW_PERFORMANCE_CARD: ReviewPerformanceWidgetConfig = {
+    mountId: 'admin-review-performance',
+    endpoint: '/api/super-admin/review-performance?period=3months',
+    variant: 'summary',
+    title: 'Monitoring Kinerja',
+    subtitle: 'Waktu pemeriksaan per tahap untuk surat administrasi dan peminjaman ruangan.',
+    action: {
+        label: 'Lihat Monitoring Kinerja',
+        onClick: () => {
+            void import('../superadmin/ReviewPerformance').then(({ renderReviewPerformance }) => {
+                renderReviewPerformance();
+            });
+        },
+    },
+};
+
+// SuperAdmin's ONLY notification stream is system-health anomalies (the recipient
+// resolver never routes business notifications here) — so it gets a dedicated
+// health panel on the dashboard, not a business feed buried in the bell.
+const ADMIN_HEALTH_WIDGET: NotificationWidgetConfig = {
+    mountId: 'admin-health-widget',
+    category: 'system',
+    role: 'super_admin',
+    title: 'Status Sistem',
+    subtitle: 'Anomali alur kerja yang perlu ditangani admin (mis. penerima tugas tidak tersedia).',
+    emptyTitle: 'Sistem sehat',
+    emptyBody: 'Tidak ada anomali kesehatan sistem saat ini.',
+    limit: 5,
+    accent: 'alert',
+};
 
 let refreshInterval: any = null;
 let activePeriod: string = 'week';
@@ -79,6 +129,8 @@ export const renderAdminDashboard = async () => {
                         </span>
                     </div>
 
+                    ${notificationWidgetShell(ADMIN_HEALTH_WIDGET)}
+
                     ${renderSuperAdminDelegatedActivityDashboardCard({ kind: 'loading' })}
 
                     <!-- User Count Cards -->
@@ -100,8 +152,8 @@ export const renderAdminDashboard = async () => {
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div class="space-y-3">
                                 ${renderStatusBar('Aktif', activeCount, activePct, '#10B981', '#D1FAE5', '#065F46')}
-                                ${renderStatusBar('Suspended', suspendedCount, suspendedPct, '#EF4444', '#FEE2E2', '#991B1B')}
-                                ${renderStatusBar('Menunggu Profil', pendingCount, pendingPct, '#F59E0B', '#FEF3C7', '#92400E')}
+                                ${renderStatusBar('Ditangguhkan', suspendedCount, suspendedPct, '#EF4444', '#FEE2E2', '#991B1B')}
+                                ${renderStatusBar('Profil belum lengkap', pendingCount, pendingPct, '#F59E0B', '#FEF3C7', '#92400E')}
                             </div>
 
                             <div class="bg-white rounded-2xl border border-gray-100 p-6 flex flex-col items-center justify-center shadow-sm">
@@ -125,8 +177,8 @@ export const renderAdminDashboard = async () => {
                                 </div>
                                 <div class="flex gap-4 mt-4 text-[10px]">
                                     <span class="flex items-center gap-1"><img src="/aktif-logo.png" class="w-3 h-3 object-contain" /> Aktif</span>
-                                    <span class="flex items-center gap-1"><img src="/suspended-logo.png" class="w-3 h-3 object-contain" /> Suspended</span>
-                                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Menunggu Profil</span>
+                                    <span class="flex items-center gap-1"><img src="/suspended-logo.png" class="w-3 h-3 object-contain" /> Ditangguhkan</span>
+                                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Profil belum lengkap</span>
                                 </div>
                             </div>
                         </div>
@@ -158,24 +210,9 @@ export const renderAdminDashboard = async () => {
                             ${renderChartCard('Pengajuan Surat', 'Jumlah pengajuan surat yang masuk ke sistem pada periode yang dipilih', stats.scholarship_stats || { labels: [], data: [] }, 'Total Pengajuan Surat')}
                         </div>
 
-                        <!-- Approval Durations -->
-                        <div class="rounded-2xl overflow-hidden border border-yellow-200" style="background:#FFFBEB">
-                            <div class="px-6 py-4 flex items-start gap-3 border-b border-yellow-200">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2" class="mt-0.5 shrink-0"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                                <div>
-                                    <h4 class="text-sm font-bold text-gray-800">Rata-Rata Durasi Persetujuan Surat</h4>
-                                    <p class="text-[10px] text-gray-500 mt-0.5">Rata-rata waktu yang dibutuhkan untuk memproses persetujuan surat</p>
-                                </div>
-                            </div>
-                            <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                ${renderDurationBox('Tenaga Pendidik', stats.approval_durations?.tendik || { days: 0, hours: 0, minutes: 0 })}
-                                ${renderDurationBox('Akademik', stats.approval_durations?.akademik || { days: 0, hours: 0, minutes: 0 })}
-                            </div>
-                            <div class="px-6 py-3 border-t border-yellow-200 flex items-center gap-2">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                                <p class="text-[10px] text-amber-700 italic">Durasi dihitung sejak pengajuan masuk hingga proses persetujuan selesai. Semakin rendah durasi, semakin efisien proses persetujuan.</p>
-                            </div>
-                        </div>
+                        <!-- Review speed: all five stages of both workflow
+                             domains, from the review-performance backbone. -->
+                        ${reviewPerformanceShell(REVIEW_PERFORMANCE_CARD)}
                     </div>
                 </div>
             `;
@@ -183,6 +220,16 @@ export const renderAdminDashboard = async () => {
             const container = document.getElementById('admin-dashboard-wrapper');
             if (container) {
                 setMarkup(container, content);
+
+                // Hydrate the system-health panel from the C7N1 backbone. Best-effort
+                // and self-contained: a notification fault renders only inside the
+                // panel and never blocks the dashboard. Re-runs on each 30s refresh.
+                void hydrateNotificationWidget(ADMIN_HEALTH_WIDGET);
+
+                // Review speed is a governance figure over months, not a live
+                // gauge: re-fetching it every 30s would only make the numbers
+                // flicker. The payload carries its own cache TTL instead.
+                void hydrateReviewPerformance(REVIEW_PERFORMANCE_CARD);
 
                 // Tab switching logic
                 const tabBar = document.getElementById('activity-tab-bar');
@@ -264,7 +311,7 @@ const renderStatusBar = (label: string, count: number, percentage: number, barCo
                  style="background:${barColor}20">
                 ${label === 'Aktif'
         ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${barColor}" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`
-        : label === 'Menunggu Profil'
+        : label === 'Profil belum lengkap'
             ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${barColor}" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`
             : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${barColor}" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`
     }
@@ -285,8 +332,28 @@ const renderStatusBar = (label: string, count: number, percentage: number, barCo
 `;
 
 const renderChartCard = (title: string, sub: string, data: any, legendLabel: string = 'Total Pengguna') => {
-    const chartData = data.data?.length ? data.data : [30, 45, 28, 50, 42, 38, 48];
-    const chartLabels = data.labels?.length ? data.labels : ['18 Feb', '19 Feb', '20 Feb', '21 Feb', '22 Feb', '23 Feb', '24 Feb'];
+    const chartData: number[] = data.data?.length ? data.data : [];
+    const chartLabels: string[] = data.labels?.length ? data.labels : [];
+
+    // An empty period says so. This used to fall back to a hardcoded seven-point
+    // curve with February labels, so a SuperAdmin looking at a quiet week — or a
+    // freshly installed system — saw a confident line describing activity that
+    // never happened, on dates that were not in the selected period.
+    if (chartData.length === 0) {
+        return `
+            <div class="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+                <div class="flex items-start gap-3 mb-2">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2" class="mt-0.5 shrink-0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    <div>
+                        <h4 class="text-sm font-bold text-gray-800">${title}</h4>
+                        <p class="text-[10px] text-gray-500 mt-0.5">${sub}</p>
+                    </div>
+                </div>
+                <p class="py-12 text-center text-sm text-gray-400">Belum ada aktivitas pada periode ini.</p>
+            </div>
+        `;
+    }
+
     const maxVal = Math.max(...chartData, 1);
     const svgWidth = 700;
     const svgHeight = 120;
@@ -346,16 +413,3 @@ const renderChartCard = (title: string, sub: string, data: any, legendLabel: str
     `;
 };
 
-const renderDurationBox = (label: string, dur: any) => `
-    <div class="bg-white border border-amber-200 rounded-xl p-4 flex items-center justify-between">
-        <span class="text-sm font-bold text-gray-700">${label}</span>
-        <div class="flex items-baseline gap-1">
-            <span class="text-2xl font-black text-gray-900 leading-none">${String(dur.days).padStart(2, '0')}</span>
-            <span class="text-[9px] font-bold text-gray-400">Hari</span>
-            <span class="text-2xl font-black text-gray-900 leading-none ml-1">${String(dur.hours).padStart(2, '0')}</span>
-            <span class="text-[9px] font-bold text-gray-400">Jam</span>
-            <span class="text-2xl font-black text-gray-900 leading-none ml-1">${String(dur.minutes).padStart(2, '0')}</span>
-            <span class="text-[9px] font-bold text-gray-400">Menit</span>
-        </div>
-    </div>
-`;

@@ -95,7 +95,7 @@ export const filterApprovedAvailability = (
 ): AvailabilityItem[] =>
     items.filter(
         (item) =>
-            item.status === 'approved'
+            item.lifecycle_category === 'approved'
             && (filter === 'all' || item.room.type === filter),
     );
 

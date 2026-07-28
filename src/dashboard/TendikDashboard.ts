@@ -1,4 +1,16 @@
 import { renderDashboardLayout } from './DashboardLayout';
+import { escapeFormHtml } from '../shared/form-primitives';
+import {
+    renderDashboardSection,
+    renderDashboardStatCard,
+    renderDashboardStatGrid,
+    renderDashboardTable,
+} from '../shared/ui-primitives';
+import {
+    hydrateReviewPerformance,
+    reviewPerformanceShell,
+    type ReviewPerformanceWidgetConfig,
+} from '../shared/review-performance-widget';
 import { getGreetingName } from '../utils/nameHelper';
 import { apiFetch } from '../shared/api-client';
 import { renderReviewScholarship } from '../tendik/ReviewScholarship';
@@ -22,12 +34,43 @@ import {
     type TendikTaskRow,
 } from '../shared/letter-workflow';
 
-const escapeHtml = (value: unknown): string => String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+// The shared escaper is the single owner; this alias keeps the local call sites
+// short without maintaining a second, drift-prone copy of the same five rules.
+const escapeHtml = (value: unknown): string => escapeFormHtml(value as string | number | null | undefined);
+
+/** One Antrean row. Every API-supplied value is escaped. */
+const queueRow = (task: any): string => `
+    <tr class="hover:bg-gray-50/50 transition-colors">
+        <td class="px-7 py-4 align-top">
+            <p class="text-xs font-medium text-gray-500 mb-1">${escapeHtml(task.submitted_at)}</p>
+            ${task.is_overdue ? `
+                <p class="text-[10px] font-bold text-red-500 flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    24 jam tertunda
+                </p>
+            ` : ''}
+        </td>
+        <td class="px-4 py-4 align-top">
+            <p class="text-xs font-bold text-gray-700 mb-0.5">${escapeHtml(task.student_name)}</p>
+            <p class="text-[10px] font-medium text-gray-400">${escapeHtml(task.nim)}</p>
+        </td>
+        <td class="px-4 py-4 align-top">
+            <span class="inline-flex items-center px-3 py-1.5 rounded-full text-[10px] font-bold bg-[#F1F5F9] text-gray-600 border border-gray-200/60">
+                ${escapeHtml(task.type)}
+            </span>
+        </td>
+        <td class="px-4 py-4 align-top whitespace-nowrap">
+            <span class="inline-flex items-center px-3 py-1.5 rounded-full text-[10px] font-bold ${task.status === 'Menunggu Verifikasi' ? 'bg-[#FEF9C3] text-[#A16207] border border-[#FDE047]' : 'bg-green-50 text-green-600 border border-green-200'}">
+                ${escapeHtml(task.status)}
+            </span>
+        </td>
+        <td class="px-7 py-3 align-top text-right">
+            <button class="review-btn inline-block text-center text-[10px] font-bold border-2 border-[#115E59] text-[#115E59] hover:bg-[#115E59] hover:text-white transition-colors rounded-xl px-4 py-2 w-full max-w-[140px] shadow-sm" data-id="${escapeHtml(task.id)}" data-letter-type="${escapeHtml(task.letter_type || '')}">
+                Review Dokumen
+            </button>
+        </td>
+    </tr>
+`;
 
 type TendikReviewRenderer = (id: number, options: { origin: 'dashboard' }) => void;
 
@@ -40,7 +83,41 @@ const resolveTendikReviewRenderer = (letterType: string): TendikReviewRenderer |
     return null;
 };
 
+
+/**
+ * A reviewer's own stage — an action prompt, not a scorecard.
+ *
+ * Deliberately links to their queue rather than to the analytics page: reviewers
+ * get something to do, SuperAdmin gets something to analyse. The endpoint scopes
+ * itself from the session, so a Sarpras sees classroom bookings and a Kepala Lab
+ * sees only their own laboratory, with no parameter either could change. Roles
+ * that review nothing (Laboran) get `eligible:false` and the card removes itself.
+ */
+const SELF_REVIEW_CARD: ReviewPerformanceWidgetConfig = {
+    mountId: 'tendik-review-performance',
+    endpoint: '/api/tendik/review-performance/me?period=1month',
+    variant: 'self',
+    title: 'Pemeriksaan Anda Bulan Ini',
+    subtitle: 'Ringkasan tahap pemeriksaan yang Anda tangani — bukan penilaian per orang.',
+};
+
+
+// Static icons for the shared dashboard stat cards.
+const STAT_ICON_INBOX = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>';
+const STAT_ICON_ALERT = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+const STAT_ICON_DONE = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
+
 export const renderTendikDashboard = async (role: string) => {
+    // Sarpras / Kepala Lab / Laboran work in Peminjaman Ruangan and never touch
+    // letters, so the letter feed below is structurally empty for them — it is
+    // gated on `tendik_role === 'persuratan'`. They get their own dashboard.
+    const peminjamanRole = localStorage.getItem('auth_tendik_role') ?? '';
+    if (['sarpras', 'kepala_lab', 'laboran'].includes(peminjamanRole)) {
+        const { renderTendikPeminjamanDashboard } = await import('./TendikPeminjamanDashboard');
+        await renderTendikPeminjamanDashboard(role);
+        return;
+    }
+
     let userName = getGreetingName(localStorage.getItem('auth_name')) || 'Pengguna';
 
     // Initial skeleton/loading state
@@ -132,9 +209,16 @@ export const renderTendikDashboard = async (role: string) => {
                     `}
                 </div>
 
+                ${reviewPerformanceShell(SELF_REVIEW_CARD)}
+
                 <!-- Stats Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-8">
-                    <!-- Total Surat Masuk -->
+                ${renderDashboardStatGrid(
+                    renderDashboardStatCard({ label: 'Total Surat Masuk', value: stats.total_incoming, tone: 'info', iconSvg: STAT_ICON_INBOX, extraClass: 'cursor-pointer' })
+                    + renderDashboardStatCard({ label: 'Perlu Anda Verifikasi', value: stats.needs_verification, tone: 'warning', iconSvg: STAT_ICON_ALERT, extraClass: 'cursor-pointer' })
+                    + renderDashboardStatCard({ label: 'Selesai Bulan Ini', value: stats.finished_this_month, tone: 'success', iconSvg: STAT_ICON_DONE, extraClass: 'cursor-pointer' }),
+                )}
+
+                                    <!-- Total Surat Masuk -->
                     <div class="bg-[#EFF6FF] border border-blue-100 p-5 rounded-[20px] flex justify-between items-center shadow-sm hover:shadow-md transition-all cursor-pointer">
                         <div>
                             <h3 class="text-[38px] font-black text-[#0EA5E9] leading-none mb-1">${stats.total_incoming}</h3>
@@ -175,117 +259,58 @@ export const renderTendikDashboard = async (role: string) => {
                     <div class="flex justify-end mb-2">
                         <button type="button" id="see-all-dokumen" class="text-xs font-bold text-blue-500 hover:text-blue-700 transition-colors">Lihat Selengkapnya</button>
                     </div>
-                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                        <div class="px-7 py-5 border-b border-gray-100 flex gap-3">
+                    ${renderDashboardSection({
+                        title: 'Antrean Perlu Dikerjakan',
+                        subtitle: 'Daftar pengajuan surat yang memerlukan tindakan atau pemrosesan dari Anda',
+                        iconHtml: `
                             <div class="w-6 h-6 rounded-full border border-red-500 text-red-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="6" x2="12" y2="14"></line><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-                            </div>
-                            <div>
-                                <h2 class="text-[17px] font-bold text-gray-800">Antrean Perlu Dikerjakan</h2>
-                                <p class="text-[11px] text-gray-500 mt-1">Daftar pengajuan surat yang memerlukan tindakan atau pemrosesan dari Anda</p>
-                            </div>
-                        </div>
-
-                        <!-- Table -->
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left bg-white">
-                                <thead>
-                                    <tr class="border-b border-gray-100 bg-white">
-                                        <th class="px-7 py-4 text-xs font-bold text-gray-700 whitespace-nowrap w-[220px]">Tanggal Masuk</th>
-                                        <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Mahasiswa</th>
-                                        <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Jenis Surat</th>
-                                        <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Status</th>
-                                        <th class="px-7 py-4 w-40"></th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-100">
-                                    ${tasks.length === 0 ? `
-                                        <tr>
-                                            <td colspan="5" class="px-7 py-12 text-center text-gray-400 text-sm">
-                                                Belum ada pengajuan masuk yang ditugaskan kepada Anda.
-                                            </td>
-                                        </tr>
-                                    ` : tasks.map((task: any) => `
-                                        <tr class="hover:bg-gray-50/50 transition-colors">
-                                            <td class="px-7 py-4 align-top">
-                                                <p class="text-xs font-medium text-gray-500 mb-1">${task.submitted_at}</p>
-                                                ${task.is_overdue ? `
-                                                    <p class="text-[10px] font-bold text-red-500 flex items-center gap-1">
-                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> 
-                                                        > 24 jam tertunda
-                                                    </p>
-                                                ` : ''}
-                                            </td>
-                                            <td class="px-4 py-4 align-top">
-                                                <p class="text-xs font-bold text-gray-700 mb-0.5">${task.student_name}</p>
-                                                <p class="text-[10px] font-medium text-gray-400">${task.nim}</p>
-                                            </td>
-                                            <td class="px-4 py-4 align-top">
-                                                <span class="inline-flex items-center px-3 py-1.5 rounded-full text-[10px] font-bold bg-[#F1F5F9] text-gray-600 border border-gray-200/60">
-                                                    ${task.type}
-                                                </span>
-                                            </td>
-                                            <td class="px-4 py-4 align-top whitespace-nowrap">
-                                                <span class="inline-flex items-center px-3 py-1.5 rounded-full text-[10px] font-bold ${task.status === 'Menunggu Verifikasi' ? 'bg-[#FEF9C3] text-[#A16207] border border-[#FDE047]' : 'bg-green-50 text-green-600 border border-green-200'}">
-                                                    ${task.status}
-                                                </span>
-                                            </td>
-                                            <td class="px-7 py-3 align-top text-right">
-                                                <button class="review-btn inline-block text-center text-[10px] font-bold border-2 border-[#115E59] text-[#115E59] hover:bg-[#115E59] hover:text-white transition-colors rounded-xl px-4 py-2 w-full max-w-[140px] shadow-sm" data-id="${task.id}" data-letter-type="${task.letter_type || ''}">
-                                                    Review Dokumen
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                            </div>`,
+                        bodyHtml: renderDashboardTable({
+                            columns: [
+                                { label: 'Tanggal Masuk', className: 'w-[220px]' },
+                                { label: 'Mahasiswa' },
+                                { label: 'Jenis Surat' },
+                                { label: 'Status' },
+                                { label: '', className: 'w-40' },
+                            ],
+                            rowsHtml: tasks.map((task: any) => queueRow(task)).join(''),
+                            emptyMessage: 'Belum ada pengajuan masuk yang ditugaskan kepada Anda.',
+                        }),
+                    })}
                 </div>
 
                 <!-- Riwayat Section (top-5 recent from /api/tendik/riwayat?scope=mine) -->
                 <div class="mt-12">
-                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                        <div class="px-7 py-5 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                            <div class="flex gap-3 items-start">
-                                <div class="w-6 h-6 rounded-full border border-blue-500 text-blue-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                                </div>
-                                <div>
-                                    <h2 class="text-[17px] font-bold text-gray-800">Riwayat</h2>
-                                    <p class="text-[11px] text-gray-500 mt-1">Pengajuan terbaru yang telah Anda proses</p>
-                                </div>
-                            </div>
-                            <button id="tendik-riwayat-see-more" type="button" class="text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline">Lihat Selengkapnya</button>
-                        </div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left">
-                                <thead>
-                                    <tr class="border-b border-gray-100 bg-white">
-                                        <th class="px-7 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Tanggal Masuk</th>
-                                        <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Nomor Surat</th>
-                                        <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Mahasiswa</th>
-                                        <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Jenis Surat</th>
-                                        <th class="px-4 py-4 text-xs font-bold text-gray-700 whitespace-nowrap">Status</th>
-                                        <th class="px-7 py-4 text-right text-xs font-bold text-gray-700">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-100">
-                                    ${recentRiwayat.length === 0 ? `
-                                        <tr>
-                                            <td colspan="6" class="px-7 py-12 text-center text-gray-400 text-sm">
-                                                Belum ada riwayat pengajuan yang Anda tangani.
-                                            </td>
-                                        </tr>
-                                    ` : recentRiwayat.map(tendikRiwayatRow).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                    ${renderDashboardSection({
+                        title: 'Riwayat',
+                        subtitle: 'Pengajuan terbaru yang telah Anda proses',
+                        iconHtml: `
+                            <div class="w-6 h-6 rounded-full border border-blue-500 text-blue-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                            </div>`,
+                        actionHtml: `<button id="tendik-riwayat-see-more" type="button" class="text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline">Lihat Selengkapnya</button>`,
+                        bodyHtml: renderDashboardTable({
+                            columns: [
+                                { label: 'Tanggal Masuk' },
+                                { label: 'Nomor Surat' },
+                                { label: 'Mahasiswa' },
+                                { label: 'Jenis Surat' },
+                                { label: 'Status' },
+                                { label: 'Aksi', className: 'text-right' },
+                            ],
+                            rowsHtml: recentRiwayat.map(tendikRiwayatRow).join(''),
+                            emptyMessage: 'Belum ada riwayat pengajuan yang Anda tangani.',
+                        }),
+                    })}
                 </div>
             </div>
         `;
         renderDashboardLayout('Dashboard', content, role, 'dashboard');
+
+        // Self-view only; failure-isolated and removed entirely when this
+        // account reviews nothing.
+        void hydrateReviewPerformance(SELF_REVIEW_CARD);
 
         if (shouldShowDelegatedActivityCard) {
             attachDelegatedActivityDashboardCard();

@@ -246,7 +246,7 @@ beforeEach(() => {
 describe('Super Admin retention control panel', () => {
     it('shows the retention menu only for Super Admin and leaves Peminjaman untouched', () => {
         expect(renderSidebar('super_admin')).toContain('sidebar-retention-link');
-        expect(renderSidebar('super_admin')).toContain('Retensi & Arsip Surat');
+        expect(renderSidebar('super_admin')).toContain('Arsip & Masa Simpan');
         expect(renderSidebar('mahasiswa')).not.toContain('sidebar-retention-link');
         expect(renderSidebar('tendik_persuratan')).not.toContain('sidebar-retention-link');
         expect(renderSidebar('akademik')).not.toContain('sidebar-retention-link');
@@ -294,7 +294,7 @@ describe('Super Admin retention control panel', () => {
         };
 
         // Header + policy are always visible; the three sections are tabs.
-        expect(document.body.textContent).toContain('Retensi & Arsip Surat');
+        expect(document.body.textContent).toContain('Arsip & Masa Simpan');
         expect(document.body.textContent).toContain('Kebijakan Penyimpanan');
         expect(document.body.textContent).toContain('Siap Diarsipkan');
         expect(document.body.textContent).toContain('Arsip Tersimpan');

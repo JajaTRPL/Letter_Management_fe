@@ -10,6 +10,11 @@ import {
     PeminjamanApiError,
     rejectTendikBooking,
     reviseTendikBooking,
+    getTendikOperationalOccurrences,
+    issueRoomKey,
+    decideRoomReturn,
+    generateRoomBookingIdempotencyKey,
+    fetchReturnEvidenceObjectUrl,
 } from '../mahasiswa/peminjaman/api';
 import { renderSuratPeminjamanPanel } from '../mahasiswa/peminjaman/views';
 import {
@@ -18,6 +23,7 @@ import {
 } from '../mahasiswa/peminjaman/detail';
 import type {
     BookingStatus,
+    BookingCalendarStatusScope,
     PaginationMeta,
     Room,
     RoomType,
@@ -27,6 +33,7 @@ import type {
     TendikCalendarItem,
     TendikReviewerProfile,
     TendikReviewerRole,
+    TendikOperationalOccurrence,
 } from '../mahasiswa/peminjaman/types';
 import {
     formatDateKey,
@@ -67,8 +74,9 @@ import type {
 
 const PER_PAGE = 10;
 
-type TendikTab = 'queue' | 'calendar' | 'rooms';
-type CalendarStatusFilter = 'all' | BookingStatus;
+type TendikTab = 'queue' | 'operations' | 'calendar' | 'rooms';
+type OperationalTab = 'today' | 'key_handover' | 'returns' | 'overdue' | 'all';
+type CalendarStatusFilter = BookingCalendarStatusScope;
 type CalendarRole = 'sarpras' | 'kepala_lab' | 'laboran';
 
 interface SarprasCalendarState {
@@ -111,12 +119,12 @@ interface TendikCalendarCopy {
     upcomingErrorFallback: string;
 }
 
-const BOOKING_STATUSES: BookingStatus[] = [
-    'submitted',
+const CALENDAR_STATUS_FILTERS: CalendarStatusFilter[] = [
+    'active',
     'revision_requested',
-    'approved',
     'rejected',
     'cancelled',
+    'history',
 ];
 const SARPRAS_CALENDAR_DATE_ATTRIBUTE = 'data-sarpras-calendar-date';
 const SARPRAS_CALENDAR_DETAIL_ACTION: BookingCalendarItemAction = {
@@ -126,8 +134,7 @@ const SARPRAS_CALENDAR_DETAIL_ACTION: BookingCalendarItemAction = {
     requiredCapability: 'view',
 };
 
-const defaultCalendarStatus = (role: CalendarRole | null): CalendarStatusFilter =>
-    role === 'laboran' ? 'approved' : 'all';
+const defaultCalendarStatus = (_role: CalendarRole | null): CalendarStatusFilter => 'active';
 
 const createInitialSarprasCalendarState = (
     role: CalendarRole | null = null,
@@ -174,9 +181,16 @@ let drawerEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
 let actionEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
 // "Kelola Ruangan" tab state (management roles only).
 let activeTab: TendikTab = 'queue';
+let operationalTab: OperationalTab = 'today';
+let operationalItems: TendikOperationalOccurrence[] = [];
+let operationalLoading = false;
+let operationalLoaded = false;
+let operationalError: string | null = null;
 let sarprasCalendarState: SarprasCalendarState = createInitialSarprasCalendarState();
 let sarprasCalendarItems: TendikCalendarItem[] = [];
 let sarprasCalendarStatusCounts: Partial<Record<BookingStatus, number>> = {};
+let sarprasCalendarActiveCount = 0;
+let sarprasCalendarHistoryCount = 0;
 let sarprasCalendarUpcomingItemsState: TendikCalendarItem[] = [];
 let sarprasCalendarRoomMap = new Map<number, CalendarRoomOption>();
 let sarprasCalendarLaboratoryMap = new Map<number, CalendarLaboratoryOption>();
@@ -422,7 +436,7 @@ const sarprasCalendarScopedApiFilters = (
     dateFilters: Pick<TendikCalendarFilters, 'month' | 'from' | 'to'>,
 ): TendikCalendarFilters => ({
     ...dateFilters,
-    ...(sarprasCalendarState.status !== 'all' ? { status: sarprasCalendarState.status } : {}),
+    status: sarprasCalendarState.status,
     ...(calendarRole() === 'laboran' && sarprasCalendarState.laboratoryId !== null
         ? { laboratoryId: sarprasCalendarState.laboratoryId }
         : {}),
@@ -487,14 +501,19 @@ const sarprasCalendarUpcomingViewItems = (): BookingCalendarViewItem[] =>
 const sarprasCalendarStatusCount = (status: BookingStatus): number =>
     Number(sarprasCalendarStatusCounts[status] ?? 0);
 
-const sarprasCalendarAllStatusCount = (): number =>
-    BOOKING_STATUSES.reduce((total, status) => total + sarprasCalendarStatusCount(status), 0);
-
 const sarprasCalendarStatusOptions = () =>
-    (['all', ...BOOKING_STATUSES] as CalendarStatusFilter[]).map((value) => {
+    CALENDAR_STATUS_FILTERS.map((value) => {
         const copy = tendikCalendarCopy();
-        const label = value === 'all' ? 'Semua' : getBookingStatusLabel(value);
-        const count = value === 'all' ? sarprasCalendarAllStatusCount() : sarprasCalendarStatusCount(value);
+        const label = value === 'active'
+            ? 'Aktif'
+            : value === 'history'
+                ? 'Selesai / Riwayat'
+                : getBookingStatusLabel(value);
+        const count = value === 'active'
+            ? sarprasCalendarActiveCount
+            : value === 'history'
+                ? sarprasCalendarHistoryCount
+                : sarprasCalendarStatusCount(value);
 
         return {
             value,
@@ -723,7 +742,10 @@ const renderTabBar = (): string => {
     const tab = (id: TendikTab, label: string): string => `
         <button type="button" role="tab" data-tendik-tab="${id}" aria-selected="${activeTab === id}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === id ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">${label}</button>
     `;
-    const tabs: Array<[TendikTab, string]> = [['queue', 'Pengajuan']];
+    const operationalLabel = reviewerRole() === 'kepala_lab'
+        ? 'Kondisi Operasional'
+        : 'Operasional Kunci & Pengembalian';
+    const tabs: Array<[TendikTab, string]> = [['queue', 'Pengajuan'], ['operations', operationalLabel]];
     if (canUseCalendar()) tabs.push(['calendar', 'Kalender Peminjaman']);
     if (canManageRooms()) tabs.push(['rooms', 'Kelola Ruangan']);
 
@@ -897,6 +919,172 @@ const renderRoomsTab = (): string => {
     `;
 };
 
+const operationalStatusLabel = (status: string): string => ({
+    scheduled: 'Akan digunakan', key_issued: 'Kunci telah diserahkan', in_use: 'Sedang digunakan',
+    return_due: 'Pengembalian jatuh tempo', awaiting_verification: 'Menunggu verifikasi',
+    revision_required: 'Perlu perbaikan bukti', returned_on_time: 'Selesai tepat waktu',
+    returned_late: 'Selesai terlambat', overdue: 'Terlambat', cancelled: 'Dibatalkan',
+}[status] ?? 'Status operasional');
+
+const renderOperationalTab = (): string => {
+    const tabs: Array<[OperationalTab, string]> = [
+        ['today', 'Hari Ini'], ['key_handover', 'Penyerahan Kunci'], ['returns', 'Pengembalian'],
+        ['overdue', 'Terlambat'], ['all', 'Semua'],
+    ];
+    const state = operationalLoading
+        ? '<div data-operational-state="loading" class="py-14 text-center text-sm font-semibold text-gray-600">Memuat operasional penggunaan...</div>'
+        : operationalError
+            ? `<div data-operational-state="error" role="alert" class="py-12 text-center"><p class="text-sm font-semibold text-red-700">${escapeHtml(operationalError)}</p><button id="retry-operational" type="button" class="mt-3 rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white">Coba Lagi</button></div>`
+            : operationalItems.length === 0
+                ? '<div data-operational-state="empty" class="py-14 text-center text-sm text-gray-500">Tidak ada penggunaan pada kategori ini.</div>'
+                : `<div data-operational-state="ready" class="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2">${operationalItems.map((item) => `
+                    <article class="min-w-0 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                        <div class="flex flex-wrap items-start justify-between gap-2"><div class="min-w-0"><h4 class="break-words text-sm font-bold text-gray-900">${escapeHtml(item.booking.room.code)} · ${escapeHtml(item.booking.room.name)}</h4><p class="mt-1 text-xs text-gray-500">${escapeHtml(item.booking.applicant_name ?? 'Pemohon')} · ${escapeHtml(item.booking.activity_name)}</p></div><span class="rounded-full border border-teal-100 bg-teal-50 px-2.5 py-1 text-[10px] font-bold text-teal-800">${escapeHtml(operationalStatusLabel(item.operational_status))}</span></div>
+                        <p class="mt-3 text-xs font-semibold text-gray-700">${escapeHtml(new Date(item.start_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))} – ${escapeHtml(new Date(item.end_at).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }))}</p>
+                        <p class="mt-1 text-xs text-gray-600">Tenggat pengembalian: ${escapeHtml(new Date(item.return_due_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>
+                        ${item.return ? `<p class="mt-2 text-xs text-gray-600">Bukti dikirim: ${escapeHtml(new Date(item.return.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>` : ''}
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            ${item.capabilities.can_issue_key ? `<button type="button" data-operation-issue="${escapeHtml(item.occurrence_ref)}" class="rounded-xl bg-teal-700 px-3 py-2 text-xs font-bold text-white">Serahkan Kunci</button>` : ''}
+                            ${item.capabilities.can_verify_return ? `<button type="button" data-operation-verify="${escapeHtml(item.occurrence_ref)}" class="rounded-xl bg-teal-700 px-3 py-2 text-xs font-bold text-white">Verifikasi Pengembalian</button>` : ''}
+                            ${item.return ? `<button type="button" data-operation-preview="${escapeHtml(item.occurrence_ref)}" class="rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700">Lihat Bukti</button>` : ''}
+                            ${!item.capabilities.can_issue_key && !item.capabilities.can_verify_return && item.responsible_label
+                                ? `<span data-operation-responsible class="inline-flex items-center rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-500">${escapeHtml(item.responsible_label)}</span>`
+                                : ''}
+                        </div>
+                    </article>`).join('')}</div>`;
+    const readOnly = reviewerRole() === 'kepala_lab';
+    const heading = readOnly ? 'Kondisi Operasional Lab' : 'Operasional Penggunaan dan Kunci';
+    const blurb = readOnly
+        ? 'Pantauan kunci dan pengembalian di lab Anda. Tindakan dilakukan oleh Laboran.'
+        : 'Serah terima kunci dan verifikasi pengembalian untuk ruangan dalam lingkup Anda.';
+    const notice = readOnly
+        ? `<div data-operational-readonly class="mx-5 mt-4 rounded-2xl border border-teal-100 bg-teal-50 px-5 py-4 text-sm text-teal-800"><strong>Akses baca saja.</strong> Anda memantau kunci dan pengembalian di lab Anda; tindakannya dilakukan oleh Laboran.</div>`
+        : '';
+    return `<section class="overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-sm"><div class="border-b border-gray-100 p-5"><h3 class="text-base font-bold text-gray-800">${escapeHtml(heading)}</h3><p class="mt-1 text-xs text-gray-500">${escapeHtml(blurb)}</p><div class="mt-4 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Filter operasional">${tabs.map(([id, label]) => `<button type="button" data-operational-tab="${id}" aria-pressed="${operationalTab === id}" class="shrink-0 rounded-xl px-3 py-2 text-xs font-bold ${operationalTab === id ? 'bg-teal-700 text-white' : 'border border-gray-200 text-gray-600'}">${label}</button>`).join('')}</div></div>${notice}${state}</section>`;
+};
+
+const loadOperational = async (): Promise<void> => {
+    operationalLoading = true; operationalError = null; renderMainState();
+    try {
+        operationalItems = await getTendikOperationalOccurrences(operationalTab);
+        operationalLoaded = true;
+    } catch (error) {
+        operationalError = errorMessage(error, 'Operasional penggunaan gagal dimuat.');
+    } finally {
+        operationalLoading = false; renderMainState();
+    }
+};
+
+const operationalItem = (ref: string): TendikOperationalOccurrence | undefined =>
+    operationalItems.find((item) => item.occurrence_ref === ref);
+
+const attachOperationalListeners = (): void => {
+    document.querySelectorAll<HTMLElement>('[data-operational-tab]').forEach((button) => button.addEventListener('click', () => {
+        operationalTab = button.dataset.operationalTab as OperationalTab;
+        void loadOperational();
+    }));
+    document.getElementById('retry-operational')?.addEventListener('click', () => void loadOperational());
+    document.querySelectorAll<HTMLElement>('[data-operation-issue]').forEach((button) => button.addEventListener('click', () => {
+        const item = operationalItem(button.dataset.operationIssue ?? '');
+        if (item) openOperationalAction(item, 'issue');
+    }));
+    document.querySelectorAll<HTMLElement>('[data-operation-verify]').forEach((button) => button.addEventListener('click', () => {
+        const item = operationalItem(button.dataset.operationVerify ?? '');
+        if (item) openOperationalAction(item, 'verify');
+    }));
+    document.querySelectorAll<HTMLElement>('[data-operation-preview]').forEach((button) => button.addEventListener('click', () => {
+        const item = operationalItem(button.dataset.operationPreview ?? '');
+        if (item?.return) void openOperationalEvidence(item);
+    }));
+};
+
+const openOperationalAction = (item: TendikOperationalOccurrence, mode: 'issue' | 'verify'): void => {
+    const defaultReceivedAt = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16);
+    const previousReturns = item.return_history ?? [];
+    const actionKey = generateRoomBookingIdempotencyKey();
+    let submitting = false;
+    const root = document.createElement('div');
+    root.id = 'operational-action-root';
+    root.innerHTML = `
+        <div class="fixed inset-0 z-[250] bg-black/50"></div>
+        <section role="dialog" aria-modal="true" aria-labelledby="operational-action-title" class="fixed left-1/2 top-1/2 z-[251] max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 id="operational-action-title" class="text-lg font-bold">${mode === 'issue' ? 'Serahkan Kunci' : 'Verifikasi Pengembalian'}</h2>
+            <p class="mt-2 text-xs text-gray-600">${escapeHtml(item.booking.room.code)} · ${escapeHtml(item.booking.activity_name)} · Tenggat ${escapeHtml(new Date(item.return_due_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>
+            <p id="operational-action-error" role="alert" aria-live="assertive" class="mt-2 hidden text-xs text-red-700"></p>
+            ${mode === 'verify' && item.return ? `<div class="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600"><p>Bukti dikirim ${escapeHtml(new Date(item.return.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p><button id="operational-action-preview" type="button" class="mt-2 font-bold text-teal-700">Lihat bukti pengembalian</button></div>` : ''}
+            ${mode === 'verify' && previousReturns.length > 0 ? `<div class="mt-3"><p class="text-xs font-bold text-gray-800">Riwayat bukti dan revisi</p><ol class="mt-1 space-y-1">${previousReturns.map((entry) => `<li class="text-xs text-gray-600">${escapeHtml(entry.status)} · ${escapeHtml(new Date(entry.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}${entry.decision_note ? ` · ${escapeHtml(entry.decision_note)}` : ''}</li>`).join('')}</ol></div>` : ''}
+            <form id="operational-action-form" class="mt-4 space-y-3">
+                ${mode === 'verify' ? `<label for="operational-decision" class="block text-sm font-bold">Keputusan</label><select id="operational-decision" class="w-full rounded-xl border px-3 py-2"><option value="accept">Terima</option><option value="revise">Minta Revisi</option><option value="reject">Tolak</option></select><label for="operational-received-at" class="block text-sm font-bold">Waktu fisik kunci diterima</label><input id="operational-received-at" type="datetime-local" value="${defaultReceivedAt}" class="w-full rounded-xl border px-3 py-2"><p id="operational-lateness-preview" aria-live="polite" class="text-xs font-semibold text-gray-700"></p><label for="operational-time-reason" class="block text-sm font-bold">Alasan perubahan waktu (jika bukan sekarang)</label><textarea id="operational-time-reason" class="w-full rounded-xl border px-3 py-2"></textarea>` : ''}
+                <label for="operational-note" class="block text-sm font-bold">Catatan</label><textarea id="operational-note" class="w-full rounded-xl border px-3 py-2" maxlength="2000"></textarea>
+                <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button id="operational-action-cancel" type="button" class="rounded-xl border px-4 py-2 text-sm font-bold">Batal</button><button id="operational-action-submit" type="submit" class="rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">Simpan</button></div>
+            </form>
+        </section>`;
+    document.body.appendChild(root);
+    const showFeedback = (message: string): void => {
+        const feedback = root.querySelector<HTMLElement>('#operational-action-error');
+        if (feedback) { feedback.textContent = message; feedback.classList.remove('hidden'); }
+    };
+    const updateLatenessPreview = (): void => {
+        const field = root.querySelector<HTMLInputElement>('#operational-received-at');
+        const preview = root.querySelector<HTMLElement>('#operational-lateness-preview');
+        if (!field || !preview || !field.value) return;
+        const minutes = Math.max(0, Math.ceil((new Date(`${field.value}:00+07:00`).getTime() - new Date(item.return_due_at).getTime()) / 60_000));
+        preview.textContent = minutes > 0 ? `Terlambat ${minutes} menit` : 'Tepat waktu berdasarkan waktu fisik kunci diterima';
+    };
+    updateLatenessPreview();
+    root.querySelector('#operational-received-at')?.addEventListener('change', updateLatenessPreview);
+    root.querySelector('#operational-action-preview')?.addEventListener('click', () => void openOperationalEvidence(item));
+    root.querySelector('#operational-action-cancel')?.addEventListener('click', () => root.remove());
+    root.querySelector('#operational-action-form')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (submitting) return;
+        const note = (root.querySelector('#operational-note') as HTMLTextAreaElement).value;
+        const decision = mode === 'verify'
+            ? (root.querySelector('#operational-decision') as HTMLSelectElement).value as 'accept' | 'revise' | 'reject'
+            : null;
+        const local = mode === 'verify' ? (root.querySelector('#operational-received-at') as HTMLInputElement).value : '';
+        const receivedTimeReason = mode === 'verify' ? (root.querySelector('#operational-time-reason') as HTMLTextAreaElement).value : '';
+        if (decision && decision !== 'accept' && note.trim() === '') {
+            showFeedback('Catatan keputusan wajib diisi untuk revisi atau penolakan.');
+            return;
+        }
+        if (decision === 'accept' && local && Math.abs(new Date(`${local}:00+07:00`).getTime() - Date.now()) > 60_000 && receivedTimeReason.trim() === '') {
+            showFeedback('Alasan perubahan waktu penerimaan kunci wajib diisi.');
+            return;
+        }
+        submitting = true;
+        const submitButton = root.querySelector<HTMLButtonElement>('#operational-action-submit');
+        if (submitButton) submitButton.disabled = true;
+        try {
+            if (mode === 'issue') await issueRoomKey(item, note, actionKey);
+            else if (decision) {
+                await decideRoomReturn(item, decision, {
+                    note,
+                    keyReceivedAt: local ? `${local}:00+07:00` : undefined,
+                    receivedTimeReason,
+                }, actionKey);
+            }
+            root.remove(); await loadOperational();
+        } catch (error) {
+            showFeedback(errorMessage(error, 'Tindakan gagal disimpan.'));
+            submitting = false;
+            if (submitButton) submitButton.disabled = false;
+        }
+    });
+};
+
+const openOperationalEvidence = async (item: TendikOperationalOccurrence): Promise<void> => {
+    if (!item.return) return;
+    const root = document.createElement('div'); root.id = 'operational-evidence-root';
+    root.className = 'fixed inset-0 z-[260] flex items-center justify-center bg-black/70 p-4';
+    root.innerHTML = '<div class="rounded-xl bg-white p-6">Memuat bukti...</div>'; document.body.appendChild(root);
+    try {
+        const url = await fetchReturnEvidenceObjectUrl(item.return.evidence.preview_url);
+        root.innerHTML = `<div class="max-h-full max-w-3xl overflow-auto rounded-xl bg-white p-3"><button id="close-operational-evidence" type="button" class="mb-2 rounded-lg border px-3 py-1 text-sm">Tutup</button><img src="${url}" alt="Bukti pengembalian ${escapeHtml(item.booking.room.name)}" class="max-h-[80vh] object-contain"></div>`;
+        root.querySelector('#close-operational-evidence')?.addEventListener('click', () => { URL.revokeObjectURL(url); root.remove(); });
+    } catch (error) { root.innerHTML = `<div role="alert" class="rounded-xl bg-white p-6 text-red-700">${errorMessage(error, 'Bukti gagal dimuat.')}</div>`; }
+};
+
 const renderMainState = (): void => {
     const root = document.getElementById('tendik-peminjaman-page-state');
     if (!root) return;
@@ -904,15 +1092,17 @@ const renderMainState = (): void => {
     if (activeTab === 'rooms' && !canManageRooms()) activeTab = 'queue';
     const showCalendar = canUseCalendar() && activeTab === 'calendar';
     const showRooms = canManageRooms() && activeTab === 'rooms';
+    const showOperations = activeTab === 'operations';
     root.innerHTML = `
         <div class="space-y-5">
             ${renderTabBar()}
-            ${showCalendar ? renderSarprasCalendarTab() : showRooms ? renderRoomsTab() : renderQueueTab()}
+            ${showCalendar ? renderSarprasCalendarTab() : showRooms ? renderRoomsTab() : showOperations ? renderOperationalTab() : renderQueueTab()}
         </div>
     `;
     attachTabListeners();
     if (showCalendar) attachSarprasCalendarListeners();
     else if (showRooms) attachRoomsListeners();
+    else if (showOperations) attachOperationalListeners();
     else attachMainListeners();
 };
 
@@ -926,6 +1116,7 @@ const attachTabListeners = (): void => {
             renderMainState();
             if (tab === 'calendar' && !sarprasCalendarLoaded) void loadSarprasCalendar();
             if (tab === 'rooms' && !managedRoomsLoaded) void loadManagedRooms();
+            if (tab === 'operations' && !operationalLoaded) void loadOperational();
         });
     });
 };
@@ -1006,7 +1197,9 @@ const openSarprasCalendarDayDrawer = (dateKey: string): void => {
         closeButtonId: 'close-sarpras-calendar-day',
         closeButtonLabel: 'Tutup detail tanggal',
         overlayDataAttribute: 'data-sarpras-calendar-day-overlay',
-        countText: `${items.length} ${copy.dayCountNoun} pada tanggal ini mengikuti filter aktif.`,
+        countText: sarprasCalendarState.status === 'active'
+            ? `${items.length} ${copy.dayCountNoun} aktif pada tanggal ini.`
+            : `${items.length} ${copy.dayCountNoun} pada tanggal ini mengikuti filter terpilih.`,
         emptyText: copy.dayEmptyText,
         actions: [SARPRAS_CALENDAR_DETAIL_ACTION],
     });
@@ -1120,11 +1313,15 @@ const loadSarprasCalendar = async (): Promise<void> => {
     if (monthResult.status === 'fulfilled') {
         sarprasCalendarItems = monthResult.value.items;
         sarprasCalendarStatusCounts = monthResult.value.summary.counts_by_status ?? {};
+        sarprasCalendarActiveCount = Number(monthResult.value.summary.active_total ?? 0);
+        sarprasCalendarHistoryCount = Number(monthResult.value.summary.history_total ?? 0);
         rememberSarprasCalendarRooms(monthResult.value.items);
         sarprasCalendarError = null;
     } else {
         sarprasCalendarItems = [];
         sarprasCalendarStatusCounts = {};
+        sarprasCalendarActiveCount = 0;
+        sarprasCalendarHistoryCount = 0;
         sarprasCalendarError = errorMessage(monthResult.reason, copy.calendarErrorFallback);
     }
 
@@ -1764,7 +1961,10 @@ const attachMainListeners = (): void => {
     });
 };
 
-export const renderPeminjamanRuanganTendik = async (role = 'tendik'): Promise<void> => {
+export const renderPeminjamanRuanganTendik = async (
+    role = 'tendik',
+    initialTab?: 'queue' | 'operations',
+): Promise<void> => {
     const sequence = ++renderSequence;
     reviewerProfile = null;
     queue = [];
@@ -1781,10 +1981,19 @@ export const renderPeminjamanRuanganTendik = async (role = 'tendik'): Promise<vo
     filterError = null;
     knownRooms = new Map();
     actionDeniedBookingIds = new Set();
-    activeTab = 'queue';
+    // Default landing is the review queue; a notification deep-link may request
+    // the operations tab (key/return workbench) instead.
+    activeTab = initialTab === 'operations' ? 'operations' : 'queue';
+    operationalTab = 'today';
+    operationalItems = [];
+    operationalLoading = false;
+    operationalLoaded = false;
+    operationalError = null;
     sarprasCalendarState = createInitialSarprasCalendarState();
     sarprasCalendarItems = [];
     sarprasCalendarStatusCounts = {};
+    sarprasCalendarActiveCount = 0;
+    sarprasCalendarHistoryCount = 0;
     sarprasCalendarUpcomingItemsState = [];
     sarprasCalendarRoomMap = new Map();
     sarprasCalendarLaboratoryMap = new Map();

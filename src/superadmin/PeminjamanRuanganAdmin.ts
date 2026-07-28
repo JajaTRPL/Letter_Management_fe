@@ -14,6 +14,7 @@ import {
     openSuratPreview,
 } from '../mahasiswa/peminjaman/detail';
 import type {
+    BookingCalendarStatusScope,
     BookingStatus,
     LaboratorySummary,
     PaginationMeta,
@@ -63,7 +64,7 @@ import type { ManagedRoom } from '../shared/room-management/types';
 
 type ActiveTab = 'rooms' | 'facilities' | 'monitoring' | 'calendar';
 type CalendarRoomTypeFilter = 'all' | RoomType;
-type CalendarStatusFilter = 'all' | BookingStatus;
+type CalendarStatusFilter = BookingCalendarStatusScope;
 
 interface CalendarViewState {
     cursor: Date;
@@ -75,12 +76,12 @@ interface CalendarViewState {
 }
 
 const PER_PAGE = 10;
-const BOOKING_STATUSES: BookingStatus[] = [
-    'submitted',
+const CALENDAR_STATUS_FILTERS: CalendarStatusFilter[] = [
+    'active',
     'revision_requested',
-    'approved',
     'rejected',
     'cancelled',
+    'history',
 ];
 const CALENDAR_DATE_ATTRIBUTE = 'data-admin-calendar-date';
 const CALENDAR_DETAIL_ACTION: BookingCalendarItemAction = {
@@ -102,7 +103,7 @@ const createInitialCalendarState = (): CalendarViewState => {
     return {
         cursor: new Date(now.getFullYear(), now.getMonth(), 1),
         roomType: 'all',
-        status: 'all',
+        status: 'active',
         laboratoryId: null,
         roomId: null,
         selectedDateKey: null,
@@ -138,6 +139,8 @@ let bookingFilterError: string | null = null;
 let calendarState: CalendarViewState = createInitialCalendarState();
 let calendarItems: SuperAdminCalendarItem[] = [];
 let calendarStatusCounts: Partial<Record<BookingStatus, number>> = {};
+let calendarActiveCount = 0;
+let calendarHistoryCount = 0;
 let calendarUpcomingItemsState: SuperAdminCalendarItem[] = [];
 let calendarUpcomingLoading = false;
 let calendarUpcomingError: string | null = null;
@@ -225,7 +228,7 @@ const calendarScopedApiFilters = (
     dateFilters: Pick<SuperAdminCalendarFilters, 'month' | 'from' | 'to'>,
 ): SuperAdminCalendarFilters => ({
     ...dateFilters,
-    ...(calendarState.status !== 'all' ? { status: calendarState.status } : {}),
+    status: calendarState.status,
     ...(calendarState.roomType !== 'all' ? { roomType: calendarState.roomType } : {}),
     ...(calendarState.laboratoryId !== null ? { laboratoryId: calendarState.laboratoryId } : {}),
     ...(calendarState.roomId !== null ? { roomId: calendarState.roomId } : {}),
@@ -289,9 +292,6 @@ const calendarUpcomingViewItems = (): BookingCalendarViewItem[] =>
 const calendarStatusCount = (status: BookingStatus): number =>
     Number(calendarStatusCounts[status] ?? 0);
 
-const calendarAllStatusCount = (): number =>
-    BOOKING_STATUSES.reduce((total, status) => total + calendarStatusCount(status), 0);
-
 const calendarRoomOptions = (): ManagedRoom[] =>
     roomCatalog.filter((room) =>
         (calendarState.roomType === 'all' || room.type === calendarState.roomType)
@@ -309,9 +309,17 @@ const calendarRoomTypeOptions = () =>
     }));
 
 const calendarStatusOptions = () =>
-    (['all', ...BOOKING_STATUSES] as CalendarStatusFilter[]).map((value) => {
-        const label = value === 'all' ? 'Semua' : getBookingStatusLabel(value);
-        const count = value === 'all' ? calendarAllStatusCount() : calendarStatusCount(value);
+    CALENDAR_STATUS_FILTERS.map((value) => {
+        const label = value === 'active'
+            ? 'Aktif'
+            : value === 'history'
+                ? 'Selesai / Riwayat'
+                : getBookingStatusLabel(value);
+        const count = value === 'active'
+            ? calendarActiveCount
+            : value === 'history'
+                ? calendarHistoryCount
+                : calendarStatusCount(value);
 
         return {
             value,
@@ -1111,10 +1119,14 @@ const loadCalendar = async (): Promise<void> => {
     if (monthResult.status === 'fulfilled') {
         calendarItems = monthResult.value.items;
         calendarStatusCounts = monthResult.value.summary.counts_by_status ?? {};
+        calendarActiveCount = Number(monthResult.value.summary.active_total ?? 0);
+        calendarHistoryCount = Number(monthResult.value.summary.history_total ?? 0);
         calendarError = null;
     } else {
         calendarItems = [];
         calendarStatusCounts = {};
+        calendarActiveCount = 0;
+        calendarHistoryCount = 0;
         calendarError = errorMessage(monthResult.reason, 'Kalender peminjaman gagal dimuat.');
     }
 
@@ -1238,7 +1250,9 @@ const openCalendarDayDrawer = (dateKey: string): void => {
         closeButtonId: 'close-admin-calendar-day',
         closeButtonLabel: 'Tutup detail tanggal',
         overlayDataAttribute: 'data-admin-calendar-day-overlay',
-        countText: `${items.length} peminjaman pada tanggal ini mengikuti filter aktif.`,
+        countText: calendarState.status === 'active'
+            ? `${items.length} jadwal atau pengajuan aktif pada tanggal ini.`
+            : `${items.length} peminjaman pada tanggal ini mengikuti filter terpilih.`,
         emptyText: 'Belum ada peminjaman pada tanggal ini untuk filter aktif.',
         actions: [CALENDAR_DETAIL_ACTION],
     });
@@ -1442,6 +1456,8 @@ export const renderPeminjamanRuanganAdmin = async (): Promise<void> => {
     calendarState = createInitialCalendarState();
     calendarItems = [];
     calendarStatusCounts = {};
+    calendarActiveCount = 0;
+    calendarHistoryCount = 0;
     calendarUpcomingItemsState = [];
     calendarUpcomingLoading = false;
     calendarUpcomingError = null;

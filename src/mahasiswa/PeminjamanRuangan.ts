@@ -8,7 +8,6 @@ import {
     formatDateKey,
     formatIndonesianDate,
     formatTimeRange,
-    getBookingStatusLabel,
     getDayAvailability,
     getDensityBucket,
     getDensityCellClass,
@@ -35,19 +34,14 @@ import {
     getPeminjamanAvailability,
     getPeminjamanRooms,
 } from './peminjaman/api';
-import {
-    closeBookingWorkflow,
-    openBookingWorkflowForm,
-} from './peminjaman/booking-form';
-import {
-    closePeminjamanDetail,
-    openPeminjamanBookingDetail,
-} from './peminjaman/detail';
+import { closeBookingWorkflow } from './peminjaman/booking-form';
+import { closePeminjamanDetail } from './peminjaman/detail';
+import { navigateLazily } from './peminjaman/navigation';
 import {
     closeRoomCatalogDetail,
     openRoomCatalogDetail,
 } from './peminjaman/room-detail';
-import { escapeHtml } from './peminjaman/views';
+import { escapeHtml, roomSummaryPresentation } from './peminjaman/views';
 import type {
     AvailabilityItem,
     Room,
@@ -102,10 +96,15 @@ const renderPageShell = (): string => `
                 <h2 class="text-3xl font-bold text-gray-800 tracking-tight">Peminjaman Ruangan</h2>
                 <p class="text-gray-500 mt-2">Pilih jenis ruangan untuk mengajukan peminjaman. Status pengajuan dapat dipantau melalui Dashboard dan Riwayat Pengajuan.</p>
             </div>
-            <button id="btn-back-dashboard-peminjaman" type="button" class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-600 shadow-sm transition-all hover:border-teal-200 hover:bg-gray-50 hover:text-teal-600">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                Kembali ke Dashboard
-            </button>
+            <div class="flex flex-col gap-2 sm:flex-row">
+                <button id="btn-back-dashboard-peminjaman" type="button" class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-600 shadow-sm transition-all hover:border-teal-200 hover:bg-gray-50 hover:text-teal-600">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    Kembali ke Dashboard
+                </button>
+                <button id="btn-my-peminjaman-list" type="button" class="flex items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-teal-800">
+                    Pengajuan Saya
+                </button>
+            </div>
         </div>
         <div id="peminjaman-page-state" aria-live="polite">
             ${renderLoadingState()}
@@ -189,13 +188,11 @@ const PHOTO_PLACEHOLDER_ICON =
     '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg>';
 
 const renderRoomCard = (room: Room): string => {
-    const coverUrl = room.cover_photo?.thumb_url ?? room.cover_photo?.display_url ?? null;
-    const facilityCount = room.facilities_summary?.count ?? 0;
-    const facilityItems = (room.facilities_summary?.items ?? []).slice(0, 3);
+    const summary = roomSummaryPresentation(room, 3);
 
     return `
         <article role="button" tabindex="0" data-room-select="${room.id}" aria-label="Lihat detail ruangan ${escapeHtml(room.code)} ${escapeHtml(room.name)}" class="cursor-pointer overflow-hidden rounded-xl border border-gray-100 bg-gray-50/60 transition-all hover:border-teal-200 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-50 focus:border-primary-teal">
-            <div class="relative h-28 w-full bg-gray-100" data-room-cover${coverUrl ? ` data-cover-url="${escapeHtml(coverUrl)}" data-cover-alt="Foto ${escapeHtml(room.code)} ${escapeHtml(room.name)}"` : ''}>
+            <div class="relative h-28 w-full bg-gray-100" data-room-cover${summary.coverUrl ? ` data-cover-url="${escapeHtml(summary.coverUrl)}" data-cover-alt="Foto ${escapeHtml(room.code)} ${escapeHtml(room.name)}"` : ''}>
                 <div data-cover-placeholder class="flex h-full items-center justify-center text-gray-300">${PHOTO_PLACEHOLDER_ICON}</div>
                 <span class="absolute right-2 top-2 rounded-full border border-gray-200 bg-white/95 px-2 py-0.5 text-[10px] font-bold text-gray-600 shadow-sm">${getRoomTypeLabel(room.type)}</span>
             </div>
@@ -204,11 +201,11 @@ const renderRoomCard = (room: Room): string => {
                 <p class="mt-1 truncate text-xs text-gray-500">${escapeHtml(room.location)}</p>
                 <p class="mt-1.5 text-xs font-semibold text-gray-600">Kapasitas ${room.capacity} orang</p>
                 <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
-                    ${facilityItems.map((item) => `<span class="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-600">${escapeHtml(item)}</span>`).join('')}
-                    ${facilityCount > facilityItems.length ? `<span class="text-[10px] font-semibold text-gray-400">+${facilityCount - facilityItems.length} lainnya</span>` : ''}
-                    ${facilityCount === 0 ? '<span class="text-[10px] text-gray-400">Fasilitas belum dicatat</span>' : ''}
+                    ${summary.facilities.map((item) => `<span class="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-600">${escapeHtml(item)}</span>`).join('')}
+                    ${summary.remainingFacilityCount > 0 ? `<span class="text-[10px] font-semibold text-gray-400">+${summary.remainingFacilityCount} lainnya</span>` : ''}
+                    ${summary.facilityCount === 0 ? '<span class="text-[10px] text-gray-400">Fasilitas belum dicatat</span>' : ''}
                 </div>
-                ${room.has_active_template ? `
+                ${summary.hasActiveTemplate ? `
                     <p class="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-teal-700">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         Template tersedia
@@ -491,36 +488,46 @@ const closeDayDialog = (refreshGrid = false): void => {
 };
 
 // Single booking entry point for every landing trigger (category card,
-// calendar day, room browser). Create-only: edit/resubmit/cancel live in the
-// shared detail controller, reachable from Dashboard/Riwayat Pengajuan.
+// calendar day, room browser). C7C1: creation moved from the old modal to a
+// dedicated three-section application page; navigation stays lazy (dynamic
+// import) per the app's page-to-page convention to avoid import cycles.
 const startBooking = (options: {
     date?: string;
     preferredType?: RoomType;
     roomId?: number;
 } = {}): void => {
-    openBookingWorkflowForm({
-        rooms,
-        mode: 'create',
-        date: options.date,
-        preferredType: options.preferredType,
-        preferredRoomId: options.roomId,
-        onSaved: (saved) => {
-            showToast('Pengajuan peminjaman berhasil dikirim.', true);
-            void loadCalendarForCurrentMonth();
-            void openPeminjamanBookingDetail(saved.id, {
-                onMutated: () => {
-                    void loadCalendarForCurrentMonth();
-                },
-            });
-        },
-    });
+    closeDayDialog();
+    closePeminjamanDetail();
+    closeRoomCatalogDetail();
+    revokeRoomCoverCache();
+    void navigateLazily(
+        () => import('./peminjaman/application-page')
+            .then(({ renderPeminjamanApplicationPage }) => renderPeminjamanApplicationPage({
+                date: options.date,
+                preferredType: options.preferredType,
+                roomId: options.roomId,
+            })),
+        'Ajukan Peminjaman',
+    );
+};
+
+const openMyBookingsList = (): void => {
+    closeDayDialog();
+    closePeminjamanDetail();
+    closeRoomCatalogDetail();
+    revokeRoomCoverCache();
+    void navigateLazily(
+        () => import('./peminjaman/list-page')
+            .then(({ renderPeminjamanListPage }) => renderPeminjamanListPage()),
+        'Pengajuan Saya',
+    );
 };
 
 const renderDayItem = (item: AvailabilityItem): string => `
     <li class="rounded-xl border border-gray-100 p-3">
         <p class="break-words text-sm font-bold text-gray-800">${escapeHtml(item.room.code)} · ${escapeHtml(item.room.name)}</p>
         <p class="mt-1 text-xs text-gray-500">${escapeHtml(formatTimeRange(item.start_at, item.end_at))}</p>
-        <span class="mt-2 inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">${getBookingStatusLabel(item.status)}</span>
+        <span class="mt-2 inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">Disetujui</span>
     </li>
 `;
 
@@ -676,6 +683,9 @@ export const renderPeminjamanRuangan = async (): Promise<void> => {
         closeRoomCatalogDetail();
         revokeRoomCoverCache();
         renderMahasiswaDashboard();
+    });
+    document.getElementById('btn-my-peminjaman-list')?.addEventListener('click', () => {
+        openMyBookingsList();
     });
 
     try {

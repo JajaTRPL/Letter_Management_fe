@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    buildOccurrenceDrafts,
     bookingFormToPayload,
     canCancelBooking,
     canEditBooking,
@@ -27,6 +28,8 @@ const room: Room = {
 const validValues = {
     roomId: String(room.id),
     date: '2026-06-20',
+    bookingMode: 'single_day' as const,
+    endDate: '',
     startTime: '10:00',
     endTime: '12:00',
     activityName: 'Rapat Organisasi',
@@ -64,6 +67,7 @@ describe('Peminjaman booking workflow rules', () => {
             participant_count: 10,
             start_at: '2026-06-20T10:00:00+07:00',
             end_at: '2026-06-20T12:00:00+07:00',
+            booking_mode: 'single_day',
         });
     });
 
@@ -77,18 +81,70 @@ describe('Peminjaman booking workflow rules', () => {
         expect(errors.participantCount).toContain('kapasitas 20');
     });
 
-    it.each([
-        ['same time', '10:00', '10:00', 'tidak boleh sama'],
-        ['reversed time', '12:00', '10:00', 'lebih dari jam mulai'],
-        ['cross-midnight attempt', '23:00', '01:00', 'masih di hari yang sama'],
-    ])('blocks %s', (_label, startTime, endTime, message) => {
+    it('blocks identical start and end time', () => {
         const errors = validateBookingForm(
-            { ...validValues, startTime, endTime },
+            { ...validValues, startTime: '10:00', endTime: '10:00' },
             [room],
             '2026-06-18',
         );
 
-        expect(errors.endTime).toContain(message);
+        expect(errors.endTime).toContain('tidak boleh sama');
+    });
+
+    it('treats an earlier end clock as one overnight occurrence', () => {
+        const values = { ...validValues, startTime: '23:00', endTime: '01:00' };
+        expect(validateBookingForm(values, [room], '2026-06-18').endTime).toBeUndefined();
+        expect(bookingFormToPayload(values).end_at).toBe('2026-06-21T01:00:00+07:00');
+    });
+
+    it('builds one occurrence per inclusive date with one shared daily clock', () => {
+        const values = {
+            ...validValues,
+            bookingMode: 'consecutive_days' as const,
+            endDate: '2026-06-22',
+            startTime: '09:00',
+            endTime: '12:00',
+        };
+
+        expect(buildOccurrenceDrafts(values)).toEqual([
+            {
+                sequence: 1,
+                date: '2026-06-20',
+                startAt: '2026-06-20T09:00:00+07:00',
+                endAt: '2026-06-20T12:00:00+07:00',
+                durationHours: 3,
+            },
+            {
+                sequence: 2,
+                date: '2026-06-21',
+                startAt: '2026-06-21T09:00:00+07:00',
+                endAt: '2026-06-21T12:00:00+07:00',
+                durationHours: 3,
+            },
+            {
+                sequence: 3,
+                date: '2026-06-22',
+                startAt: '2026-06-22T09:00:00+07:00',
+                endAt: '2026-06-22T12:00:00+07:00',
+                durationHours: 3,
+            },
+        ]);
+        expect(bookingFormToPayload(values)).toMatchObject({
+            booking_mode: 'consecutive_days',
+            occurrence_end_date: '2026-06-22',
+            start_at: '2026-06-20T09:00:00+07:00',
+            end_at: '2026-06-22T12:00:00+07:00',
+        });
+    });
+
+    it('applies the central fourteen-day client guard to consecutive ranges', () => {
+        const errors = validateBookingForm({
+            ...validValues,
+            bookingMode: 'consecutive_days',
+            endDate: '2026-07-04',
+        }, [room], '2026-06-18');
+
+        expect(errors.endDate).toContain('maksimal 14 hari');
     });
 
     it('allows edit and resubmit only for revision requests', () => {

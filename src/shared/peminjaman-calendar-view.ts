@@ -3,6 +3,7 @@ import type {
     BookingConflictStatus,
     BookingConflictSummary,
     BookingStatus,
+    BookingCalendarStatusScope,
     RoomType,
 } from '../mahasiswa/peminjaman/types';
 import {
@@ -22,7 +23,7 @@ import {
 } from './peminjaman-calendar';
 
 export type BookingCalendarRoomTypeFilter = 'all' | RoomType;
-export type BookingCalendarStatusFilter = 'all' | BookingStatus;
+export type BookingCalendarStatusFilter = BookingCalendarStatusScope;
 export type BookingCalendarItemCapabilities = Record<string, boolean | undefined>;
 export type BookingCalendarDataAttributeName = `data-${string}`;
 

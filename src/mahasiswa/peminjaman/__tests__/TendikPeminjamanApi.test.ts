@@ -12,6 +12,7 @@ import {
     approveTendikBooking,
     getTendikBooking,
     getTendikBookings,
+    getTendikOperationalOccurrences,
     getTendikReviewerProfile,
     PeminjamanApiError,
     rejectTendikBooking,
@@ -112,5 +113,18 @@ describe('Peminjaman Tendik reviewer API module', () => {
         expect(apiSource).toContain('/api/tendik/peminjaman-ruangan/requests');
         expect(apiSource).not.toContain('VITE_API_BASE_URL');
         expect(apiSource).not.toContain('localhost');
+    });
+
+    it('rejects a malformed operational 2xx before nested room data can crash rendering', async () => {
+        m.apiFetch.mockResolvedValueOnce(jsonResponse({
+            message: 'ok',
+            data: [{ occurrence_ref: 'partial', booking: {} }],
+        }));
+
+        const error = await getTendikOperationalOccurrences('today')
+            .catch((reason: unknown) => reason);
+
+        expect(error).toBeInstanceOf(PeminjamanApiError);
+        expect(error).toMatchObject({ status: 200, code: 'malformed_response' });
     });
 });

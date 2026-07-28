@@ -109,7 +109,7 @@ describe('DashboardLayout responsive sidebar drawer', () => {
         ['mahasiswa', ['Dashboard', 'Administrasi Surat', 'Peminjaman Ruangan', 'Riwayat Pengajuan']],
         ['tendik', ['Dashboard', 'Dokumen', 'Riwayat']],
         ['akademik', ['Dashboard', 'Dokumen', 'Riwayat']],
-        ['super_admin', ['Dashboard', 'Peminjaman Ruangan', 'Monitoring Surat', 'Manajemen Akun', 'Template Dokumen', 'Periode Akademik', 'Retensi & Arsip Surat', 'Riwayat Aktivitas']],
+        ['super_admin', ['Dashboard', 'Peminjaman Ruangan', 'Monitoring Surat', 'Manajemen Akun', 'Template Dokumen', 'Periode Akademik', 'Arsip & Masa Simpan', 'Riwayat Aktivitas']],
     ])('preserves role-specific navigation labels for %s', (role, labels) => {
         setViewportWidth(1280);
         renderDashboardLayout('Dashboard', '<p>Content</p>', role);
@@ -123,14 +123,19 @@ describe('DashboardLayout responsive sidebar drawer', () => {
         const labels = Array.from(document.querySelectorAll('#dashboard-sidebar nav a span'))
             .map((item) => item.textContent?.trim());
 
+        // Grouped by intent: operational monitoring first (Peminjaman →
+        // Monitoring Surat → Monitoring Kinerja), then administration, then the
+        // audit trail. Monitoring Kinerja sits with the monitoring surfaces
+        // because it reports on work in flight, not on configuration.
         expect(labels).toEqual([
             'Dashboard',
             'Peminjaman Ruangan',
             'Monitoring Surat',
+            'Monitoring Kinerja',
             'Manajemen Akun',
             'Template Dokumen',
             'Periode Akademik',
-            'Retensi & Arsip Surat',
+            'Arsip & Masa Simpan',
             'Riwayat Aktivitas',
         ]);
     });

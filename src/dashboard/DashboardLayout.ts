@@ -7,6 +7,33 @@ import { getGreetingName } from '../utils/nameHelper';
 import Toastify from 'toastify-js';
 import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
 import { clearAllAuthenticationState } from '../login/password-rotation-state';
+import { fetchUnreadCount } from '../shared/notifications-api';
+
+/**
+ * Populate the bell's unread badge from the C7N1 backbone. Best-effort and
+ * failure-isolated: any error (network, auth, malformed body) leaves the badge
+ * hidden and never disrupts the dashboard chrome.
+ */
+const refreshNotificationBadge = async (): Promise<void> => {
+    const badge = document.getElementById('notif-badge');
+    if (!badge) return;
+    try {
+        const unread = await fetchUnreadCount();
+        if (unread > 0) {
+            badge.textContent = unread > 99 ? '99+' : String(unread);
+            badge.classList.remove('hidden');
+            badge.classList.add('flex');
+            badge.setAttribute('aria-label', `${unread} notifikasi belum dibaca`);
+        } else {
+            badge.textContent = '';
+            badge.classList.add('hidden');
+            badge.classList.remove('flex');
+            badge.removeAttribute('aria-label');
+        }
+    } catch {
+        // Silent: the bell still works; only the count is unavailable.
+    }
+};
 
 let dashboardLayoutAvatarObjectUrl: string | null = null;
 let dashboardLayoutDrawerCleanup: (() => void) | null = null;
@@ -185,11 +212,12 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                         </div>
                         
                         <div class="flex items-center gap-6">
-                            <button id="notif-btn" class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                            <button id="notif-btn" type="button" aria-label="Notifikasi" class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-200 rounded-lg">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
                                     <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
                                 </svg>
+                                <span id="notif-badge" role="status" aria-live="polite" class="absolute -right-0.5 -top-0.5 hidden min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-[18px] text-white"></span>
                             </button>
                             
                             <div class="relative group">
@@ -319,6 +347,11 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         });
     });
 
+    // Live unread badge on the bell — reads the C7N1 backbone via the shared
+    // client. Best-effort: a failed count silently leaves the badge hidden and
+    // never blocks the dashboard from rendering.
+    void refreshNotificationBadge();
+
     document.getElementById('sidebar-users-link')?.addEventListener('click', (e) => {
         e.preventDefault();
         if (role === 'super_admin') {
@@ -334,6 +367,14 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         (window as any).clearDashboardInterval?.();
         import('../superadmin/LetterMonitoring').then(({ renderLetterMonitoring }) => {
             renderLetterMonitoring();
+        });
+    });
+
+    document.getElementById('sidebar-review-performance-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        (window as any).clearDashboardInterval?.();
+        import('../superadmin/ReviewPerformance').then(({ renderReviewPerformance }) => {
+            renderReviewPerformance();
         });
     });
 

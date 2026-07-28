@@ -42,6 +42,10 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                 <span class="font-medium">Monitoring Surat</span>
             </a>
+            <a href="#" id="sidebar-review-performance-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'review-performance' ? activeClass : inactiveClass}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                <span class="font-medium">Monitoring Kinerja</span>
+            </a>
             <a href="#" id="sidebar-users-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'users' ? activeClass : inactiveClass}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                 <span class="font-medium">Manajemen Akun</span>
@@ -56,7 +60,7 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
             </a>
             <a href="#" id="sidebar-retention-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'retention' ? activeClass : inactiveClass}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 15.53-6.22"></path><path d="M21 3v6h-6"></path><path d="M21 12a9 9 0 0 1-15.53 6.22"></path><path d="M3 21v-6h6"></path></svg>
-                <span class="font-medium">Retensi & Arsip Surat</span>
+                <span class="font-medium">Arsip & Masa Simpan</span>
             </a>
             <a href="#" id="sidebar-logs-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'logs' ? activeClass : inactiveClass}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>

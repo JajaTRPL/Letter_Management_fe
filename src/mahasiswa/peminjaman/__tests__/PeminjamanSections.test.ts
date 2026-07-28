@@ -41,6 +41,56 @@ const booking = (
 
 const NOW = new Date('2026-06-19T00:00:00Z');
 
+/** Text inside the tracking card's status pill (the shared card's status hook). */
+const statusPillText = (html: string): string =>
+    html.match(/data-tracking-status[^>]*>([^<]*)</)?.[1]?.trim() ?? '';
+
+describe('Effective lifecycle status on the Mahasiswa dashboard/riwayat surfaces', () => {
+    it('presents the backend effective status, not the stored one', () => {
+        const underReview = booking({
+            status: 'submitted',
+            effective_status: 'under_review',
+        });
+
+        const cards = renderPeminjamanTrackingCards([underReview]);
+        // The status pill is the claim about the booking's state; the stage rail
+        // separately names every stage, so assert the pill itself.
+        expect(statusPillText(cards)).toBe('Sedang Ditinjau');
+        expect(statusPillText(cards)).not.toBe('Diajukan');
+        expect(cards).toContain('Sedang ditinjau oleh pengelola ruangan.');
+
+        const riwayat = renderPeminjamanRiwayatSection([underReview], null);
+        expect(riwayat).toContain('Sedang Ditinjau');
+    });
+
+    it.each([
+        ['expired', 'Kedaluwarsa'],
+        ['completed', 'Selesai'],
+    ])('labels an %s booking by its effective status', (effective, label) => {
+        const html = renderPeminjamanRiwayatSection([booking({
+            status: 'approved',
+            effective_status: effective,
+        })], null);
+        expect(html).toContain(label);
+        expect(html).not.toContain('Disetujui');
+    });
+
+    it('drops expired and completed bookings out of the active dashboard set', () => {
+        expect(isActivePeminjamanBooking(
+            booking({ status: 'submitted', effective_status: 'under_review' }),
+            NOW,
+        )).toBe(true);
+        expect(isActivePeminjamanBooking(
+            booking({ status: 'approved', effective_status: 'completed' }),
+            NOW,
+        )).toBe(false);
+        expect(isActivePeminjamanBooking(
+            booking({ status: 'approved', effective_status: 'expired' }),
+            NOW,
+        )).toBe(false);
+    });
+});
+
 describe('isActivePeminjamanBooking', () => {
     it('treats submitted and revision_requested as active', () => {
         expect(isActivePeminjamanBooking(booking({ status: 'submitted' }), NOW)).toBe(true);
@@ -82,6 +132,19 @@ describe('renderPeminjamanTrackingCards', () => {
         expect(html).toContain('Diajukan');
         expect(html).toContain('Menunggu pemeriksaan ketersediaan');
         expect(html).toContain('Lihat Detail');
+    });
+
+    it('uses the shared tracking-card shell with its own status vocabulary', () => {
+        const html = renderPeminjamanTrackingCards([booking({ status: 'approved' })]);
+        // The Administrasi Surat shell, reused verbatim.
+        expect(html).toContain('data-tracking-status');
+        expect(html).toContain('<article');
+        // Stage labels come from the Peminjaman vocabulary, never the letter chain.
+        expect(html).toContain('Disetujui');
+        expect(html).not.toContain('Tendik');
+        expect(html).not.toContain('Prodi');
+        expect(html).not.toContain('Departemen');
+        expect(html).not.toContain('Tinjau<br>Dokumen');
     });
 
     it('surfaces the revision note and next action for revision_requested', () => {

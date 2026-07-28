@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const m = vi.hoisted(() => ({
     getLabs: vi.fn(),
@@ -57,7 +57,7 @@ vi.mock('../../../mahasiswa/peminjaman/api', () => {
         getPeminjamanRooms: vi.fn(),
         createMahasiswaBooking: vi.fn(),
         updateMahasiswaBooking: vi.fn(),
-        cancelMahasiswaBooking: vi.fn(),
+        withdrawMahasiswaBooking: vi.fn(),
         resubmitMahasiswaBooking: vi.fn(),
         replaceSuratPeminjamanPdf: vi.fn(),
         suratPeminjamanPreviewUrl: (id: number) =>
@@ -271,7 +271,9 @@ const calendarEnvelope = (
         range: { start: `${currentMonthKey()}-01`, end: `${currentMonthKey()}-31` },
         items,
         summary: {
-            total: Object.values(summaryCounts).reduce((total, count) => total + count, 0),
+            total: items.length,
+            active_total: (summaryCounts.submitted ?? 0) + (summaryCounts.approved ?? 0),
+            history_total: 0,
             counts_by_status: summaryCounts,
         },
     };
@@ -364,7 +366,7 @@ const makeSharedCalendarConfig = (): BookingCalendarViewConfig => ({
             { value: 'laboratory', label: 'Lab', selected: false },
         ],
         statusOptions: [
-            { value: 'all', label: 'Semua', count: 1, selected: true },
+            { value: 'active', label: 'Aktif', count: 1, selected: true },
             { value: 'approved', label: 'Disetujui', count: 1, selected: false },
         ],
         laboratoryOptions: [{ value: '7', label: 'LAB - Unit Role', selected: false }],
@@ -404,6 +406,20 @@ const openCalendar = (): void => {
 };
 
 beforeEach(() => {
+    // Freeze "now" to a fixed instant EARLY in the fixtures' month so the suite is
+    // deterministic regardless of the real machine date. This matters because the
+    // "Peminjaman Terdekat" panel legitimately shows only bookings that have not
+    // ended yet (production filters `end_at >= Date.now()`), and the calendar
+    // fixtures place a booking on the 15th of the current month. With the real
+    // clock the whole file drifts: once the real date passes the 15th the upcoming
+    // panel correctly hides that booking, so the details/conflict assertions that
+    // read from it began failing purely by the calendar date — a test-only defect,
+    // not a product bug. Anchoring to the 6th (well before the 15th) makes the
+    // fixture booking genuinely upcoming, so the assertions test real rendering.
+    // `shouldAdvanceTime` keeps the setTimeout(0)-based `flush()` helper working
+    // while the wall clock stays pinned (drift is sub-second within a test).
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-07-06T02:00:00Z')); // 09:00 WIB, current month = July 2026
     document.body.innerHTML = '<div id="app"></div>';
     Object.values(m).forEach((value) => {
         if (typeof value === 'function' && 'mockReset' in value) value.mockReset();
@@ -431,6 +447,10 @@ beforeEach(() => {
     m.getBookings.mockResolvedValue(bookingEnvelope());
     m.getCalendar.mockResolvedValue(calendarEnvelope());
     m.getBooking.mockResolvedValue(booking());
+});
+
+afterEach(() => {
+    vi.useRealTimers();
 });
 
 describe('Shared booking calendar primitives', () => {
@@ -934,14 +954,11 @@ describe('Super Admin calendar monitoring', () => {
         openCalendar();
         await flush();
 
-        expect(document.body.textContent).toContain('Semua (15)');
-        expect(document.body.textContent).toContain('Diajukan (3)');
+        expect(document.body.textContent).toContain('Aktif (4)');
         expect(document.body.textContent).toContain('Perlu Revisi (2)');
-        expect(document.body.textContent).toContain('Disetujui (1)');
         expect(document.body.textContent).toContain('Ditolak (4)');
         expect(document.body.textContent).toContain('Dibatalkan (5)');
-        expect(document.querySelector('[data-admin-calendar-status="submitted"]')?.getAttribute('aria-label'))
-            .toBe('Filter status Diajukan, 3 peminjaman.');
+        expect(document.body.textContent).toContain('Selesai / Riwayat (0)');
         expect(document.body.textContent).toContain('Kepadatan dihitung dari jumlah peminjaman sesuai filter aktif.');
         expect(document.getElementById('admin-calendar-today')?.getAttribute('aria-label'))
             .toBe('Kembali ke bulan dan tanggal hari ini');
@@ -961,10 +978,10 @@ describe('Super Admin calendar monitoring', () => {
         expect(document.body.textContent).toContain('11.00 WIB');
         expect(document.body.textContent).toContain('Diajukan');
 
-        document.querySelector<HTMLElement>('[data-admin-calendar-status="approved"]')?.click();
+        document.querySelector<HTMLElement>('[data-admin-calendar-status="rejected"]')?.click();
         await flush();
-        expect(document.body.textContent).toContain('Semua (15)');
-        expect(document.body.textContent).toContain('Diajukan (3)');
+        expect(document.body.textContent).toContain('Aktif (4)');
+        expect(document.body.textContent).toContain('Ditolak (4)');
     });
 
     it('loads calendar filters for room type, status, laboratory, room, and month navigation', async () => {
@@ -988,11 +1005,11 @@ describe('Super Admin calendar monitoring', () => {
             roomType: 'laboratory',
         }));
 
-        document.querySelector<HTMLElement>('[data-admin-calendar-status="approved"]')?.click();
+        document.querySelector<HTMLElement>('[data-admin-calendar-status="rejected"]')?.click();
         await flush();
         expect(latestCalendarMonthCall()).toEqual(expect.objectContaining({
             roomType: 'laboratory',
-            status: 'approved',
+            status: 'rejected',
         }));
 
         changeValue('admin-calendar-laboratory', '7');
@@ -1031,7 +1048,7 @@ describe('Super Admin calendar monitoring', () => {
 
         document.querySelector<HTMLElement>('[data-admin-calendar-room-type="laboratory"]')?.click();
         await flush();
-        document.querySelector<HTMLElement>('[data-admin-calendar-status="approved"]')?.click();
+        document.querySelector<HTMLElement>('[data-admin-calendar-status="rejected"]')?.click();
         await flush();
         changeValue('admin-calendar-laboratory', '7');
         await flush();
@@ -1045,7 +1062,7 @@ describe('Super Admin calendar monitoring', () => {
 
         const resetFilters = latestCalendarMonthCall();
         expect(resetFilters).toEqual(expect.objectContaining({ month: currentMonthKey() }));
-        expect(resetFilters?.status).toBeUndefined();
+        expect(resetFilters?.status).toBe('active');
         expect(resetFilters?.roomType).toBeUndefined();
         expect(resetFilters?.laboratoryId).toBeUndefined();
         expect(resetFilters?.roomId).toBeUndefined();
@@ -1067,7 +1084,7 @@ describe('Super Admin calendar monitoring', () => {
         expect(document.getElementById('admin-calendar-day-drawer-root')).not.toBeNull();
         expect(document.getElementById('admin-calendar-day-title')?.textContent)
             .toBe(formatDateId(new Date(`${currentMonthKey()}-15T12:00:00+07:00`)));
-        expect(document.body.textContent).toContain('1 peminjaman pada tanggal ini mengikuti filter aktif.');
+        expect(document.body.textContent).toContain('1 jadwal atau pengajuan aktif pada tanggal ini.');
         expect(document.body.textContent).toContain('Kegiatan Kalender');
         expect(document.body.textContent).toContain('Pemohon Kalender');
         expect(document.body.textContent).toContain('Diajukan');
@@ -1182,7 +1199,7 @@ describe('Super Admin calendar monitoring', () => {
             .querySelector<HTMLElement>(`[data-admin-calendar-date="${currentMonthKey()}-15"]`)
             ?.click();
 
-        expect(document.body.textContent).toContain('0 peminjaman pada tanggal ini mengikuti filter aktif.');
+        expect(document.body.textContent).toContain('0 jadwal atau pengajuan aktif pada tanggal ini.');
         expect(document.body.textContent).toContain('Belum ada peminjaman pada tanggal ini untuk filter aktif.');
     });
 });

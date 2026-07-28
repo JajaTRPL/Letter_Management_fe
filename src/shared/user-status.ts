@@ -18,15 +18,15 @@ export type UserStatusValue = typeof UserStatus[keyof typeof UserStatus];
 /** Display labels (Indonesian) for each status. */
 export const STATUS_LABELS: Record<UserStatusValue, string> = {
     [UserStatus.ACTIVE]: 'Aktif',
-    [UserStatus.SUSPENDED]: 'Suspended',
-    [UserStatus.PENDING_PROFILE]: 'Menunggu Profil',
+    [UserStatus.SUSPENDED]: 'Ditangguhkan',
+    [UserStatus.PENDING_PROFILE]: 'Profil belum lengkap',
 };
 
 /** Badge CSS classes for table/list rendering. */
 export const STATUS_BADGE_STYLES: Record<UserStatusValue, { color: string; label: string }> = {
     [UserStatus.ACTIVE]: { color: 'bg-green-100 text-green-700', label: 'Aktif' },
-    [UserStatus.SUSPENDED]: { color: 'bg-red-100 text-red-700', label: 'Suspended' },
-    [UserStatus.PENDING_PROFILE]: { color: 'bg-yellow-100 text-yellow-700', label: 'Menunggu Profil' },
+    [UserStatus.SUSPENDED]: { color: 'bg-red-100 text-red-700', label: 'Ditangguhkan' },
+    [UserStatus.PENDING_PROFILE]: { color: 'bg-yellow-100 text-yellow-700', label: 'Profil belum lengkap' },
 };
 
 /** Detail modal status styling (header section). */

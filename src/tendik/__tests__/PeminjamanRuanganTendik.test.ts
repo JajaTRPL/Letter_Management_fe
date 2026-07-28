@@ -9,6 +9,11 @@ const m = vi.hoisted(() => ({
     approve: vi.fn(),
     revise: vi.fn(),
     reject: vi.fn(),
+    getOperations: vi.fn(),
+    issueKey: vi.fn(),
+    decideReturn: vi.fn(),
+    generateKey: vi.fn(),
+    fetchReturnEvidence: vi.fn(),
     downloadSurat: vi.fn(),
     attachViewer: vi.fn(() => () => {}),
     renderLayout: vi.fn(),
@@ -65,13 +70,18 @@ vi.mock('../../mahasiswa/peminjaman/api', () => {
         approveTendikBooking: m.approve,
         reviseTendikBooking: m.revise,
         rejectTendikBooking: m.reject,
+        getTendikOperationalOccurrences: m.getOperations,
+        issueRoomKey: m.issueKey,
+        decideRoomReturn: m.decideReturn,
+        generateRoomBookingIdempotencyKey: m.generateKey,
+        fetchReturnEvidenceObjectUrl: m.fetchReturnEvidence,
         // Requester-side exports pulled in transitively via the shared
         // booking detail/form modules — not exercised by the reviewer page.
         getMahasiswaBooking: vi.fn(),
         getPeminjamanRooms: vi.fn(),
         createMahasiswaBooking: vi.fn(),
         updateMahasiswaBooking: vi.fn(),
-        cancelMahasiswaBooking: vi.fn(),
+        withdrawMahasiswaBooking: vi.fn(),
         resubmitMahasiswaBooking: vi.fn(),
         replaceSuratPeminjamanPdf: vi.fn(),
         downloadSuratPeminjamanPdf: m.downloadSurat,
@@ -124,6 +134,7 @@ import type {
     TendikBooking,
     TendikCalendarItem,
     TendikReviewerRole,
+    TendikOperationalOccurrence,
 } from '../../mahasiswa/peminjaman/types';
 import type { ManagedRoom } from '../../shared/room-management/types';
 import { renderPeminjamanRuanganTendik } from '../PeminjamanRuanganTendik';
@@ -175,6 +186,36 @@ const booking = (overrides: Partial<TendikBooking> = {}): TendikBooking => ({
         note: 'Catatan <b>tidak dieksekusi</b>',
         created_at: '2026-06-18T09:00:00+07:00',
     }],
+    ...overrides,
+});
+
+const operationalOccurrence = (
+    overrides: Partial<TendikOperationalOccurrence> = {},
+): TendikOperationalOccurrence => ({
+    occurrence_ref: 'occurrence-public-1',
+    sequence: 1,
+    date: '2026-06-25',
+    start_at: '2026-06-25T09:00:00+07:00',
+    end_at: '2026-06-25T11:00:00+07:00',
+    return_due_at: '2026-06-25T11:30:00+07:00',
+    version: 2,
+    operational_status: 'scheduled',
+    key_issuance: { issued: false, issued_at: null, issued_by: null },
+    return: null,
+    capabilities: {
+        can_submit_return: false,
+        can_withdraw_return: false,
+        can_resubmit_return: false,
+        can_issue_key: true,
+        can_verify_return: false,
+    },
+    event_hooks: [],
+    booking: {
+        id: 71,
+        activity_name: 'Kuliah Tamu',
+        applicant_name: 'Mahasiswa Reviewer',
+        room,
+    },
     ...overrides,
 });
 
@@ -251,6 +292,8 @@ const calendarEnvelope = (items: TendikCalendarItem[] = [calendarItem()]) => {
         items,
         summary: {
             total: items.length,
+            active_total: items.filter((item) => item.status === 'submitted' || item.status === 'approved').length,
+            history_total: 0,
             counts_by_status: counts,
         },
     };
@@ -346,6 +389,11 @@ beforeEach(() => {
     m.approve.mockResolvedValue(booking({ status: 'approved' }));
     m.revise.mockResolvedValue(booking({ status: 'revision_requested' }));
     m.reject.mockResolvedValue(booking({ status: 'rejected' }));
+    m.getOperations.mockResolvedValue([operationalOccurrence()]);
+    m.issueKey.mockResolvedValue(booking({ status: 'approved' }));
+    m.decideReturn.mockResolvedValue(booking({ status: 'approved' }));
+    m.generateKey.mockReturnValue('operation-idempotency-key');
+    m.fetchReturnEvidence.mockResolvedValue('blob:return-evidence');
     m.listRooms.mockResolvedValue([managedRoom()]);
     m.bulkDelete.mockResolvedValue({ deleted: [], archived: [], summary: { deleted: 0, archived: 0, total: 0 } });
     m.getRoom.mockResolvedValue(managedRoom());
@@ -358,6 +406,82 @@ beforeEach(() => {
 });
 
 describe('Tendik Peminjaman reviewer page', () => {
+    it('renders scoped operational cards and issues a key with expected occurrence state', async () => {
+        await renderPeminjamanRuanganTendik();
+        document.querySelector<HTMLElement>('[data-tendik-tab="operations"]')?.click();
+        await flush();
+
+        expect(document.querySelector('[data-operational-state="ready"]')?.textContent)
+            .toContain('KLS-09');
+        expect(document.body.textContent).toContain('Mahasiswa Reviewer');
+        expect(document.body.textContent).toContain('Tenggat pengembalian');
+        expect(document.querySelectorAll('[data-operational-tab]')).toHaveLength(5);
+
+        document.querySelector<HTMLElement>('[data-operation-issue="occurrence-public-1"]')?.click();
+        setValue('operational-note', 'Kunci diserahkan langsung.');
+        submit('operational-action-form');
+        await flush();
+
+        expect(m.issueKey).toHaveBeenCalledWith(
+            expect.objectContaining({ occurrence_ref: 'occurrence-public-1', version: 2 }),
+            'Kunci diserahkan langsung.',
+            'operation-idempotency-key',
+        );
+    });
+
+    it('verifies physical receipt with a labelled decision form and Jakarta offset', async () => {
+        const pendingReturn = {
+            return_ref: 'return-public-1',
+            status: 'pending' as const,
+            version: 3,
+            submitted_at: '2026-06-25T11:05:00+07:00',
+            decision_note: null,
+            key_received_at: null,
+            verified_at: null,
+            evidence: {
+                original_name: 'bukti.webp',
+                mime: 'image/webp',
+                size_bytes: 2048,
+                preview_url: '/api/peminjaman-ruangan/returns/return-public-1/evidence/preview',
+                download_url: '/api/peminjaman-ruangan/returns/return-public-1/evidence/download',
+            },
+        };
+        m.getOperations.mockResolvedValue([operationalOccurrence({
+            operational_status: 'awaiting_verification',
+            return: pendingReturn,
+            capabilities: {
+                can_submit_return: false,
+                can_withdraw_return: false,
+                can_resubmit_return: false,
+                can_issue_key: false,
+                can_verify_return: true,
+            },
+        })]);
+
+        await renderPeminjamanRuanganTendik();
+        document.querySelector<HTMLElement>('[data-tendik-tab="operations"]')?.click();
+        await flush();
+        document.querySelector<HTMLElement>('[data-operation-verify="occurrence-public-1"]')?.click();
+
+        expect(document.querySelector('label')?.tagName).toBe('LABEL');
+        setValue('operational-received-at', '2026-06-25T11:20');
+        setValue('operational-time-reason', 'Dicatat dari buku serah terima.');
+        setValue('operational-note', 'Kunci lengkap.');
+        submit('operational-action-form');
+        await flush();
+
+        expect(m.decideReturn).toHaveBeenCalledWith(
+            expect.objectContaining({ occurrence_ref: 'occurrence-public-1' }),
+            'accept',
+            {
+                note: 'Kunci lengkap.',
+                keyReceivedAt: '2026-06-25T11:20:00+07:00',
+                receivedTimeReason: 'Dicatat dari buku serah terima.',
+            },
+            'operation-idempotency-key',
+        );
+    });
+
     it('renders loading, empty, error/retry, and success queue states', async () => {
         let resolveQueue!: (value: ReturnType<typeof envelope>) => void;
         m.getBookings.mockReturnValueOnce(new Promise((resolve) => {
@@ -461,6 +585,56 @@ describe('Tendik Peminjaman reviewer page', () => {
         expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
         expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
         expect(document.getElementById('peminjaman-surat-replace-input')).toBeNull();
+    });
+
+
+    it('frames the operational tab as read-only monitoring for a Kepala Lab', async () => {
+        // A Kepala Lab may READ their lab's occurrences but the backend forbids
+        // them from issuing keys or verifying returns. Without this framing the
+        // tab is a work queue whose every button is silently missing, and the
+        // user is left hunting for a control that will never exist.
+        m.getProfile.mockResolvedValue(profile('kepala_lab'));
+        m.getOperations.mockResolvedValue([operationalOccurrence({
+            operational_status: 'scheduled',
+            responsible_label: 'Menunggu Laboran',
+            capabilities: {
+                can_submit_return: false,
+                can_withdraw_return: false,
+                can_resubmit_return: false,
+                can_issue_key: false,
+                can_verify_return: false,
+            },
+        })]);
+
+        await renderPeminjamanRuanganTendik();
+        document.querySelector<HTMLElement>('[data-tendik-tab="operations"]')?.click();
+        await flush();
+
+        expect(document.querySelector('[data-operational-readonly]')?.textContent)
+            .toContain('Akses baca saja');
+        expect(document.body.textContent).toContain('Tindakan dilakukan oleh Laboran.');
+        // The responsible party is named where an action button would sit.
+        expect(document.querySelector('[data-operation-responsible]')?.textContent)
+            .toContain('Menunggu Laboran');
+        expect(document.querySelector('[data-operation-issue]')).toBeNull();
+        expect(document.querySelector('[data-operation-verify]')).toBeNull();
+        // The tab itself is named for monitoring, matching the dashboard panel.
+        expect(document.querySelector('[data-tendik-tab="operations"]')?.textContent?.trim())
+            .toBe('Kondisi Operasional');
+        // Developer-speak must not reach the UI.
+        expect(document.body.textContent).not.toContain('ditentukan oleh backend');
+    });
+
+    it('keeps the operational tab actionable for Sarpras', async () => {
+        m.getProfile.mockResolvedValue(profile('sarpras'));
+
+        await renderPeminjamanRuanganTendik();
+        document.querySelector<HTMLElement>('[data-tendik-tab="operations"]')?.click();
+        await flush();
+
+        expect(document.querySelector('[data-operational-readonly]')).toBeNull();
+        expect(document.querySelector('[data-tendik-tab="operations"]')?.textContent?.trim())
+            .toBe('Operasional Kunci & Pengembalian');
     });
 
     it('shows surat PDF metadata with protected preview/download and no replacement uploader', async () => {
@@ -636,9 +810,9 @@ describe('Tendik Peminjaman reviewer page', () => {
         );
         expect(document.body.textContent).toContain('Pengajuan Ruang Kelas Terdekat');
         expect(document.body.textContent).toContain('Mengikuti filter aktif, mulai hari ini.');
-        expect(document.body.textContent).toContain('Semua (2)');
-        expect(document.body.textContent).toContain('Diajukan (1)');
-        expect(document.body.textContent).toContain('Disetujui (1)');
+        expect(document.body.textContent).toContain('Aktif (2)');
+        expect(document.body.textContent).toContain('Perlu Revisi (0)');
+        expect(document.body.textContent).toContain('Selesai / Riwayat (0)');
         expect(document.body.textContent).toContain('Kepadatan');
         expect(document.body.textContent).toContain('Rendah');
         expect(document.body.textContent).toContain('Kuliah Tamu');
@@ -742,9 +916,7 @@ describe('Tendik Peminjaman reviewer page', () => {
         );
         expect(document.body.textContent).toContain('Pengajuan Lab Terdekat');
         expect(document.body.textContent).toContain('Mengikuti filter aktif, mulai hari ini.');
-        expect(document.body.textContent).toContain('Semua (2)');
-        expect(document.body.textContent).toContain('Diajukan (1)');
-        expect(document.body.textContent).toContain('Disetujui (1)');
+        expect(document.body.textContent).toContain('Aktif (2)');
         expect(document.body.textContent).toContain('Kepadatan');
         expect(document.body.textContent).toContain('Rendah');
         expect(document.body.textContent).toContain('Lab Praktikum');
@@ -768,7 +940,7 @@ describe('Tendik Peminjaman reviewer page', () => {
 
         dateButton?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
         expect(document.getElementById('sarpras-calendar-day-drawer-root')).not.toBeNull();
-        expect(document.body.textContent).toContain('2 pengajuan laboratorium pada tanggal ini');
+        expect(document.body.textContent).toContain('2 pengajuan laboratorium aktif pada tanggal ini');
 
         document.querySelector<HTMLElement>('[data-sarpras-calendar-detail="71"]')?.click();
         await flush();
@@ -777,7 +949,7 @@ describe('Tendik Peminjaman reviewer page', () => {
         expect(document.getElementById('approve-tendik-peminjaman')).not.toBeNull();
     });
 
-    it('renders the Laboran lab schedule calendar with lab filters, approved default status, and read-only detail', async () => {
+    it('renders the Laboran lab schedule calendar with lab filters, active default status, and read-only detail', async () => {
         const labRoom = {
             ...room,
             id: 10,
@@ -817,7 +989,7 @@ describe('Tendik Peminjaman reviewer page', () => {
             .toContain('Kalender Peminjaman');
         expect(m.getCalendar).toHaveBeenCalledWith(expect.objectContaining({
             month: currentMonthKey(),
-            status: 'approved',
+            status: 'active',
         }));
         expect(m.getCalendar.mock.calls.every(([filters]) =>
             !('roomType' in filters))).toBe(true);
@@ -829,11 +1001,9 @@ describe('Tendik Peminjaman reviewer page', () => {
         );
         expect(document.body.textContent).toContain('Jadwal Lab Terdekat');
         expect(document.body.textContent).toContain('Mengikuti filter aktif, mulai hari ini.');
-        expect(document.body.textContent).toContain('Semua (2)');
-        expect(document.body.textContent).toContain('Diajukan (1)');
-        expect(document.body.textContent).toContain('Disetujui (1)');
-        expect(document.querySelector('[data-sarpras-calendar-status="approved"]')?.getAttribute('aria-label'))
-            .toContain('1 jadwal laboratorium');
+        expect(document.body.textContent).toContain('Aktif (2)');
+        expect(document.querySelector('[data-sarpras-calendar-status="active"]')?.getAttribute('aria-label'))
+            .toContain('2 jadwal laboratorium');
         expect(document.body.textContent).toContain('Kepadatan');
         expect(document.body.textContent).toContain('Kepadatan dihitung dari jumlah jadwal laboratorium sesuai filter aktif.');
         expect(document.body.textContent).toContain('Rendah');
@@ -862,14 +1032,14 @@ describe('Tendik Peminjaman reviewer page', () => {
         await flush();
         expect(m.getCalendar).toHaveBeenCalledWith(expect.objectContaining({
             laboratoryId: 2,
-            status: 'approved',
+            status: 'active',
         }));
 
         document.getElementById('sarpras-calendar-reset')?.click();
         await flush();
         expect(m.getCalendar.mock.calls.slice(-2).some(([filters]) =>
             filters.month === currentMonthKey()
-            && filters.status === 'approved'
+            && filters.status === 'active'
             && !('laboratoryId' in filters))).toBe(true);
 
         const dateButton = document.querySelector<HTMLButtonElement>(
@@ -880,7 +1050,7 @@ describe('Tendik Peminjaman reviewer page', () => {
         expect(dateButton?.getAttribute('aria-label')).toContain('2 peminjaman');
         dateButton?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
         expect(document.getElementById('sarpras-calendar-day-drawer-root')).not.toBeNull();
-        expect(document.body.textContent).toContain('2 jadwal laboratorium pada tanggal ini');
+        expect(document.body.textContent).toContain('2 jadwal laboratorium aktif pada tanggal ini');
 
         document.querySelector<HTMLElement>('[data-sarpras-calendar-detail="71"]')?.click();
         await flush();
@@ -962,9 +1132,9 @@ describe('Tendik Peminjaman reviewer page', () => {
         dateButtons[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
         expect(document.activeElement).toBe(dateButtons[1]);
 
-        document.querySelector<HTMLElement>('[data-sarpras-calendar-status="submitted"]')?.click();
+        document.querySelector<HTMLElement>('[data-sarpras-calendar-status="rejected"]')?.click();
         await flush();
-        expect(m.getCalendar).toHaveBeenCalledWith(expect.objectContaining({ status: 'submitted' }));
+        expect(m.getCalendar).toHaveBeenCalledWith(expect.objectContaining({ status: 'rejected' }));
 
         const roomSelect = document.getElementById('sarpras-calendar-room') as HTMLSelectElement;
         roomSelect.value = '9';
@@ -981,7 +1151,7 @@ describe('Tendik Peminjaman reviewer page', () => {
         );
         dateButton?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
         expect(document.getElementById('sarpras-calendar-day-drawer-root')).not.toBeNull();
-        expect(document.body.textContent).toContain('1 pengajuan ruang kelas pada tanggal ini');
+        expect(document.body.textContent).toContain('1 pengajuan ruang kelas aktif pada tanggal ini');
 
         document.getElementById('close-sarpras-calendar-day')?.click();
         document.querySelector<HTMLButtonElement>(
