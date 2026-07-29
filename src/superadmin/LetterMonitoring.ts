@@ -12,15 +12,18 @@ const PERIODS = [
 
 let activePeriod = 'today';
 
+// Each hex triple below was already an exact Tailwind 100/700/300 stop
+// (verified: yellow/sky/violet/orange/gray) — this swaps the inline `style=`
+// for the equivalent utility classes with zero visual change.
 const getStatusBadge = (status: string) => {
-    const map: Record<string, { label: string; bg: string; text: string; border: string }> = {
-        'Submitted': { label: 'Menunggu Verifikasi', bg: '#FEF9C3', text: '#A16207', border: '#FDE047' },
-        'Approved_Tendik': { label: 'Menunggu Persetujuan', bg: '#E0F2FE', text: '#0369A1', border: '#7DD3FC' },
-        'Approved_Kaprodi': { label: 'Menunggu Tanda Tangan', bg: '#EDE9FE', text: '#6D28D9', border: '#C4B5FD' },
-        'Revision': { label: 'Perlu Revisi', bg: '#FFEDD5', text: '#C2410C', border: '#FDBA74' },
+    const map: Record<string, { label: string; classes: string }> = {
+        'Submitted': { label: 'Menunggu Verifikasi', classes: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
+        'Approved_Tendik': { label: 'Menunggu Persetujuan', classes: 'bg-sky-100 text-sky-700 border-sky-300' },
+        'Approved_Kaprodi': { label: 'Menunggu Tanda Tangan', classes: 'bg-violet-100 text-violet-700 border-violet-300' },
+        'Revision': { label: 'Perlu Revisi', classes: 'bg-orange-100 text-orange-700 border-orange-300' },
     };
-    const cfg = map[status] || { label: status, bg: '#F3F4F6', text: '#374151', border: '#D1D5DB' };
-    return `<span class="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold" style="background:${cfg.bg}; color:${cfg.text}; border: 1px solid ${cfg.border}">${cfg.label}</span>`;
+    const cfg = map[status] || { label: status, classes: 'bg-gray-100 text-gray-700 border-gray-300' };
+    return `<span class="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${cfg.classes}">${cfg.label}</span>`;
 };
 
 async function fetchMonitoringData(period: string) {
@@ -32,7 +35,10 @@ async function fetchMonitoringData(period: string) {
 function buildContent(stats: any, overdue: any[]) {
     const periodTabs = PERIODS.map(p => {
         const isActive = p.key === activePeriod;
-        return `<button data-period="${p.key}" class="period-btn px-6 py-2 text-sm font-semibold transition-colors rounded-xl ${isActive ? 'text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'}" ${isActive ? 'style="background-color: #0d4a46"' : ''}>${p.label}</button>`;
+        // Same active-tab treatment as the SuperAdmin dashboard's period tabs
+        // (AdminDashboard.ts) — the brand token instead of a second hex that
+        // has to be kept in sync with it by hand.
+        return `<button data-period="${p.key}" class="period-btn px-6 py-2 text-sm font-semibold transition-colors rounded-xl ${isActive ? 'bg-primary-teal text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'}">${p.label}</button>`;
     }).join('');
 
     const overdueRows = overdue.length > 0

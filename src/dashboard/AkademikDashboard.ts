@@ -1,6 +1,13 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { escapeFormHtml } from '../shared/form-primitives';
-import { renderDashboardSection, renderDashboardStatCard, renderDashboardStatGrid, renderDashboardTable } from '../shared/ui-primitives';
+import {
+    dashboardSectionIcon,
+    renderDashboardLinkButton,
+    renderDashboardSection,
+    renderDashboardStatCard,
+    renderDashboardStatGrid,
+    renderDashboardTable,
+} from '../shared/ui-primitives';
 import {
     hydrateReviewPerformance,
     reviewPerformanceShell,
@@ -169,17 +176,14 @@ export const renderAkademikDashboard = async (role: string) => {
                 ${renderDashboardSection({
                         title: 'Antrean Perlu Dikerjakan',
                         subtitle: 'Daftar pengajuan surat yang memerlukan persetujuan Anda',
-                        iconHtml: `
-                            <div class="w-6 h-6 rounded-full border border-red-500 text-red-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="6" x2="12" y2="14"></line><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-                            </div>`,
+                        iconHtml: dashboardSectionIcon('attention'),
                         noteHtml: limitedTaskNote ? `<p class="text-[11px] font-medium text-amber-700 mt-2">${escapeHtml(limitedTaskNote)}</p>` : '',
                         actionHtml: `
                             <div class="relative">
                                 <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                                 <input id="akademik-queue-search" type="text" placeholder="Cari nama, NIM, atau jenis surat" class="pl-9 pr-3 py-2 text-xs font-medium border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 w-[260px]">
                             </div>
-                            <button id="akademik-queue-see-more" type="button" class="text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline">Lihat Selengkapnya</button>`,
+                            ${renderDashboardLinkButton({ id: 'akademik-queue-see-more', label: 'Lihat Selengkapnya' })}`,
                         bodyHtml: renderDashboardTable({
                             columns: [
                                 { label: 'Tanggal Masuk', className: 'w-[220px]' },
@@ -200,11 +204,8 @@ export const renderAkademikDashboard = async (role: string) => {
                 ${renderDashboardSection({
                     title: 'Riwayat',
                     subtitle: 'Pengajuan terbaru yang telah Anda proses',
-                    iconHtml: `
-                        <div class="w-6 h-6 rounded-full border border-blue-500 text-blue-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        </div>`,
-                    actionHtml: `<button id="akademik-riwayat-see-more" type="button" class="text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline">Lihat Selengkapnya</button>`,
+                    iconHtml: dashboardSectionIcon('history'),
+                    actionHtml: renderDashboardLinkButton({ id: 'akademik-riwayat-see-more', label: 'Lihat Selengkapnya' }),
                     bodyHtml: renderDashboardTable({
                         columns: [
                             { label: 'Tanggal Tindakan' },

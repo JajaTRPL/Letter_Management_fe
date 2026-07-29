@@ -54,13 +54,110 @@ export function renderFieldMessage(id: string, error?: string): string {
 // Tailwind, which is why borders, radii and shadows visibly disagreed on the
 // same screen. Add a new dashboard by composing these, never by copying markup.
 
-export type DashboardStatTone = 'info' | 'warning' | 'success';
+export type DashboardStatTone = 'info' | 'warning' | 'success' | 'accent' | 'neutral';
 
 const DASHBOARD_STAT_TONE: Record<DashboardStatTone, { card: string; value: string; icon: string }> = {
     info: { card: 'bg-[#EFF6FF] border-blue-100', value: 'text-[#0EA5E9]', icon: 'bg-blue-400/20 text-blue-600' },
     warning: { card: 'bg-[#FFF8F1] border-orange-200/60', value: 'text-[#F59E0B]', icon: 'bg-[#FEF08A]/60 text-[#D97706]' },
     success: { card: 'bg-[#F0FDF4] border-green-200/60', value: 'text-[#10B981]', icon: 'bg-green-300/40 text-green-600' },
+    accent: { card: 'bg-[#F5F3FF] border-violet-100', value: 'text-[#7C3AED]', icon: 'bg-violet-300/30 text-violet-600' },
+    neutral: { card: 'bg-[#F8FAFC] border-slate-200/70', value: 'text-slate-700', icon: 'bg-slate-300/30 text-slate-600' },
 };
+
+/**
+ * Tinted mini-tile — the small stat block used INSIDE a section.
+ *
+ * This markup is lifted verbatim from the delegated-activity card, which was
+ * hand-rolling it in two places. It is deliberately the opposite of
+ * `renderMetricCard`: a borderless colour fill with a `font-black` value in a
+ * matching hue, instead of a grey box with a hairline border and a colourless
+ * number. That difference is the whole reason some dashboard cards read as warm
+ * and others read as inert — so it belongs in one place, not copied per card.
+ */
+export type DashboardTileTone = 'teal' | 'danger' | 'warning' | 'info' | 'neutral';
+
+const DASHBOARD_TILE_TONE: Record<DashboardTileTone, { fill: string; label: string; value: string }> = {
+    teal: { fill: 'bg-teal-50', label: 'text-teal-700', value: 'text-teal-900' },
+    danger: { fill: 'bg-red-50', label: 'text-red-700', value: 'text-red-800' },
+    warning: { fill: 'bg-amber-50', label: 'text-amber-700', value: 'text-amber-900' },
+    info: { fill: 'bg-blue-50', label: 'text-blue-700', value: 'text-blue-900' },
+    neutral: { fill: 'bg-gray-50', label: 'text-gray-600', value: 'text-gray-800' },
+};
+
+const TILE_VALUE_SIZE = {
+    sm: 'text-sm font-bold',
+    md: 'text-2xl font-black',
+    lg: 'text-[38px] leading-none font-black',
+} as const;
+
+export function renderDashboardTile(options: {
+    label: string;
+    value: string | number;
+    tone: DashboardTileTone;
+    /**
+     * `sm` for a tile holding a date or label rather than a count; `lg` when the
+     * tile IS the card's headline and has to hold its own next to the 38px stat
+     * cards above it.
+     */
+    size?: 'sm' | 'md' | 'lg';
+    /** Trusted caller-built markup appended under the value (badges, notes). */
+    extraHtml?: string;
+}): string {
+    const tone = DASHBOARD_TILE_TONE[options.tone];
+    const valueSize = TILE_VALUE_SIZE[options.size ?? 'md'];
+
+    return `
+        <div class="${cx('rounded-xl px-4 py-3', tone.fill)}">
+            <p class="text-[11px] font-bold uppercase tracking-wide ${tone.label}">${escapeFormHtml(options.label)}</p>
+            <p class="mt-1 ${valueSize} ${tone.value}">${escapeFormHtml(String(options.value))}</p>
+            ${options.extraHtml ?? ''}
+        </div>
+    `;
+}
+
+/**
+ * The coloured ring that marks a section header.
+ *
+ * Four of these were hand-written across the dashboards and two had silently
+ * drifted (`flex-col` vs `flex items-center`, 13px vs 12px glyph). The kind is
+ * SEMANTIC, not decorative: `monitor` in particular is what tells a reader that
+ * a panel is something to watch rather than something to do, which is the job a
+ * grey background used to do badly.
+ */
+export type DashboardIconKind = 'attention' | 'history' | 'today' | 'monitor' | 'insight';
+
+const DASHBOARD_ICON: Record<DashboardIconKind, { ring: string; glyph: string }> = {
+    attention: {
+        ring: 'border-red-500 text-red-500',
+        glyph: '<line x1="12" y1="6" x2="12" y2="14"></line><line x1="12" y1="18" x2="12.01" y2="18"></line>',
+    },
+    history: {
+        ring: 'border-blue-500 text-blue-500',
+        glyph: '<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>',
+    },
+    today: {
+        ring: 'border-teal-600 text-teal-600',
+        glyph: '<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 11h18"></path>',
+    },
+    monitor: {
+        ring: 'border-slate-400 text-slate-500',
+        glyph: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>',
+    },
+    insight: {
+        ring: 'border-teal-600 text-teal-600',
+        glyph: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>',
+    },
+};
+
+export function dashboardSectionIcon(kind: DashboardIconKind): string {
+    const icon = DASHBOARD_ICON[kind];
+
+    return `
+        <div class="w-6 h-6 rounded-full border ${icon.ring} flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${icon.glyph}</svg>
+        </div>
+    `;
+}
 
 /**
  * The headline number tile. `iconSvg` is trusted inline markup (a static icon),
@@ -86,18 +183,85 @@ export function renderDashboardStatCard(options: {
     `;
 }
 
-/** Wrap stat cards so every dashboard uses the same grid rhythm. */
-export function renderDashboardStatGrid(cardsHtml: string): string {
-    return `<div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-8">${cardsHtml}</div>`;
+/**
+ * Wrap stat cards so every dashboard uses the same grid rhythm.
+ *
+ * `spacingClass` exists because a dashboard whose page wrapper already owns
+ * vertical rhythm (`space-y-*`) would otherwise fight the default `mt-8` — two
+ * competing margins on the same element, resolved by stylesheet order rather
+ * than by intent.
+ */
+export function renderDashboardStatGrid(cardsHtml: string, spacingClass = 'mt-8'): string {
+    return `<div class="${cx('grid grid-cols-1 md:grid-cols-3 gap-5', spacingClass)}">${cardsHtml}</div>`;
+}
+
+/**
+ * The "Lihat Selengkapnya" style link that sits in a section's action slot.
+ *
+ * Four copies of this markup existed and one had already drifted to blue while
+ * the other three were teal — and the blue one also sat ABOVE its panel instead
+ * of inside the header, so the same control appeared in two colours and two
+ * positions on adjacent dashboards.
+ */
+export function renderDashboardLinkButton(options: {
+    label: string;
+    id?: string;
+    /** Extra classes, e.g. a hook class the page binds listeners to. */
+    extraClass?: string;
+    /** Rendered as data-* attributes; keys and values are escaped. */
+    data?: Record<string, string>;
+}): string {
+    const attrs = Object.entries(options.data ?? {})
+        .map(([key, value]) => ` data-${escapeFormAttribute(key)}="${escapeFormAttribute(value)}"`)
+        .join('');
+
+    return `<button type="button"${options.id ? ` id="${escapeFormAttribute(options.id)}"` : ''}${attrs} class="${
+        cx('text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline', options.extraClass)
+    }">${escapeFormHtml(options.label)}</button>`;
+}
+
+/**
+ * The header of a dashboard panel: icon ring, title, subtitle, optional note and
+ * action. Split out of `renderDashboardSection` for the one surface that needs
+ * the header WITHOUT the panel — the Mahasiswa tracking grid, whose children are
+ * already bordered cards, so a panel around them would be a card inside a card.
+ * Extracting it keeps that surface from hand-rolling a lookalike heading.
+ */
+export function renderDashboardSectionHeader(options: {
+    title: string;
+    titleId?: string;
+    subtitle?: string;
+    iconHtml?: string;
+    actionHtml?: string;
+    noteHtml?: string;
+    extraClass?: string;
+}): string {
+    return `
+        <div class="${cx('flex flex-col md:flex-row md:items-center md:justify-between gap-4', options.extraClass)}">
+            <div class="flex gap-3">
+                ${options.iconHtml ?? ''}
+                <div>
+                    <h2${options.titleId ? ` id="${escapeFormAttribute(options.titleId)}"` : ''} class="text-[17px] font-bold text-gray-800">${escapeFormHtml(options.title)}</h2>
+                    ${options.subtitle ? `<p class="text-[11px] text-gray-500 mt-1">${escapeFormHtml(options.subtitle)}</p>` : ''}
+                    ${options.noteHtml ?? ''}
+                </div>
+            </div>
+            ${options.actionHtml ? `<div class="flex items-center gap-3">${options.actionHtml}</div>` : ''}
+        </div>
+    `;
 }
 
 /**
  * The section shell used by every dashboard panel (queue, history, awareness).
  *
- * `tone: 'muted'` renders a recessed surface — reserved for panels that are
- * INFORMATION rather than assigned work. That distinction is load-bearing: a
- * read-only panel styled like an actionable one reads as "your task", and the
- * user then looks for a button that will never exist.
+ * Tones:
+ *  - `default` — assigned work. White, like everything actionable.
+ *  - `info`    — INFORMATION rather than work: a soft blue tint that still reads
+ *                as a live, finished panel. Use this with a `monitor` icon and a
+ *                named responsible party, so "not your task" is carried by
+ *                meaning rather than by looking disabled.
+ *  - `muted`   — recessed grey. Retained for non-dashboard callers; avoid it for
+ *                read-only panels, because grey reads as broken, not as FYI.
  */
 export function renderDashboardSection(options: {
     title: string;
@@ -112,27 +276,26 @@ export function renderDashboardSection(options: {
     noteHtml?: string;
     /** Trusted caller-built body (usually renderDashboardTable). */
     bodyHtml: string;
-    tone?: 'default' | 'muted';
+    tone?: 'default' | 'info' | 'muted';
     extraClass?: string;
 }): string {
-    const muted = options.tone === 'muted';
+    const tone = options.tone ?? 'default';
+    const surface = tone === 'muted'
+        ? 'bg-gray-50/70 border-gray-200'
+        : tone === 'info'
+            ? 'bg-white border-blue-100'
+            : 'bg-white border-gray-100';
+    const headerBorder = tone === 'muted'
+        ? 'border-gray-200'
+        : tone === 'info'
+            ? 'border-blue-100'
+            : 'border-gray-100';
+    const headerFill = tone === 'info' ? 'bg-blue-50/40' : '';
 
     return `
-        <div class="${cx(
-            muted ? 'bg-gray-50/70 border-gray-200' : 'bg-white border-gray-100',
-            'rounded-2xl border shadow-sm overflow-hidden',
-            options.extraClass,
-        )}">
-            <div class="px-7 py-5 border-b ${muted ? 'border-gray-200' : 'border-gray-100'} flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div class="flex gap-3">
-                    ${options.iconHtml ?? ''}
-                    <div>
-                        <h2${options.titleId ? ` id="${escapeFormAttribute(options.titleId)}"` : ''} class="text-[17px] font-bold text-gray-800">${escapeFormHtml(options.title)}</h2>
-                        ${options.subtitle ? `<p class="text-[11px] text-gray-500 mt-1">${escapeFormHtml(options.subtitle)}</p>` : ''}
-                        ${options.noteHtml ?? ''}
-                    </div>
-                </div>
-                ${options.actionHtml ? `<div class="flex items-center gap-3">${options.actionHtml}</div>` : ''}
+        <div class="${cx(surface, 'rounded-2xl border shadow-sm overflow-hidden', options.extraClass)}">
+            <div class="${cx('px-7 py-5 border-b', headerBorder, headerFill)}">
+                ${renderDashboardSectionHeader({ ...options, extraClass: undefined })}
             </div>
             ${options.bodyHtml}
         </div>

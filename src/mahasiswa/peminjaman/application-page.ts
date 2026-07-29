@@ -1,6 +1,7 @@
 import { renderDashboardLayout } from '../../dashboard/DashboardLayout';
 import {
     buttonClass,
+    inputClass as controlClass,
     SPINNER_CLASS,
     surfaceClass,
 } from '../../shared/design-system';
@@ -230,12 +231,13 @@ export const closePeminjamanApplicationPage = (): void => {
     roomContextObjectUrl = null;
 };
 
+// Delegates to the canonical control styling (shared/design-system) so every
+// state — including invalid — carries the same focus ring. The local version
+// this replaced only put a ring on the valid state; an invalid field lost focus
+// visibility right when a keyboard user is most likely to land on it (post
+// validation).
 const inputClass = (hasError: boolean): string =>
-    `w-full rounded-xl border px-3.5 py-2.5 text-sm outline-none transition-colors ${
-        hasError
-            ? 'border-red-300 bg-red-50/40 focus:border-red-500'
-            : 'border-gray-200 bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-50'
-    }`;
+    controlClass(hasError ? 'invalid' : 'default', hasError ? 'bg-red-50/40' : undefined);
 
 const errorId = (field: keyof BookingFormValues): string =>
     `${FIELD_INPUT_ID[field]}-error`;
