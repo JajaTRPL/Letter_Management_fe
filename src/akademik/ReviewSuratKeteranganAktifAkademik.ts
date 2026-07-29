@@ -2,6 +2,9 @@ import { apiFetch } from '../shared/api-client';
 import {
     renderReviewerShell,
     type ReviewerShellAction,
+    APPROVE_ACTION_BUTTON_CLASS,
+    APPROVE_ACTION_HEADER_CLASS,
+    APPROVE_ACTION_CONFIRM_CLASS,
 } from '../shared/reviewer-shell';
 import {
     buildSkaReviewerView,
@@ -105,7 +108,7 @@ function createApproveAction(
         buttonText: isDepartmentStage
             ? 'Tandatangani dan Selesaikan di Akademik'
             : 'Paraf dan Teruskan ke Kadep/Sekdep',
-        buttonClass: 'bg-[#115E59] hover:bg-[#0d4a46] text-white',
+        buttonClass: APPROVE_ACTION_BUTTON_CLASS,
         endpointUrl: `${endpointPrefix}/approve`,
         successFallback: isDepartmentStage
             ? 'Pengajuan berhasil ditandatangani dan menunggu review mahasiswa.'
@@ -113,11 +116,11 @@ function createApproveAction(
         modal: {
             id: 'aktif-akademik-approval-modal',
             title: isDepartmentStage ? 'Konfirmasi Tanda Tangan' : 'Konfirmasi Paraf',
-            headerClass: 'bg-[#115E59] text-white',
+            headerClass: APPROVE_ACTION_HEADER_CLASS,
             cancelId: 'aktif-akademik-cancel-approve',
             confirmId: 'aktif-akademik-confirm-approve',
             confirmText: isDepartmentStage ? 'Ya, Tandatangani' : 'Ya, Paraf Pengajuan',
-            confirmClass: 'bg-[#115E59] text-white hover:bg-[#0d4a46]',
+            confirmClass: APPROVE_ACTION_CONFIRM_CLASS,
             notices: [{
                 title: isDepartmentStage ? 'Pengajuan siap ditandatangani' : 'Pengajuan siap diparaf',
                 message: isDepartmentStage

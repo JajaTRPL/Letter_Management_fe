@@ -5,7 +5,7 @@ import { showError, showSuccess } from '../shared/toast';
 
 /**
  * SuperAdmin review-SLA governance — a self-contained, clearly-labelled section
- * embedded in the Retensi & Arsip area. It manages the review DEADLINE policy
+ * embedded in the Monitoring Kinerja page. It manages the review DEADLINE policy
  * (distinct from document retention) for BOTH workflow domains, each in its own
  * explicitly-named card so a SuperAdmin never has to guess which workflow a
  * value affects:
@@ -80,7 +80,7 @@ export function slaGovernanceShell(): string {
             <div>
                 <p class="text-xs font-bold uppercase tracking-[0.18em] text-teal-700">Pengaturan</p>
                 <h2 id="sla-governance-title" class="mt-1 text-2xl font-bold text-gray-900">Batas Waktu Pemeriksaan</h2>
-                <p class="mt-2 max-w-3xl text-sm text-gray-500">Atur berapa lama sebuah permohonan boleh menunggu sebelum pemeriksa diingatkan. Ini <span class="font-semibold text-gray-600">berbeda dari Retensi &amp; Arsip Surat</span> di atas: bagian itu mengatur masa simpan berkas, sedangkan di sini Anda mengatur <span class="font-semibold text-gray-600">kecepatan pemeriksaan</span>. Setiap jenis permohonan diatur sendiri di bawah.</p>
+                <p class="mt-2 max-w-3xl text-sm text-gray-500">Atur berapa lama sebuah permohonan boleh menunggu sebelum pemeriksa diingatkan. Ini <span class="font-semibold text-gray-600">berbeda dari Arsip &amp; Masa Simpan</span>: bagian itu mengatur masa simpan berkas, sedangkan di sini Anda mengatur <span class="font-semibold text-gray-600">kecepatan pemeriksaan</span>. Setiap jenis permohonan diatur sendiri di bawah.</p>
             </div>
             <p id="sla-governance-status" role="status" aria-live="polite" class="sr-only"></p>
             <div id="sla-governance-body">${cardsSkeleton()}</div>

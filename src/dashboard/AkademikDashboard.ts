@@ -1,5 +1,6 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { escapeFormHtml } from '../shared/form-primitives';
+import { SPINNER_CLASS } from '../shared/design-system';
 import {
     dashboardSectionIcon,
     renderDashboardLinkButton,
@@ -101,7 +102,7 @@ export const renderAkademikDashboard = async (role: string) => {
 
     renderDashboardLayout('Dashboard', `
         <div class="flex items-center justify-center min-h-[400px]">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#115E59]"></div>
+            <div class="h-12 w-12 ${SPINNER_CLASS}"></div>
         </div>
     `, role, 'dashboard');
 
@@ -271,7 +272,7 @@ const queueRow = (task: TendikTaskRow): string => {
                 </span>
             </td>
             <td class="px-7 py-3 align-top text-right">
-                <button class="review-btn text-xs font-bold border-2 border-[#115E59] text-[#115E59] hover:bg-[#115E59] hover:text-white transition-colors rounded-xl px-4 py-2 w-full max-w-[140px] shadow-sm" data-id="${task.id}" data-letter-type="${escapeHtml(task.letter_type || '')}">
+                <button class="review-btn text-xs font-bold border-2 border-teal-800 text-teal-800 hover:bg-teal-800 hover:text-white transition-colors rounded-xl px-4 py-2 w-full max-w-[140px] shadow-sm" data-id="${task.id}" data-letter-type="${escapeHtml(task.letter_type || '')}">
                     Review Dokumen
                 </button>
             </td>
@@ -289,7 +290,7 @@ const riwayatRow = (task: RiwayatRow): string => {
     const nomor = escapeHtml(task.nomor_surat || '-');
     const letterType = (task.letter_type ?? task.type ?? '') as string;
     const lihatDetailButton = resolveAkademikReviewRenderer(letterType)
-        ? `<button class="akademik-history-detail-btn text-xs font-bold text-[#115E59] hover:underline transition-colors" data-id="${escapeHtml(String(task.id ?? ''))}" data-letter-type="${escapeHtml(letterType)}">Lihat Detail</button>`
+        ? `<button class="akademik-history-detail-btn text-xs font-bold text-teal-800 hover:underline transition-colors" data-id="${escapeHtml(String(task.id ?? ''))}" data-letter-type="${escapeHtml(letterType)}">Lihat Detail</button>`
         : '<span class="text-xs text-gray-400">-</span>';
 
     return `

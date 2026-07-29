@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { segmentedTabClass, SPINNER_CLASS } from '../shared/design-system';
 import {
     isAktifLetter,
     isLegacyBeasiswaFallback,
@@ -136,7 +137,7 @@ const renderTabs = (activeScope: RiwayatScope): string => `
         ${(Object.keys(RIWAYAT_SCOPES) as RiwayatScope[]).map((scope) => {
             const isActive = scope === activeScope;
             return `
-                <button class="riwayat-tab px-6 py-2.5 text-sm font-bold outline-none transition-colors ${isActive ? 'bg-[#0D4A46] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}" data-scope="${scope}" type="button">
+                <button class="riwayat-tab ${segmentedTabClass(isActive)}" data-scope="${scope}" type="button">
                     ${RIWAYAT_SCOPES[scope].label}
                 </button>
             `;
@@ -146,7 +147,7 @@ const renderTabs = (activeScope: RiwayatScope): string => `
 
 const renderLoading = (): string => `
     <div class="flex items-center justify-center min-h-[300px]">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0D4A46]"></div>
+        <div class="h-12 w-12 ${SPINNER_CLASS}"></div>
     </div>
 `;
 

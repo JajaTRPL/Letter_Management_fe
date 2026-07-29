@@ -146,7 +146,7 @@ export function renderAkademikActionableRow(item: AkademikListItem): string {
                 </span>
             </td>
             <td class="px-7 py-3 text-right align-top">
-                <button class="akademik-review-btn w-full max-w-[140px] rounded-xl border-2 border-[#115E59] px-4 py-2 text-xs font-bold text-[#115E59] shadow-sm transition-colors hover:bg-[#115E59] hover:text-white" data-id="${escapeFormAttribute(item.id)}" data-letter-type="${escapeFormAttribute(item.letterType)}">
+                <button class="akademik-review-btn w-full max-w-[140px] rounded-xl border-2 border-teal-800 px-4 py-2 text-xs font-bold text-teal-800 shadow-sm transition-colors hover:bg-teal-800 hover:text-white" data-id="${escapeFormAttribute(item.id)}" data-letter-type="${escapeFormAttribute(item.letterType)}">
                     Review
                 </button>
             </td>
@@ -161,7 +161,7 @@ export function renderAkademikActionableRow(item: AkademikListItem): string {
 export function renderAkademikHistoryRow(item: AkademikListItem, hasDetail: (letterType: string) => boolean): string {
     const tone = getLetterStatusTone(item.status, 'tendik-history');
     const detailCell = hasDetail(item.letterType)
-        ? `<button type="button" data-riwayat-lihat-detail data-id="${escapeFormAttribute(item.id)}" data-letter-type="${escapeFormAttribute(item.letterType)}" class="text-xs font-bold text-[#115E59] hover:underline transition-colors">Lihat Detail</button>`
+        ? `<button type="button" data-riwayat-lihat-detail data-id="${escapeFormAttribute(item.id)}" data-letter-type="${escapeFormAttribute(item.letterType)}" class="text-xs font-bold text-teal-800 hover:underline transition-colors">Lihat Detail</button>`
         : '<span class="text-xs text-gray-400">-</span>';
 
     return `

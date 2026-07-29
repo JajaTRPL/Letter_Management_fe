@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { underlineTabClass } from '../shared/design-system';
 import { state, tabConfig, tabManager, type TabType } from './users/types';
 import { setupListeners } from './users/listeners';
 import { refreshUsers } from './users/api';
@@ -107,10 +108,7 @@ function renderContent() {
                         <button
                             id="tab-${key}"
                             data-tab="${key}"
-                            class="tab-btn px-5 py-3 text-sm font-semibold transition-all border-b-2 ${tabManager.isActive(key as TabType)
-        ? 'border-teal-700 text-teal-700'
-        : 'border-transparent text-gray-500 hover:text-gray-700'
-    }"
+                            class="tab-btn ${underlineTabClass(tabManager.isActive(key as TabType))}"
                         >${val.label}</button>
                     `).join('')}
                 </div>

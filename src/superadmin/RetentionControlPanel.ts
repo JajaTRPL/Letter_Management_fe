@@ -1,5 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
-import { hydrateSlaGovernance, slaGovernanceShell } from './sla-governance';
+
 import { buttonClass, cx, inputClass, selectClass, surfaceClass, textClass, type UiTone } from '../shared/design-system';
 import { escapeFormAttribute, escapeFormHtml } from '../shared/form-primitives';
 import { renderEmptyState, renderErrorState, renderLoadingState, renderMetricCard, renderStatusBadge } from '../shared/ui-primitives';
@@ -185,9 +185,7 @@ async function loadAllData(): Promise<void> {
 function renderPage(): void {
     renderDashboardLayout('Arsip & Masa Simpan', renderPanelContent(), 'super_admin', 'retention');
     attachPanelListeners();
-    // Self-contained governance section: it loads/saves its own SLA policies and
-    // is failure-isolated, so it never blocks the retention panel.
-    if (!state.loading && !state.error) void hydrateSlaGovernance();
+
 }
 
 function renderPanelContent(): string {
@@ -200,7 +198,7 @@ function renderPanelContent(): string {
             ${renderOverview()}
             ${renderAutomationCard()}
             ${renderPolicy()}
-            ${slaGovernanceShell()}
+
             ${renderOperationalSection()}
             <div id="retention-modal-container"></div>
         </div>

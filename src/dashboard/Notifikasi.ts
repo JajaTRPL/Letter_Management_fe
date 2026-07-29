@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from './DashboardLayout';
+import { segmentedTabClass } from '../shared/design-system';
 import Toastify from 'toastify-js';
 import {
     fetchNotifications,
@@ -93,10 +94,7 @@ export const renderNotifikasi = (role: string, options: NotifikasiOptions = {}):
     function renderTabs(): string {
         const tab = (key: Tab, label: string, count?: number): string => {
             const active = activeTab === key;
-            const base = 'px-5 py-2 text-sm font-bold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-teal-200';
-            const cls = active
-                ? `${base} bg-[#0D4A46] text-white`
-                : `${base} bg-white text-gray-600 hover:bg-gray-50`;
+            const cls = `${segmentedTabClass(active)} focus-visible:ring-2 focus-visible:ring-teal-200`;
             // Full ARIA tab pattern: the tab controls the single panel, and
             // roving tabindex (only the active tab is in the tab sequence) hands
             // arrow-key navigation between tabs to bindTabListeners.

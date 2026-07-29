@@ -1,4 +1,5 @@
 import Toastify from 'toastify-js';
+import { underlineTabClass } from '../design-system';
 import { PeminjamanApiError } from '../../mahasiswa/peminjaman/api';
 import {
     activateManagedRoom,
@@ -223,7 +224,7 @@ const renderTabs = (): void => {
     title!.textContent = `${state.detail.code} · ${state.detail.name}`;
 
     nav.innerHTML = (Object.keys(TAB_LABELS) as Tab[]).map((tab) => `
-        <button type="button" role="tab" data-room-mgmt-tab="${tab}" aria-selected="${state?.activeTab === tab}" class="shrink-0 border-b-2 px-4 py-3 text-sm font-bold ${state?.activeTab === tab ? 'border-teal-700 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700'}">${TAB_LABELS[tab]}</button>
+        <button type="button" role="tab" data-room-mgmt-tab="${tab}" aria-selected="${state?.activeTab === tab}" class="shrink-0 ${underlineTabClass(state?.activeTab === tab)}">${TAB_LABELS[tab]}</button>
     `).join('');
 
     nav.querySelectorAll<HTMLElement>('[data-room-mgmt-tab]').forEach((button) => {

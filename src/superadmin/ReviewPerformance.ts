@@ -2,6 +2,7 @@ import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { buttonClass, cx, surfaceClass, textClass, type UiTone } from '../shared/design-system';
 import { escapeFormAttribute, escapeFormHtml } from '../shared/form-primitives';
 import { renderEmptyState, renderErrorState, renderLoadingState, renderStatusBadge } from '../shared/ui-primitives';
+import { hydrateSlaGovernance, slaGovernanceShell } from './sla-governance';
 import type { ReviewStagePayload, ReviewSummaryPayload } from '../shared/review-performance-widget';
 import {
     fetchReviewBreakdown,
@@ -48,6 +49,9 @@ let activeStage: { scope: string; stage: string } | null = null;
 export const renderReviewPerformance = (): void => {
     renderDashboardLayout('Monitoring Kinerja', shell(), 'super_admin', 'review-performance');
     void hydrate();
+    // SLA governance is self-contained and failure-isolated; it loads its own
+    // policies so it never blocks the performance summary.
+    void hydrateSlaGovernance();
 };
 
 function shell(): string {
@@ -63,6 +67,7 @@ function shell(): string {
                     ${PERIODS.map(periodButton).join('')}
                 </div>
             </section>
+            ${slaGovernanceShell()}
             <p id="${MOUNT}-status" role="status" aria-live="polite" class="sr-only"></p>
             <div id="${MOUNT}-summary">${renderLoadingState('Memuat ringkasan kinerja pemeriksaan...')}</div>
             <div id="${MOUNT}-detail"></div>
