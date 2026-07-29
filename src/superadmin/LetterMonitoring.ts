@@ -1,6 +1,9 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { apiFetch } from '../shared/api-client';
 import { SPINNER_CLASS } from '../shared/design-system';
+import { getLetterStatusLabel, getLetterStatusTone } from '../shared/letter-workflow';
+import { renderStatusBadge } from '../shared/ui-primitives';
+import type { UiTone } from '../shared/design-system';
 
 const PERIODS = [
     { key: 'today', label: 'Hari Ini' },
@@ -13,18 +16,19 @@ const PERIODS = [
 
 let activePeriod = 'today';
 
-// Each hex triple below was already an exact Tailwind 100/700/300 stop
-// (verified: yellow/sky/violet/orange/gray) — this swaps the inline `style=`
-// for the equivalent utility classes with zero visual change.
-const getStatusBadge = (status: string) => {
-    const map: Record<string, { label: string; classes: string }> = {
-        'Submitted': { label: 'Menunggu Verifikasi', classes: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
-        'Approved_Tendik': { label: 'Menunggu Persetujuan', classes: 'bg-sky-100 text-sky-700 border-sky-300' },
-        'Approved_Kaprodi': { label: 'Menunggu Tanda Tangan', classes: 'bg-violet-100 text-violet-700 border-violet-300' },
-        'Revision': { label: 'Perlu Revisi', classes: 'bg-orange-100 text-orange-700 border-orange-300' },
-    };
-    const cfg = map[status] || { label: status, classes: 'bg-gray-100 text-gray-700 border-gray-300' };
-    return `<span class="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${cfg.classes}">${cfg.label}</span>`;
+const mapStatusToTone = (status: string): UiTone => {
+    const tone = getLetterStatusTone(status, 'tendik-review');
+    if (tone.includes('emerald') || tone.includes('teal')) return 'success';
+    if (tone.includes('red')) return 'danger';
+    if (tone.includes('amber') || tone.includes('yellow')) return 'warning';
+    if (tone.includes('blue') || tone.includes('sky')) return 'info';
+    return 'neutral';
+};
+
+const renderMonitoringStatusBadge = (status: string, statusLabel?: string) => {
+    const label = statusLabel || getLetterStatusLabel(status, 'tendik-review') || 'Diproses';
+    const tone = mapStatusToTone(status);
+    return renderStatusBadge(tone, label);
 };
 
 async function fetchMonitoringData(period: string) {
@@ -36,37 +40,39 @@ async function fetchMonitoringData(period: string) {
 function buildContent(stats: any, overdue: any[]) {
     const periodTabs = PERIODS.map(p => {
         const isActive = p.key === activePeriod;
-        // Same active-tab treatment as the SuperAdmin dashboard's period tabs
-        // (AdminDashboard.ts) — the brand token instead of a second hex that
-        // has to be kept in sync with it by hand.
         return `<button data-period="${p.key}" class="period-btn px-6 py-2 text-sm font-semibold transition-colors rounded-xl ${isActive ? 'bg-primary-teal text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'}">${p.label}</button>`;
     }).join('');
 
     const overdueRows = overdue.length > 0
-        ? overdue.map((item: any) => `
+        ? overdue.map((item: any) => {
+            const daysOverdueInt = Math.floor(Number(item.days_overdue || 0));
+            const letterTypeName = item.letter_type_label || item.type || 'Surat Administrasi';
+
+            return `
             <tr class="hover:bg-gray-50/50 transition-colors">
-                <td class="px-6 py-4">
+                <td class="px-6 py-4 min-w-[150px]">
                     <p class="text-xs font-semibold text-gray-500 mb-0.5">${item.submitted_at}</p>
                     <p class="text-[10px] font-bold text-red-500 flex items-center gap-1">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                        ${item.days_overdue} hari tertunda
+                        ${daysOverdueInt} hari tertunda
                     </p>
                 </td>
-                <td class="px-4 py-4">
-                    <p class="text-sm font-semibold text-gray-700 mb-0.5">${item.student_name}</p>
-                    <p class="text-[11px] text-gray-400">${item.nim}</p>
+                <td class="px-4 py-4 min-w-[180px]">
+                    <p class="text-sm font-semibold text-gray-800 mb-0.5 truncate max-w-[200px]" title="${item.student_name}">${item.student_name}</p>
+                    <p class="text-[11px] text-gray-400 font-mono">${item.nim}</p>
                 </td>
-                <td class="px-4 py-4 whitespace-nowrap">
-                    ${getStatusBadge(item.status)}
+                <td class="px-4 py-4 min-w-[180px]">
+                    ${renderMonitoringStatusBadge(item.status, item.status_label)}
                 </td>
-                <td class="px-4 py-4">
-                    <p class="text-xs font-medium text-gray-600">${item.assigned_to_name}</p>
+                <td class="px-4 py-4 min-w-[160px]">
+                    <p class="text-xs font-medium text-gray-600 truncate max-w-[180px]" title="${item.assigned_to_name}">${item.assigned_to_name}</p>
                 </td>
-                <td class="px-6 py-4 text-right">
-                    <span class="text-xs font-semibold text-gray-400">${item.type}</span>
+                <td class="px-6 py-4 text-right min-w-[160px]">
+                    <span class="text-xs font-semibold text-gray-600 truncate inline-block max-w-[180px]" title="${letterTypeName}">${letterTypeName}</span>
                 </td>
             </tr>
-        `).join('')
+            `;
+        }).join('')
         : `<tr><td colspan="5" class="px-6 py-16 text-center">
             <div class="flex flex-col items-center gap-2 opacity-40">
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>

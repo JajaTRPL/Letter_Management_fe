@@ -3,6 +3,7 @@ import { renderLogin } from '../login/Login';
 import Toastify from 'toastify-js';
 import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
 import { STATUS_LABELS, type UserStatusValue } from '../shared/user-status';
+import { getRoleDisplayName } from '../shared/role-helpers';
 
 const MAX_AKADEMIK_FOTO_BYTES = 2 * 1024 * 1024;
 const AKADEMIK_FOTO_MIME_RE = /^image\/(jpeg|jpg|png|webp)$/i;
@@ -143,26 +144,13 @@ export const renderProfilKaprodi = async (role: string) => {
         );
     };
 
-    const formatGenericRole = (value: string): string => {
-        return value
-            .split('_')
-            .filter(Boolean)
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ') || '-';
-    };
-
-    const getRoleDisplayName = () => {
+    const getRoleDisplayNameLocal = () => {
         const subRole = firstText(userData.sub_role, userData.role).toLowerCase();
         const prodiLabel = getStudyProgramLabel();
         const departmentLabel = getDepartmentLabel();
+        const scopeCode = ['kaprodi', 'sekprodi'].includes(subRole) ? prodiLabel : departmentLabel;
 
-        if (subRole === 'kaprodi') return prodiLabel ? `Kaprodi ${prodiLabel}` : 'Ketua Program Studi';
-        if (subRole === 'sekprodi') return prodiLabel ? `Sekprodi ${prodiLabel}` : 'Sekretaris Program Studi';
-        if (subRole === 'kadep') return departmentLabel ? `Kadep ${departmentLabel}` : 'Ketua Departemen';
-        if (subRole === 'sekdep') return departmentLabel ? `Sekdep ${departmentLabel}` : 'Sekretaris Departemen';
-        if (subRole === 'akademik') return 'Akademik';
-
-        return formatGenericRole(firstText(userData.role));
+        return getRoleDisplayName('akademik', subRole, scopeCode);
     };
 
     const render = () => {
@@ -200,7 +188,7 @@ export const renderProfilKaprodi = async (role: string) => {
                     <div class="lg:col-span-8 flex flex-col gap-4">
                         <div class="bg-white rounded-[24px] p-6 border border-gray-100 shadow-sm profile-card flex flex-col justify-center min-h-[100px]">
                             <p class="text-[11px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">Peran</p>
-                            <p class="text-base font-bold text-gray-800">${getRoleDisplayName()}</p>
+                            <p class="text-base font-bold text-gray-800">${getRoleDisplayNameLocal()}</p>
                         </div>
                         <div class="bg-white rounded-[24px] p-6 border border-gray-100 shadow-sm profile-card flex flex-col justify-center min-h-[100px]">
                             <p class="text-[11px] font-bold text-gray-400 mb-1.5 uppercase tracking-widest">Bergabung Sejak</p>

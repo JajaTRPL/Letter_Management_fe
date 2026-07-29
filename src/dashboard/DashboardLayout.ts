@@ -8,6 +8,7 @@ import Toastify from 'toastify-js';
 import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
 import { clearAllAuthenticationState } from '../login/password-rotation-state';
 import { fetchUnreadCount } from '../shared/notifications-api';
+import { getRoleDisplayName } from '../shared/role-helpers';
 
 /**
  * Populate the bell's unread badge from the C7N1 backbone. Best-effort and
@@ -227,7 +228,7 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                                     </div>
                                     <div class="text-right">
                                         <p class="text-sm font-semibold text-gray-900 leading-none">${getGreetingName(localStorage.getItem('auth_name'))}</p>
-                                        <p class="text-[10px] text-gray-500 font-medium uppercase mt-1 tracking-wider">${role.replace('_', ' ')}</p>
+                                        <p class="text-[10px] text-gray-500 font-medium mt-1 tracking-wider">${getRoleDisplayName(role, localStorage.getItem('auth_tendik_role'))}</p>
                                     </div>
                                 </button>
 

@@ -65,7 +65,7 @@ const LETTER_TYPE_OPTIONS: readonly ListOption[] = [
 const statusLabelFor = (status: string, mode: AkademikListMode): string =>
     mode === 'actionable'
         ? getAkademikQueueLabel(status)
-        : (getLetterStatusLabel(status, 'tendik-history') || status || '-');
+        : (getLetterStatusLabel(status, 'tendik-history') || 'Diproses');
 
 export function tendikLabelOrType(row: TendikTaskRow): string {
     // Akademik surfaces historically show the backend-provided `type` string

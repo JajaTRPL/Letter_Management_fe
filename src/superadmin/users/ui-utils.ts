@@ -1,5 +1,6 @@
 import { getAngkatan } from '../../shared/nim-utils';
 import { UserStatus, STATUS_BADGE_STYLES, STATUS_DETAIL_STYLES, getSuspendLabel } from '../../shared/user-status';
+import { getRoleDisplayName } from '../../shared/role-helpers';
 import { state } from './types';
 
 /**
@@ -110,36 +111,38 @@ export const getRoleBadge = (user: any) => {
     const role = user.role;
     const roleLevel = user.role_level;
 
-    let label = escapeHtml(role.charAt(0).toUpperCase() + role.slice(1));
-
     if (role === 'tendik' && ['kepala_lab', 'laboran'].includes(user.tendik_role)) {
         const labName = user.laboratory?.code || user.laboratory?.name || `Lab ${user.laboratory_id || '?'}`;
-        const roleName = user.tendik_role === 'kepala_lab' ? 'Kepala Lab' : 'Laboran';
-        label = `${roleName} (${escapeHtml(labName)})`;
-    } else if (role === 'super_admin') {
-        label = roleLevel === 'primary' ? 'Primary Admin' : 'Secondary Admin';
-    } else if (role === 'mahasiswa') {
-        label = 'Mahasiswa';
-    } else if (role === 'tendik') {
-        const sp = user.tendik_role === 'sarpras' ? 'Sarpras' : 'Persuratan';
-        label = `Tendik (${sp})`;
-    } else if (role === 'akademik') {
-        const subRoleRaw = user.sub_role || '';
-        const subRoleStr = subRoleRaw.charAt(0).toUpperCase() + subRoleRaw.slice(1);
-        
-        if (['kadep', 'sekdep'].includes(subRoleRaw.toLowerCase())) {
-            const deptCode = user.department?.code ?? 'Unknown';
-            const deptName = user.department?.name ?? '';
-            label = `<span title="${escapeHtml(deptName)}">${escapeHtml(subRoleStr)} ${escapeHtml(deptCode)}</span>`;
-        } else if (['kaprodi', 'sekprodi'].includes(subRoleRaw.toLowerCase())) {
-            const progCode = user.study_program?.code ?? 'Unknown';
-            const progName = user.study_program?.name ?? '';
-            label = `<span title="${escapeHtml(progName)}">${escapeHtml(subRoleStr)} ${escapeHtml(progCode)}</span>`;
-        } else {
-            label = 'Akademik';
-        }
+        const roleName = user.tendik_role === 'kepala_lab' ? 'Kepala Laboratorium' : 'Laboran';
+        return `${roleName} (${escapeHtml(labName)})`;
     }
-    return label;
+    if (role === 'super_admin') {
+        return roleLevel === 'primary' ? 'Primary Super Admin' : 'Secondary Super Admin';
+    }
+    if (role === 'mahasiswa') {
+        return 'Mahasiswa';
+    }
+    if (role === 'tendik') {
+        const sp = user.tendik_role === 'sarpras' ? 'Pengelola Sarana & Prasarana' : 'Staf Administrasi Persuratan';
+        return escapeHtml(sp);
+    }
+    if (role === 'akademik') {
+        const subRoleRaw = (user.sub_role || '').toLowerCase();
+        if (['kadep', 'sekdep'].includes(subRoleRaw)) {
+            const deptCode = user.department?.code ?? '';
+            const deptName = user.department?.name ?? '';
+            const title = getRoleDisplayName('akademik', subRoleRaw, deptCode);
+            return `<span title="${escapeHtml(deptName)}">${escapeHtml(title)}</span>`;
+        }
+        if (['kaprodi', 'sekprodi'].includes(subRoleRaw)) {
+            const progCode = user.study_program?.code ?? '';
+            const progName = user.study_program?.name ?? '';
+            const title = getRoleDisplayName('akademik', subRoleRaw, progCode);
+            return `<span title="${escapeHtml(progName)}">${escapeHtml(title)}</span>`;
+        }
+        return 'Pejabat Akademik';
+    }
+    return escapeHtml(getRoleDisplayName(role));
 };
 
 type UserFormData = {
@@ -510,10 +513,10 @@ export const renderMahasiswaDetailModal = (user: any) => {
  * Mahasiswa modal so `attachDetailModalListeners` handles both.
  */
 const TENDIK_ROLE_LABELS: Record<string, string> = {
-    persuratan: 'Persuratan',
-    sarpras: 'Sarana & Prasarana (Sarpras)',
+    persuratan: 'Staf Administrasi Persuratan',
+    sarpras: 'Pengelola Sarana & Prasarana',
     kepala_lab: 'Kepala Laboratorium',
-    laboran: 'Laboran',
+    laboran: 'Laboran / Teknisi Lab',
 };
 
 const AKADEMIK_SUBROLE_LABELS: Record<string, string> = {

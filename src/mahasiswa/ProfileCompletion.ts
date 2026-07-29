@@ -25,13 +25,13 @@ function roleLabel(completion: ProfileCompletionStatus): string {
   if (completion.role === 'tendik') return 'Tenaga Kependidikan'
 
   const labels: Record<string, string> = {
-    kaprodi: 'Ketua Program Studi',
-    sekprodi: 'Sekretaris Program Studi',
-    kadep: 'Ketua Departemen',
-    sekdep: 'Sekretaris Departemen',
+    kaprodi: 'Ketua Program Studi (Kaprodi)',
+    sekprodi: 'Sekretaris Program Studi (Sekprodi)',
+    kadep: 'Ketua Departemen (Kadep)',
+    sekdep: 'Sekretaris Departemen (Sekdep)',
   }
 
-  return labels[completion.sub_role || ''] || 'Akademik'
+  return labels[completion.sub_role || ''] || 'Pejabat Akademik'
 }
 
 function fieldMarkup(field: string): string {

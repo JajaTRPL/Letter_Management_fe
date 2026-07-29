@@ -1036,8 +1036,8 @@ const renderTimeline = (status: string) => {
     const steps = [
         { key: LETTER_WORKFLOW_STATUS.SUBMITTED, label: 'Diajukan' },
         { key: LETTER_WORKFLOW_STATUS.APPROVED_TENDIK, label: 'Verifikasi Tendik' },
-        { key: LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI, label: 'Paraf Kaprodi/Sekprodi' },
-        { key: LETTER_WORKFLOW_STATUS.READY_FOR_STUDENT_REVIEW, label: 'Tanda Tangan Kadep/Sekdep' },
+        { key: LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI, label: 'Paraf Ketua Program Studi' },
+        { key: LETTER_WORKFLOW_STATUS.READY_FOR_STUDENT_REVIEW, label: 'Tanda Tangan Ketua Departemen' },
         { key: LETTER_WORKFLOW_STATUS.COMPLETED, label: 'Selesai' },
     ];
     const currentIndex = status === LETTER_WORKFLOW_STATUS.REVISION || status === LETTER_WORKFLOW_STATUS.REJECTED

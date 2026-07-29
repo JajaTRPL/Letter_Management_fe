@@ -91,11 +91,11 @@ function createApproveAction(
             headerClass: APPROVE_ACTION_HEADER_CLASS,
             cancelId: 'scholarship-cancel-approve',
             confirmId: 'scholarship-confirm-approve',
-            confirmText: 'Ya, Teruskan ke Kaprodi',
+            confirmText: 'Ya, Teruskan ke Ketua Program Studi',
             confirmClass: APPROVE_ACTION_CONFIRM_CLASS,
             notices: [{
                 title: 'Dokumen telah diverifikasi',
-                message: 'Anda akan meneruskan pengajuan surat ini ke Kaprodi/Sekprodi. Pastikan semua data sudah benar dan lengkap.',
+                message: 'Anda akan meneruskan pengajuan surat ini ke Ketua Program Studi (Kaprodi/Sekprodi). Pastikan semua data sudah benar dan lengkap.',
                 classes: 'bg-amber-50 border border-amber-100 text-amber-900',
             }],
             summaryRows: beasiswaActionSummaryRows(identity),
@@ -113,5 +113,5 @@ function createApproveAction(
 }
 
 function statusLabel(status?: string | null): string {
-    return getLetterStatusLabel(status, 'tendik-review') || status || '-';
+    return getLetterStatusLabel(status, 'tendik-review') || '-';
 }

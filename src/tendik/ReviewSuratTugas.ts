@@ -95,11 +95,11 @@ function createApproveAction(
             headerClass: APPROVE_ACTION_HEADER_CLASS,
             cancelId: 'surat-tugas-cancel-approve',
             confirmId: 'surat-tugas-confirm-approve',
-            confirmText: 'Ya, Teruskan ke Kaprodi',
+            confirmText: 'Ya, Teruskan ke Ketua Program Studi',
             confirmClass: APPROVE_ACTION_CONFIRM_CLASS,
             notices: [{
                 title: 'Dokumen telah diverifikasi',
-                message: 'Anda akan meneruskan pengajuan surat ini ke Kaprodi/Sekprodi. Pastikan semua data sudah benar dan lengkap.',
+                message: 'Anda akan meneruskan pengajuan surat ini ke Ketua Program Studi (Kaprodi/Sekprodi). Pastikan semua data sudah benar dan lengkap.',
                 classes: 'bg-amber-50 border border-amber-100 text-amber-900',
             }],
             summaryRows: suratTugasActionSummaryRows(app, identity),
@@ -117,5 +117,5 @@ function createApproveAction(
 }
 
 function statusLabel(app: SuratTugasApplication): string {
-    return getLetterStatusLabel(app.status, 'tendik-review') || app.status || '-';
+    return getLetterStatusLabel(app.status, 'tendik-review') || '-';
 }
