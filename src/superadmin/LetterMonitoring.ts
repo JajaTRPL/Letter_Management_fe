@@ -82,7 +82,7 @@ function buildContent(stats: any, overdue: any[]) {
 
     return `
         <div class="space-y-6 animate-fade-in pb-12 w-full max-w-6xl mx-auto">
-            <p class="text-gray-500 text-sm mb-6 -mt-2">Memantau status dan progres pengajuan surat dalam sistem</p>
+            <p class="text-gray-500 text-sm mb-6 mt-1">Memantau status dan progres pengajuan surat dalam sistem</p>
 
             <!-- Time Period Tabs -->
             <div class="flex items-center gap-1 border-b border-gray-200 pb-4">
