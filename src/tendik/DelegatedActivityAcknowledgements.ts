@@ -1,5 +1,5 @@
 import { showError, showSuccess } from '../shared/toast';
-import { renderDashboardSection } from '../shared/ui-primitives';
+import { renderDashboardSection, renderDashboardTile } from '../shared/ui-primitives';
 import {
     acknowledgeDelegatedActivity,
     DelegatedActivityApiError,
@@ -220,18 +220,9 @@ const dashboardCardInner = (state: DelegatedActivityDashboardCardState): string 
                 </div>
             ` : `
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div class="rounded-xl bg-teal-50 px-4 py-3">
-                        <p class="text-[11px] font-bold uppercase tracking-wide text-teal-700">Menunggu</p>
-                        <p class="mt-1 text-2xl font-black text-teal-900">${summary.pending_count}</p>
-                    </div>
-                    <div class="rounded-xl bg-red-50 px-4 py-3">
-                        <p class="text-[11px] font-bold uppercase tracking-wide text-red-700">Melewati Batas Waktu</p>
-                        <p class="mt-1 text-2xl font-black text-red-800">${summary.overdue_count}</p>
-                    </div>
-                    <div class="rounded-xl bg-gray-50 px-4 py-3">
-                        <p class="text-[11px] font-bold uppercase tracking-wide text-gray-600">Batas Terlama</p>
-                        <p class="mt-1 text-sm font-bold text-gray-800">${escapeHtml(formatDateTime(summary.oldest_due_at))}</p>
-                    </div>
+                    ${renderDashboardTile({ label: 'Menunggu', value: summary.pending_count, tone: 'teal' })}
+                    ${renderDashboardTile({ label: 'Melewati Batas Waktu', value: summary.overdue_count, tone: 'danger' })}
+                    ${renderDashboardTile({ label: 'Batas Terlama', value: formatDateTime(summary.oldest_due_at), tone: 'neutral', size: 'sm' })}
                 </div>
                 ${isEmpty ? '<p class="mt-4 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500">Belum ada aktivitas delegasi yang perlu ditinjau.</p>' : ''}
             `}</div>`,

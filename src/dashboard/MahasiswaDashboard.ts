@@ -21,7 +21,14 @@ import {
 import Toastify from 'toastify-js';
 import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
 import { buttonClass, cx, surfaceClass, textClass } from '../shared/design-system';
-import { buildTrackingStages, renderTrackingCard } from '../shared/ui-primitives';
+import {
+    buildTrackingStages,
+    dashboardSectionIcon,
+    renderDashboardSectionHeader,
+    renderDashboardStatCard,
+    renderDashboardStatGrid,
+    renderTrackingCard,
+} from '../shared/ui-primitives';
 import { MAHASISWA_LETTER_ENDPOINTS, mahasiswaEndpointPrefixFor } from '../shared/letter-registry';
 import { loadMahasiswaApplications } from '../shared/mahasiswa-application-list';
 import { getMahasiswaBookings } from '../mahasiswa/peminjaman/api';
@@ -50,6 +57,12 @@ const openLetterDetailForType = (id: string, letterType?: string): void => {
 };
 
 let mahasiswaDashboardAvatarObjectUrl: string | null = null;
+
+// The existing artwork, kept as-is — only the card around it changed. Decorative
+// (the count and its label carry the meaning), so the alt text is empty.
+const STAT_ICON_PROSES = '<img src="proses-logo.png" alt="" class="w-14 h-14" />';
+const STAT_ICON_REVISI = '<img src="revisi-logo.png" alt="" class="w-14 h-14" />';
+const STAT_ICON_SELESAI = '<img src="selesai-logo.png" alt="" class="w-14 h-14" />';
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -423,41 +436,16 @@ export const renderMahasiswaDashboard = async () => {
 
             ${partialFailureBanner}
 
-            <!-- Summary Status Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <!-- Diproses -->
-                <div class="bg-[#F0F7F6] p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-6 hover:shadow-md transition-shadow">
-                    <div class="w-14 h-14 bg-[#3D4E4E]/5 rounded-xl flex items-center justify-center text-[#3D4E4E]">
-                        <img src="proses-logo.png" class="w-14 h-14" />
-                    </div>
-                    <div>
-                        <p class="text-3xl font-black text-green-800 leading-tight">${diproses}</p>
-                        <p class="text-sm font-['Inter'] text-gray-500 font-normal">Sedang Diproses</p>
-                    </div>
-                </div>
-
-                <!-- Butuh Revisi -->
-                <div class="bg-[#FFF7ED] p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-6 hover:shadow-md transition-shadow">
-                    <div class="w-14 h-14 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500">
-                        <img src="revisi-logo.png" class="w-14 h-14" />
-                    </div>
-                    <div>
-                        <p class="text-3xl font-black text-[#F59E0B] leading-tight">${direvisi}</p>
-                        <p class="text-sm font-['Inter'] text-gray-500 font-normal">Surat Butuh Revisi</p>
-                    </div>
-                </div>
-
-                <!-- Selesai -->
-                <div class="bg-[#ECFDF5] p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-6 hover:shadow-md transition-shadow">
-                    <div class="w-14 h-14 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-500">
-                        <img src="selesai-logo.png" class="w-14 h-14" />
-                    </div>
-                    <div>
-                        <p class="text-3xl font-black text-[#10B981] leading-tight">${selesai}</p>
-                        <p class="text-sm font-['Inter'] text-gray-500 font-normal">Surat Selesai</p>
-                    </div>
-                </div>
-            </div>
+            <!-- Summary Status Cards. Same primitive as every staff dashboard,
+                 so a student and the Tendik reviewing their letter are looking
+                 at the same kind of card. The page wrapper owns the vertical
+                 rhythm here, hence the empty spacing class. -->
+            ${renderDashboardStatGrid(
+                renderDashboardStatCard({ label: 'Sedang Diproses', value: diproses, tone: 'info', iconSvg: STAT_ICON_PROSES })
+                + renderDashboardStatCard({ label: 'Surat Butuh Revisi', value: direvisi, tone: 'warning', iconSvg: STAT_ICON_REVISI })
+                + renderDashboardStatCard({ label: 'Surat Selesai', value: selesai, tone: 'success', iconSvg: STAT_ICON_SELESAI }),
+                '',
+            )}
 
             <!-- Ajukan Surat Button -->
             <button id="btn-ajukan-surat" class="w-full py-4 bg-primary-teal text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-teal-800 transition-all duration-200 shadow-sm border border-teal-700/20">
@@ -468,11 +456,16 @@ export const renderMahasiswaDashboard = async () => {
                 Ajukan Surat Baru
             </button>
 
-            <!-- Active Tracking Section -->
+            <!-- Active Tracking Section. Header only, no panel: the tracking
+                 cards are bordered surfaces already, and wrapping them would
+                 nest a card inside a card. -->
             <div>
-                <h3 class="text-2xl font-normal text-gray-800 mb-6 flex items-center gap-2">
-                    Pelacakan Pengajuan Aktif
-                </h3>
+                ${renderDashboardSectionHeader({
+                    title: 'Pelacakan Pengajuan Aktif',
+                    subtitle: 'Surat dan peminjaman ruangan yang sedang berjalan',
+                    iconHtml: dashboardSectionIcon('monitor'),
+                    extraClass: 'mb-6',
+                })}
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                     ${trackingHtml}
                 </div>

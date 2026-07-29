@@ -114,14 +114,33 @@ describe('Tendik peminjaman dashboard', () => {
         expect(document.body.textContent).toContain('Tindakan dilakukan oleh Laboran.');
     });
 
-    it('keeps the awareness panel visually recessed against the work queue', async () => {
+    it('marks the awareness panel as a different category from the work queue', async () => {
         localStorage.setItem('auth_tendik_role', 'kepala_lab');
         respond(payload({ awareness: [row({ can_act: false, responsible_label: 'Menunggu Laboran' })] }));
 
         await renderTendikPeminjamanDashboard('tendik');
 
-        // A muted surface is what stops "information" reading as "your task".
-        expect(document.body.innerHTML).toContain('bg-gray-50/70');
+        // "Information, not your task" has to be carried by something a reader
+        // can name. It used to be a grey surface, which just read as unfinished
+        // next to the rest of the page; it is now the `info` tone. Either way
+        // the requirement is the same: this panel must NOT be dressed like the
+        // queue above it.
+        const sectionOf = (title: string): Element => {
+            const el = Array.from(document.querySelectorAll('div'))
+                .filter((node) => node.textContent?.includes(title))
+                .sort((a, b) => (a.textContent?.length ?? 0) - (b.textContent?.length ?? 0))[0]
+                ?.closest('.rounded-2xl');
+            expect(el, `no section found for "${title}"`).toBeTruthy();
+
+            return el!;
+        };
+
+        const awareness = sectionOf('Kondisi Operasional Lab');
+        const queue = sectionOf('Antrean Perlu Dikerjakan');
+
+        expect(awareness.className).toContain('border-blue-100');
+        expect(queue.className).not.toContain('border-blue-100');
+        expect(awareness.className).not.toBe(queue.className);
     });
 
     it('gives Sarpras a live button on an operational row', async () => {

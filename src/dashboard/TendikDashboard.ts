@@ -1,6 +1,8 @@
 import { renderDashboardLayout } from './DashboardLayout';
 import { escapeFormHtml } from '../shared/form-primitives';
 import {
+    dashboardSectionIcon,
+    renderDashboardLinkButton,
     renderDashboardSection,
     renderDashboardStatCard,
     renderDashboardStatGrid,
@@ -218,54 +220,16 @@ export const renderTendikDashboard = async (role: string) => {
                     + renderDashboardStatCard({ label: 'Selesai Bulan Ini', value: stats.finished_this_month, tone: 'success', iconSvg: STAT_ICON_DONE, extraClass: 'cursor-pointer' }),
                 )}
 
-                                    <!-- Total Surat Masuk -->
-                    <div class="bg-[#EFF6FF] border border-blue-100 p-5 rounded-[20px] flex justify-between items-center shadow-sm hover:shadow-md transition-all cursor-pointer">
-                        <div>
-                            <h3 class="text-[38px] font-black text-[#0EA5E9] leading-none mb-1">${stats.total_incoming}</h3>
-                            <p class="text-xs font-semibold text-gray-600">Total Surat Masuk</p>
-                        </div>
-                        <div class="w-14 h-14 bg-blue-400/20 rounded-xl flex items-center justify-center text-blue-600">
-                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                        </div>
-                    </div>
-
-                    <!-- Perlu Anda Verifikasi -->
-                    <div class="bg-[#FFF8F1] border border-orange-200/60 p-5 rounded-[20px] flex justify-between items-center shadow-sm hover:shadow-md transition-all cursor-pointer">
-                        <div>
-                            <h3 class="text-[38px] font-black text-[#F59E0B] leading-none mb-1">${stats.needs_verification}</h3>
-                            <p class="text-xs font-semibold text-gray-600">Perlu Anda Verifikasi</p>
-                        </div>
-                        <div class="w-14 h-14 bg-[#FEF08A]/60 rounded-xl flex items-center justify-center text-[#D97706]">
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                        </div>
-                    </div>
-
-                    <!-- Selesai Bulan Ini -->
-                    <div class="bg-[#F0FDF4] border border-green-200/60 p-5 rounded-[20px] flex justify-between items-center shadow-sm hover:shadow-md transition-all cursor-pointer">
-                        <div>
-                            <h3 class="text-[38px] font-black text-[#10B981] leading-none mb-1">${stats.finished_this_month}</h3>
-                            <p class="text-xs font-semibold text-gray-600">Selesai Bulan Ini</p>
-                        </div>
-                        <div class="w-14 h-14 bg-green-300/40 rounded-xl flex items-center justify-center text-green-600">
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                        </div>
-                    </div>
-                </div>
 
                 ${shouldShowDelegatedActivityCard ? renderDelegatedActivityDashboardCard({ kind: 'loading' }) : ''}
 
                 <!-- Antrean Perlu Tindakan Section -->
                 <div class="mt-10">
-                    <div class="flex justify-end mb-2">
-                        <button type="button" id="see-all-dokumen" class="text-xs font-bold text-blue-500 hover:text-blue-700 transition-colors">Lihat Selengkapnya</button>
-                    </div>
                     ${renderDashboardSection({
                         title: 'Antrean Perlu Dikerjakan',
                         subtitle: 'Daftar pengajuan surat yang memerlukan tindakan atau pemrosesan dari Anda',
-                        iconHtml: `
-                            <div class="w-6 h-6 rounded-full border border-red-500 text-red-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="6" x2="12" y2="14"></line><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-                            </div>`,
+                        iconHtml: dashboardSectionIcon('attention'),
+                        actionHtml: renderDashboardLinkButton({ id: 'see-all-dokumen', label: 'Lihat Selengkapnya' }),
                         bodyHtml: renderDashboardTable({
                             columns: [
                                 { label: 'Tanggal Masuk', className: 'w-[220px]' },
@@ -285,11 +249,8 @@ export const renderTendikDashboard = async (role: string) => {
                     ${renderDashboardSection({
                         title: 'Riwayat',
                         subtitle: 'Pengajuan terbaru yang telah Anda proses',
-                        iconHtml: `
-                            <div class="w-6 h-6 rounded-full border border-blue-500 text-blue-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                            </div>`,
-                        actionHtml: `<button id="tendik-riwayat-see-more" type="button" class="text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline">Lihat Selengkapnya</button>`,
+                        iconHtml: dashboardSectionIcon('history'),
+                        actionHtml: renderDashboardLinkButton({ id: 'tendik-riwayat-see-more', label: 'Lihat Selengkapnya' }),
                         bodyHtml: renderDashboardTable({
                             columns: [
                                 { label: 'Tanggal Masuk' },

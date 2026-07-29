@@ -1,4 +1,5 @@
 import { showError, showSuccess } from '../shared/toast';
+import { renderDashboardTile } from '../shared/ui-primitives';
 import {
     DelegatedActivityApiError,
     getSuperAdminDelegatedActivityAcknowledgement,
@@ -224,22 +225,10 @@ const dashboardCardInner = (state: SuperAdminDelegatedActivityDashboardCardState
                 </div>
             ` : `
                 <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-4">
-                    <div class="rounded-xl bg-red-50 px-4 py-3">
-                        <p class="text-[11px] font-bold uppercase tracking-wide text-red-700">Melewati SLA</p>
-                        <p class="mt-1 text-2xl font-black text-red-800">${summary.overdue_count}</p>
-                    </div>
-                    <div class="rounded-xl bg-amber-50 px-4 py-3">
-                        <p class="text-[11px] font-bold uppercase tracking-wide text-amber-700">Eskalasi</p>
-                        <p class="mt-1 text-2xl font-black text-amber-900">${summary.escalated_count ?? 0}</p>
-                    </div>
-                    <div class="rounded-xl bg-teal-50 px-4 py-3">
-                        <p class="text-[11px] font-bold uppercase tracking-wide text-teal-700">Menunggu</p>
-                        <p class="mt-1 text-2xl font-black text-teal-900">${summary.pending_count}</p>
-                    </div>
-                    <div class="rounded-xl bg-gray-50 px-4 py-3">
-                        <p class="text-[11px] font-bold uppercase tracking-wide text-gray-600">Batas Terlama</p>
-                        <p class="mt-1 text-sm font-bold text-gray-800">${escapeHtml(formatDateTime(summary.oldest_due_at))}</p>
-                    </div>
+                    ${renderDashboardTile({ label: 'Melewati Batas Waktu', value: summary.overdue_count, tone: 'danger' })}
+                    ${renderDashboardTile({ label: 'Eskalasi', value: summary.escalated_count ?? 0, tone: 'warning' })}
+                    ${renderDashboardTile({ label: 'Menunggu', value: summary.pending_count, tone: 'teal' })}
+                    ${renderDashboardTile({ label: 'Batas Terlama', value: formatDateTime(summary.oldest_due_at), tone: 'neutral', size: 'sm' })}
                 </div>
                 ${isEmpty ? '<p class="mt-4 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500">Belum ada aktivitas delegasi yang melewati batas peninjauan atau membutuhkan atensi.</p>' : ''}
             `}

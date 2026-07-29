@@ -1,7 +1,12 @@
 import { apiFetch } from './api-client';
 import { buttonClass, cx, textClass, type UiTone } from './design-system';
 import { escapeFormHtml } from './form-primitives';
-import { renderDashboardSection, renderMetricCard, renderStatusBadge } from './ui-primitives';
+import {
+    dashboardSectionIcon,
+    renderDashboardSection,
+    renderDashboardTile,
+    renderStatusBadge,
+} from './ui-primitives';
 
 /**
  * "Monitoring Kinerja" — one self-hydrating panel serving TWO audiences from
@@ -165,11 +170,30 @@ function cardMarkup(config: ReviewPerformanceWidgetConfig, state: WidgetState): 
         title: config.title,
         titleId: `${config.mountId}-title`,
         subtitle: config.subtitle,
+        iconHtml: dashboardSectionIcon('insight'),
+        noteHtml: periodChip(state),
         bodyHtml: `
             <p id="${escapeFormHtml(config.mountId)}-status" role="status" aria-live="polite" class="sr-only"></p>
             <div id="${escapeFormHtml(config.mountId)}-body">${bodyMarkup(config, state)}</div>
         `,
     });
+}
+
+/**
+ * The period the numbers describe, shown in the header rather than buried above
+ * the value. A reviewer reading "3 Jam" needs to know instantly whether that is
+ * this month or this year; the header is where every other card on the page
+ * puts its qualifier.
+ */
+function periodChip(state: WidgetState): string {
+    const label = state.phase === 'summary'
+        ? state.data.period.label
+        : state.phase === 'self'
+            ? state.data.period?.label
+            : undefined;
+    if (!label) return '';
+
+    return `<span class="mt-2 inline-flex items-center rounded-full bg-teal-50 px-2.5 py-0.5 text-[11px] font-bold text-teal-700">${escapeFormHtml(label)}</span>`;
 }
 
 function bodyMarkup(config: ReviewPerformanceWidgetConfig, state: WidgetState): string {
@@ -218,6 +242,11 @@ function summaryBody(config: ReviewPerformanceWidgetConfig, data: ReviewSummaryP
 /**
  * One stage tile. The value slot shows a measured median, or a badged estimate
  * range, or an honest empty line — never a zero.
+ *
+ * The FILL is brand teal whenever there is a measurement and neutral when there
+ * is none. It is never the status colour: judgement lives exclusively in the
+ * badge, so a stage cannot be painted red against a deadline SuperAdmin has not
+ * switched on.
  */
 function stageTile(stage: ReviewStagePayload): string {
     const { metric } = stage;
@@ -230,15 +259,19 @@ function stageTile(stage: ReviewStagePayload): string {
         metric.status === 'unrated' ? '' : renderStatusBadge(STATUS_TONE[metric.status], metric.status_label),
     ].filter(Boolean).join(' ');
 
-    const extras = `
-        <div class="mt-3 space-y-1">
-            ${badges ? `<div class="flex flex-wrap gap-1.5">${badges}</div>` : ''}
-            ${stage.comparison ? `<p class="${textClass.helper}">${escapeFormHtml(stage.comparison.label)}</p>` : ''}
-            ${waitingLine(stage.waiting_now)}
-        </div>
-    `;
-
-    return renderMetricCard(stage.stage_label, value, detail, extras);
+    return renderDashboardTile({
+        label: stage.stage_label,
+        value,
+        tone: metric.source === 'none' ? 'neutral' : 'teal',
+        extraHtml: `
+            <div class="mt-2 space-y-1">
+                <p class="${textClass.helper}">${escapeFormHtml(detail)}</p>
+                ${badges ? `<div class="flex flex-wrap gap-1.5 pt-0.5">${badges}</div>` : ''}
+                ${stage.comparison ? `<p class="${textClass.helper}">${escapeFormHtml(stage.comparison.label)}</p>` : ''}
+                ${waitingLine(stage.waiting_now)}
+            </div>
+        `,
+    });
 }
 
 /**
@@ -266,13 +299,18 @@ function selfBody(config: ReviewPerformanceWidgetConfig, data: ReviewSelfPayload
 
     return `
         <div class="space-y-4 px-5 py-5">
-            <div>
-                <p class="text-xs font-bold uppercase tracking-wide text-gray-500">Waktu pemeriksaan ${escapeFormHtml(data.period?.label ?? '')}</p>
-                <p class="mt-1 flex flex-wrap items-center gap-2 text-3xl font-bold text-gray-900">
-                    ${escapeFormHtml(value)}${estimate}
-                </p>
-                <p class="${cx(textClass.helper, 'mt-1')}">${escapeFormHtml(metric.sample_note ?? `${metric.count} pengajuan selesai di periode ini`)}</p>
-            </div>
+            ${renderDashboardTile({
+                label: 'Waktu pemeriksaan',
+                value,
+                // Brand teal, not the status colour — see stageTile. The period
+                // now lives in the header chip instead of the tile label.
+                tone: metric.source === 'none' ? 'neutral' : 'teal',
+                size: 'lg',
+                extraHtml: `
+                    ${estimate ? `<div class="mt-2">${estimate}</div>` : ''}
+                    <p class="${cx(textClass.helper, 'mt-2')}">${escapeFormHtml(metric.sample_note ?? `${metric.count} pengajuan selesai di periode ini`)}</p>
+                `,
+            })}
             ${data.comparison ? `<p class="text-sm font-semibold text-teal-800">${escapeFormHtml(data.comparison.label)}</p>` : ''}
             ${selfQueueBlock(config, data.waiting_now)}
             <p class="${textClass.helper}">${escapeFormHtml(data.note ?? '')}</p>
@@ -290,14 +328,18 @@ function selfQueueBlock(config: ReviewPerformanceWidgetConfig, waiting: ReviewWa
             ? `${waiting.count} pengajuan menunggu pemeriksaan Anda.`
             : 'Tidak ada pengajuan yang menunggu saat ini.';
 
-    const tone = overdue > 0 ? 'border-amber-200 bg-amber-50' : 'border-gray-100 bg-gray-50/60';
+    // Same borderless tinted geometry as renderDashboardTile, but a sentence and
+    // a button rather than a label/value pair — so it shares the tile's look
+    // without being forced through an API that would render the sentence as an
+    // uppercase 11px caption.
+    const tone = overdue > 0 ? 'bg-amber-50 text-amber-900' : 'bg-teal-50 text-teal-900';
     const action = config.action
         ? `<button id="${escapeFormHtml(config.mountId)}-action" type="button" class="${buttonClass('secondary', 'sm', 'mt-3 w-full')}">${escapeFormHtml(waiting.action_label ?? config.action.label)}</button>`
         : '';
 
     return `
-        <div class="rounded-xl border px-4 py-3 ${tone}">
-            <p class="text-sm font-semibold text-gray-800">${escapeFormHtml(message)}</p>
+        <div class="rounded-xl px-4 py-3 ${tone}">
+            <p class="text-sm font-semibold">${escapeFormHtml(message)}</p>
             ${action}
         </div>
     `;

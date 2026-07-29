@@ -4,6 +4,8 @@ import { getGreetingName } from '../utils/nameHelper';
 import { badgeClass, buttonClass, cx, textClass } from '../shared/design-system';
 import { escapeFormAttribute, escapeFormHtml } from '../shared/form-primitives';
 import {
+    dashboardSectionIcon,
+    renderDashboardLinkButton,
     renderDashboardSection,
     renderDashboardStatCard,
     renderDashboardStatGrid,
@@ -175,10 +177,7 @@ function queueSection(data: DashboardPayload): string {
     return renderDashboardSection({
         title: 'Antrean Perlu Dikerjakan',
         subtitle: 'Pengajuan dan tugas peminjaman yang menunggu tindakan Anda',
-        iconHtml: `
-            <div class="w-6 h-6 rounded-full border border-red-500 text-red-500 flex flex-col items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="6" x2="12" y2="14"></line><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-            </div>`,
+        iconHtml: dashboardSectionIcon('attention'),
         actionHtml: seeMoreButton('queue'),
         bodyHtml: renderDashboardTable({
             columns: [
@@ -195,17 +194,22 @@ function queueSection(data: DashboardPayload): string {
 }
 
 /**
- * Kepala Lab only. Deliberately below Riwayat, on a muted surface, with no
- * buttons and the responsible party named on every row — because the backend
- * will not let a Kepala Lab issue a key or verify a return. Styling this like
- * the queue above would tell them they are accountable for something they
- * cannot do, and then leave them hunting for a control that does not exist.
+ * Kepala Lab only. Deliberately below Riwayat, with no buttons and the
+ * responsible party named on every row — because the backend will not let a
+ * Kepala Lab issue a key or verify a return. Styling this like the queue above
+ * would tell them they are accountable for something they cannot do, and then
+ * leave them hunting for a control that does not exist.
+ *
+ * That distinction is carried by the `info` tone and the eye icon — "watch",
+ * not "act" — rather than by a grey surface, which read as disabled/unfinished
+ * next to the rest of the page.
  */
 function awarenessSection(data: DashboardPayload): string {
     return renderDashboardSection({
         title: 'Kondisi Operasional Lab',
         subtitle: 'Pantauan kunci dan pengembalian di lab Anda. Tindakan dilakukan oleh Laboran.',
-        tone: 'muted',
+        tone: 'info',
+        iconHtml: dashboardSectionIcon('monitor'),
         bodyHtml: renderDashboardTable({
             columns: [
                 { label: 'Kegiatan / Pemohon' },
@@ -224,6 +228,7 @@ function todaySection(data: DashboardPayload): string {
     return renderDashboardSection({
         title: 'Hari Ini',
         subtitle: 'Ruangan yang terpakai hari ini beserta statusnya',
+        iconHtml: dashboardSectionIcon('today'),
         actionHtml: seeMoreButton('calendar'),
         bodyHtml: renderDashboardTable({
             columns: [
@@ -252,10 +257,7 @@ function historySection(data: DashboardPayload): string {
     return renderDashboardSection({
         title: 'Riwayat',
         subtitle: 'Tindakan terbaru yang telah Anda lakukan',
-        iconHtml: `
-            <div class="w-6 h-6 rounded-full border border-blue-500 text-blue-500 flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-            </div>`,
+        iconHtml: dashboardSectionIcon('history'),
         actionHtml: seeMoreButton('queue'),
         bodyHtml: renderDashboardTable({
             columns: [
@@ -314,7 +316,11 @@ function statusPill(label: string, tone: string): string {
 }
 
 function seeMoreButton(tab: string): string {
-    return `<button type="button" class="peminjaman-see-more text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline" data-tab="${escapeFormAttribute(tab)}">Lihat Selengkapnya</button>`;
+    return renderDashboardLinkButton({
+        label: 'Lihat Selengkapnya',
+        extraClass: 'peminjaman-see-more',
+        data: { tab },
+    });
 }
 
 // ── behaviour ───────────────────────────────────────────────────────────────

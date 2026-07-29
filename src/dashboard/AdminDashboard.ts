@@ -14,6 +14,7 @@ import {
     reviewPerformanceShell,
     type ReviewPerformanceWidgetConfig,
 } from '../shared/review-performance-widget';
+import { renderDashboardStatCard, type DashboardStatTone } from '../shared/ui-primitives';
 
 /**
  * Replaces the old "Rata-Rata Durasi Persetujuan Surat" card, which showed two
@@ -124,7 +125,7 @@ export const renderAdminDashboard = async () => {
                     <div>
                         <h2 class="text-2xl font-semibold text-gray-800 font-['Inter']">Halo, Super Admin!</h2>
                         <p class="mt-1 text-sm text-gray-500">Kelola pengguna, data master, dan pantau aktivitas sistem.</p>
-                        <span class="inline-flex items-center px-3 py-1 rounded-lg text-xs font-semibold font-['Inter'] mt-2" style="background:#F59E0B;color:#fff">
+                        <span class="inline-flex items-center px-3 py-1 rounded-lg text-xs font-semibold font-['Inter'] mt-2 bg-amber-500 text-white">
                             Super Admin
                         </span>
                     </div>
@@ -138,10 +139,10 @@ export const renderAdminDashboard = async () => {
                         <h3 class="text-base font-semibold text-gray-800 mb-1 font-['Inter']">Total Pengguna Aktif</h3>
                         <p class="text-xs text-gray-500 mb-4 font-['Inter']">Jumlah pengguna aktif berdasarkan peran dalam sistem.</p>
                         <div class="grid grid-cols-2 gap-4">
-                            ${renderCountCard('Mahasiswa', stats.user_counts?.mahasiswa || 0, '#DCEFFF', '/mahasiswa-logo.png')}
-                            ${renderCountCard('Tenaga Pendidik', stats.user_counts?.tendik || 0, '#ECFDF5', '/tendik-logo.png')}
-                            ${renderCountCard('Akademik', stats.user_counts?.akademik || 0, '#E4DCFF', '/akademik-logo.png')}
-                            ${renderCountCard('Super Admin', stats.user_counts?.super_admin || 0, '#F5F5F5', '/admin-logo.png')}
+                            ${renderCountCard('Mahasiswa', stats.user_counts?.mahasiswa || 0, 'info', '/mahasiswa-logo.png')}
+                            ${renderCountCard('Tenaga Pendidik', stats.user_counts?.tendik || 0, 'success', '/tendik-logo.png')}
+                            ${renderCountCard('Akademik', stats.user_counts?.akademik || 0, 'accent', '/akademik-logo.png')}
+                            ${renderCountCard('Super Admin', stats.user_counts?.super_admin || 0, 'neutral', '/admin-logo.png')}
                         </div>
                     </div>
 
@@ -151,9 +152,9 @@ export const renderAdminDashboard = async () => {
                         <p class="text-xs text-gray-500 mb-4">Distribusi status akun pengguna pada sistem.</p>
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div class="space-y-3">
-                                ${renderStatusBar('Aktif', activeCount, activePct, '#10B981', '#D1FAE5', '#065F46')}
-                                ${renderStatusBar('Ditangguhkan', suspendedCount, suspendedPct, '#EF4444', '#FEE2E2', '#991B1B')}
-                                ${renderStatusBar('Profil belum lengkap', pendingCount, pendingPct, '#F59E0B', '#FEF3C7', '#92400E')}
+                                ${renderStatusBar('Aktif', activeCount, activePct, 'active')}
+                                ${renderStatusBar('Ditangguhkan', suspendedCount, suspendedPct, 'suspended')}
+                                ${renderStatusBar('Profil belum lengkap', pendingCount, pendingPct, 'pending')}
                             </div>
 
                             <div class="bg-white rounded-2xl border border-gray-100 p-6 flex flex-col items-center justify-center shadow-sm">
@@ -197,7 +198,7 @@ export const renderAdminDashboard = async () => {
                         <!-- Period Tabs -->
                         <div id="activity-tab-bar" class="flex items-center justify-between w-full">
                             <button class="activity-tab py-1.5 px-3 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors" data-period="today">Hari Ini</button>
-                            <button class="activity-tab py-1.5 px-5 text-sm font-bold text-white rounded-lg transition-all active-tab" data-period="week" style="background:#006666">Minggu Ini</button>
+                            <button class="activity-tab py-1.5 px-5 text-sm font-bold text-white rounded-lg transition-all active-tab bg-primary-teal" data-period="week">Minggu Ini</button>
                             <button class="activity-tab py-1.5 px-3 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors" data-period="1month">1 Bulan</button>
                             <button class="activity-tab py-1.5 px-3 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors" data-period="3months">3 Bulan</button>
                             <button class="activity-tab py-1.5 px-3 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors" data-period="6months">6 Bulan</button>
@@ -236,18 +237,17 @@ export const renderAdminDashboard = async () => {
                 attachSuperAdminDelegatedActivityDashboardCard();
 
                 const setActiveTab = (period: string) => {
+                    // Class toggles rather than inline style, so the active tab
+                    // follows the brand token instead of a second hex that has
+                    // to be remembered separately from the markup above.
                     tabBar?.querySelectorAll('.activity-tab').forEach(b => {
-                        b.classList.remove('active-tab', 'font-bold', 'text-white');
+                        b.classList.remove('active-tab', 'font-bold', 'text-white', 'bg-primary-teal', 'rounded-lg');
                         b.classList.add('font-medium', 'text-gray-500');
-                        (b as HTMLElement).style.background = '';
-                        (b as HTMLElement).style.borderRadius = '';
                     });
                     const activeBtn = tabBar?.querySelector(`.activity-tab[data-period="${period}"]`) as HTMLElement | null;
                     if (activeBtn) {
-                        activeBtn.classList.add('active-tab', 'font-bold', 'text-white');
+                        activeBtn.classList.add('active-tab', 'font-bold', 'text-white', 'bg-primary-teal', 'rounded-lg');
                         activeBtn.classList.remove('font-medium', 'text-gray-500');
-                        activeBtn.style.background = '#006666';
-                        activeBtn.style.borderRadius = '8px';
                     }
                 };
 
@@ -276,60 +276,82 @@ export const renderAdminDashboard = async () => {
     refreshInterval = setInterval(() => updateDashboardData(), 30000);
 };
 
-const renderCountCard = (title: string, count: number, bgColor: string, iconUrl: string) => `
-    <div class="p-5 rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center hover:shadow-md transition-shadow" style="background:${bgColor}">
-        <div>
-            <p class="text-[11px] font-bold text-gray-800 mb-2 font-['Inter']">${title}</p>
-            <p class="text-3xl font-black text-gray-800 font-['Inter']">${count}</p>
-            <p class="text-[10px] text-gray-600 font-medium mt-1 font-['Inter']">Total Pengguna</p>
-        </div>
-        <div class="w-14 h-14 rounded-xl flex items-center justify-center" style="background:${bgColor}">
-            <img src="${iconUrl}" class="w-14 h-14 object-contain" />
-        </div>
-    </div>
-`;
+// The role-count cards now come from the same primitive as every other
+// dashboard's stat cards. The old "Total Pengguna" sub-line is dropped: the
+// section heading directly above already says "Total Pengguna Aktif", and the
+// primitive puts the label under the number instead of above it.
+const renderCountCard = (title: string, count: number, tone: DashboardStatTone, iconUrl: string) =>
+    renderDashboardStatCard({
+        label: title,
+        value: count,
+        tone,
+        iconSvg: `<img src="${iconUrl}" alt="" class="w-14 h-14 object-contain" />`,
+    });
 
-const renderStatusBar = (label: string, count: number, percentage: number, barColor: string, bgColor: string, textColor: string) => `
-    <div class="px-5 py-4 rounded-2xl border space-y-3"
-         style="background:${bgColor}; border-color:${barColor}33">
+/**
+ * Account-status bars. Every colour here used to be an inline hex passed in from
+ * the call site, which put six literals per row outside the token system — the
+ * one thing that guarantees a surface drifts when the palette moves. The kind is
+ * now a name and the palette lives in one map.
+ *
+ * The bar's WIDTH stays inline: it is a computed percentage, not a colour.
+ */
+type StatusBarKind = 'active' | 'suspended' | 'pending';
 
-        <!-- ATAS -->
+const STATUS_BAR_TONE: Record<StatusBarKind, {
+    surface: string; label: string; iconBox: string; track: string; fill: string; glyph: string;
+}> = {
+    active: {
+        surface: 'bg-emerald-100/70 border-emerald-200',
+        label: 'text-emerald-800',
+        iconBox: 'bg-emerald-500/20 text-emerald-600',
+        track: 'bg-emerald-500/25',
+        fill: 'bg-emerald-500',
+        glyph: '<polyline points="20 6 9 17 4 12"></polyline>',
+    },
+    suspended: {
+        surface: 'bg-red-100/70 border-red-200',
+        label: 'text-red-800',
+        iconBox: 'bg-red-500/20 text-red-600',
+        track: 'bg-red-500/25',
+        fill: 'bg-red-500',
+        glyph: '<circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line>',
+    },
+    pending: {
+        surface: 'bg-amber-100/70 border-amber-200',
+        label: 'text-amber-800',
+        iconBox: 'bg-amber-500/20 text-amber-600',
+        track: 'bg-amber-500/25',
+        fill: 'bg-amber-500',
+        glyph: '<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>',
+    },
+};
+
+const renderStatusBar = (label: string, count: number, percentage: number, kind: StatusBarKind) => {
+    const tone = STATUS_BAR_TONE[kind];
+
+    return `
+    <div class="px-5 py-4 rounded-2xl border space-y-3 ${tone.surface}">
         <div class="flex justify-between items-center">
-            
-            <!-- KIRI -->
             <div class="flex flex-col">
-                <span class="text-xs font-bold" style="color:${textColor}">
-                    ${label}
-                </span>
-                <span class="text-lg font-black text-gray-800 mt-1">
-                    ${count}
-                </span>
+                <span class="text-xs font-bold ${tone.label}">${label}</span>
+                <span class="text-lg font-black text-gray-800 mt-1">${count}</span>
             </div>
-
-            <!-- KANAN (ICON sejajar dengan COUNT) -->
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center"
-                 style="background:${barColor}20">
-                ${label === 'Aktif'
-        ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${barColor}" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`
-        : label === 'Profil belum lengkap'
-            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${barColor}" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`
-            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${barColor}" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`
-    }
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center ${tone.iconBox}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">${tone.glyph}</svg>
             </div>
-
         </div>
 
-        <!-- PROGRESS -->
-        <div class="w-full h-1.5 rounded-full overflow-hidden" style="background:${barColor}25">
-            <div class="h-full rounded-full" style="width: ${percentage}%; background:${barColor}"></div>
+        <div class="w-full h-1.5 rounded-full overflow-hidden ${tone.track}">
+            <div class="h-full rounded-full ${tone.fill}" style="width: ${percentage}%"></div>
         </div>
 
-        <!-- TEXT -->
-        <p class="text-[10px] font-bold uppercase tracking-tighter" style="color:${textColor}">
+        <p class="text-[10px] font-bold uppercase tracking-tighter ${tone.label}">
             ${percentage}% dari total user
         </p>
     </div>
 `;
+};
 
 const renderChartCard = (title: string, sub: string, data: any, legendLabel: string = 'Total Pengguna') => {
     const chartData: number[] = data.data?.length ? data.data : [];
