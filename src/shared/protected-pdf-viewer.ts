@@ -1,4 +1,5 @@
 import { apiFetch } from './api-client';
+import { SPINNER_CLASS } from './design-system';
 import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore - Vite resolves the PDF.js worker as a URL.
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
@@ -56,19 +57,19 @@ export function renderProtectedPdfViewer(rootId: string, copy: ProtectedPdfViewe
                     </div>
                 </div>
                 <div class="shrink-0 flex flex-wrap items-center justify-end gap-2">
-                    <button type="button" data-pdf-prev disabled class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:border-[#115E59]/30 hover:text-[#115E59] disabled:opacity-40 disabled:cursor-not-allowed">Sebelumnya</button>
+                    <button type="button" data-pdf-prev disabled class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:border-teal-800/30 hover:text-teal-800 disabled:opacity-40 disabled:cursor-not-allowed">Sebelumnya</button>
                     <span data-pdf-page class="text-xs font-bold text-gray-600 min-w-[70px] text-center">- / -</span>
-                    <button type="button" data-pdf-next disabled class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:border-[#115E59]/30 hover:text-[#115E59] disabled:opacity-40 disabled:cursor-not-allowed">Berikutnya</button>
+                    <button type="button" data-pdf-next disabled class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:border-teal-800/30 hover:text-teal-800 disabled:opacity-40 disabled:cursor-not-allowed">Berikutnya</button>
                     <span class="hidden sm:block w-px h-5 bg-gray-200"></span>
-                    <button type="button" data-pdf-zoom-out disabled class="w-8 h-8 rounded-lg border border-gray-200 text-sm font-black text-gray-600 hover:border-[#115E59]/30 hover:text-[#115E59] disabled:opacity-40 disabled:cursor-not-allowed" title="Perkecil">-</button>
+                    <button type="button" data-pdf-zoom-out disabled class="w-8 h-8 rounded-lg border border-gray-200 text-sm font-black text-gray-600 hover:border-teal-800/30 hover:text-teal-800 disabled:opacity-40 disabled:cursor-not-allowed" title="Perkecil">-</button>
                     <span data-pdf-scale class="text-xs font-bold text-gray-500 min-w-[44px] text-center">120%</span>
-                    <button type="button" data-pdf-zoom-in disabled class="w-8 h-8 rounded-lg border border-gray-200 text-sm font-black text-gray-600 hover:border-[#115E59]/30 hover:text-[#115E59] disabled:opacity-40 disabled:cursor-not-allowed" title="Perbesar">+</button>
-                    <button type="button" data-pdf-reset disabled class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:border-[#115E59]/30 hover:text-[#115E59] disabled:opacity-40 disabled:cursor-not-allowed">Reset</button>
+                    <button type="button" data-pdf-zoom-in disabled class="w-8 h-8 rounded-lg border border-gray-200 text-sm font-black text-gray-600 hover:border-teal-800/30 hover:text-teal-800 disabled:opacity-40 disabled:cursor-not-allowed" title="Perbesar">+</button>
+                    <button type="button" data-pdf-reset disabled class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:border-teal-800/30 hover:text-teal-800 disabled:opacity-40 disabled:cursor-not-allowed">Reset</button>
                 </div>
             </div>
             <div class="relative bg-gray-100 overflow-auto" style="height: clamp(1200px, 100vh, 1700px);">
                 <div data-pdf-loading class="absolute inset-0 flex flex-col items-center justify-center bg-white z-10 text-center p-6">
-                    <div class="animate-spin rounded-full h-9 w-9 border-b-2 border-[#115E59]"></div>
+                    <div class="h-9 w-9 ${SPINNER_CLASS}"></div>
                     <p class="mt-4 text-sm font-bold text-gray-700">${escapeHtml(copy.loading)}</p>
                 </div>
                 <div data-pdf-error class="hidden absolute inset-0 flex-col items-center justify-center bg-white text-center p-6 z-10">

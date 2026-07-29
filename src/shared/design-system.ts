@@ -116,6 +116,35 @@ export function galleryTabClass(active: boolean): string {
     );
 }
 
+// ── Segmented tab (boxed pill row) ──────────────────────────────────────────
+// The "buttons flush together inside one rounded, bordered box" shape: Riwayat
+// scope tabs, the notification read-state tabs, and the retention operational
+// tabs all hand-rolled this independently. Two of them used the literal
+// `#0D4A46` instead of the brand token. Callers own the container box
+// (rounded-xl border ... w-fit, etc.) and any surrounding ARIA; this only
+// answers "is this button in the active state or not".
+const SEGMENTED_TAB_BASE = 'px-5 py-2.5 text-sm font-bold outline-none transition-colors';
+
+export function segmentedTabClass(active: boolean): string {
+    return cx(
+        SEGMENTED_TAB_BASE,
+        active ? 'bg-primary-teal text-white' : 'bg-white text-gray-600 hover:bg-gray-50',
+    );
+}
+
+// ── Underline tab ────────────────────────────────────────────────────────--
+// The "flat button, active state marked by a bottom border" shape: the user
+// management role tabs and the room-detail drawer's sub-tabs were byte-for-byte
+// the same classes (bar one font-weight), hand-rolled in both files.
+const UNDERLINE_TAB_BASE = 'border-b-2 px-4 py-3 text-sm font-bold transition-colors';
+
+export function underlineTabClass(active: boolean): string {
+    return cx(
+        UNDERLINE_TAB_BASE,
+        active ? 'border-teal-700 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700',
+    );
+}
+
 // ── Accent surfaces ───────────────────────────────────────────────────────--
 // Generic decorative accent palette. A presentation map (e.g. letter-presentation)
 // assigns an AccentTone per item; this module never names the items themselves.

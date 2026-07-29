@@ -155,7 +155,7 @@ export function renderTendikActionableRow(item: TendikListItem): string {
                 <p class="text-xs font-semibold text-gray-700">${escapeFormHtml(item.assignedTendikName || 'Belum ditugaskan')}</p>
             </td>
             <td class="px-7 py-4 align-top text-right">
-                <button class="review-btn text-[11px] font-bold text-[#0D4A46] border-2 border-[#0D4A46] rounded-full px-5 py-1.5 hover:bg-[#0D4A46] hover:text-white transition-colors duration-200" data-id="${escapeFormAttribute(item.id)}" data-letter-type="${escapeFormAttribute(item.letterType)}">
+                <button class="review-btn text-[11px] font-bold text-teal-800 border-2 border-teal-800 rounded-full px-5 py-1.5 hover:bg-teal-800 hover:text-white transition-colors duration-200" data-id="${escapeFormAttribute(item.id)}" data-letter-type="${escapeFormAttribute(item.letterType)}">
                     Review Dokumen
                 </button>
             </td>

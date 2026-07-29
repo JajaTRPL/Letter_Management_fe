@@ -70,6 +70,18 @@ export type ReviewerShellModal = {
     fields?: readonly ReviewerShellModalField[];
 };
 
+/**
+ * Class triad for a positive/approve action — button, modal header, modal
+ * confirm. Ten Review*.ts files (one per letter type × Tendik/Akademik) each
+ * retyped this exact literal (`bg-[#115E59] hover:bg-[#0d4a46] text-white`) by
+ * hand; #115E59 is exactly `teal-800` and #0d4a46 is the established
+ * darker-hover step already used for this shade elsewhere (see
+ * `renderDashboardLinkButton`'s hover state in ui-primitives.ts).
+ */
+export const APPROVE_ACTION_BUTTON_CLASS = 'bg-teal-800 hover:bg-teal-900 text-white';
+export const APPROVE_ACTION_HEADER_CLASS = 'bg-teal-800 text-white';
+export const APPROVE_ACTION_CONFIRM_CLASS = 'bg-teal-800 text-white hover:bg-teal-900';
+
 export type ReviewerShellAction = {
     buttonId: string;
     buttonText: string;
@@ -213,7 +225,7 @@ export function disposeActiveReviewerShell(): void {
 
 export function renderReviewerShellTimeline(steps: readonly ReviewerShellTimelineStep[]): string {
     return `
-        <div class="relative pl-6 border-l-2 border-[#115E59] space-y-6 pb-2">
+        <div class="relative pl-6 border-l-2 border-teal-800 space-y-6 pb-2">
             ${steps.map((step) => `
                 <div class="relative">
                     <div class="absolute -left-[31px] ${timelineDotClass(step.done, step.current)}">
@@ -633,7 +645,7 @@ function errorMessageFromResponse(result: { message?: string; errors?: Record<st
 }
 
 function timelineDotClass(done: boolean, current?: boolean): string {
-    if (done) return 'bg-[#115E59] rounded-full p-0.5 border-4 border-white';
+    if (done) return 'bg-teal-800 rounded-full p-0.5 border-4 border-white';
     if (current) return 'bg-white border-2 border-yellow-400 w-5 h-5 rounded-full z-10 flex items-center justify-center';
     return 'bg-gray-300 rounded-full w-5 h-5 border-4 border-white';
 }

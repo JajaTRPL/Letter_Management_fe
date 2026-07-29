@@ -1,5 +1,6 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { apiFetch } from '../shared/api-client';
+import { SPINNER_CLASS } from '../shared/design-system';
 import {
     isAktifLetter,
     isLegacyBeasiswaFallback,
@@ -120,7 +121,7 @@ const listConfig = (items: readonly AkademikListItem[]): ListPrimitiveConfig<Aka
 
 const loadingState = (): string => `
     <div class="flex min-h-[360px] items-center justify-center">
-        <div class="h-10 w-10 animate-spin rounded-full border-b-2 border-[#115E59]"></div>
+        <div class="h-10 w-10 ${SPINNER_CLASS}"></div>
     </div>
 `;
 

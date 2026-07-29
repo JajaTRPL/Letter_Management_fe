@@ -2,6 +2,9 @@ import { apiFetch } from '../shared/api-client';
 import {
     renderReviewerShell,
     type ReviewerShellAction,
+    APPROVE_ACTION_BUTTON_CLASS,
+    APPROVE_ACTION_HEADER_CLASS,
+    APPROVE_ACTION_CONFIRM_CLASS,
 } from '../shared/reviewer-shell';
 import {
     buildPlnReviewerView,
@@ -82,17 +85,17 @@ function createApproveAction(
     return {
         buttonId: 'pln-approve-btn',
         buttonText: 'Setujui dan Teruskan ke Pimpinan',
-        buttonClass: 'bg-[#115E59] hover:bg-[#0d4a46] text-white',
+        buttonClass: APPROVE_ACTION_BUTTON_CLASS,
         endpointUrl: `${endpointPrefix}/approve`,
         successFallback: 'Pengajuan berhasil diverifikasi dan diteruskan.',
         modal: {
             id: 'pln-approval-modal',
             title: 'Konfirmasi Persetujuan',
-            headerClass: 'bg-[#115E59] text-white',
+            headerClass: APPROVE_ACTION_HEADER_CLASS,
             cancelId: 'pln-cancel-approve',
             confirmId: 'pln-confirm-approve',
             confirmText: 'Ya, Teruskan ke Kaprodi',
-            confirmClass: 'bg-[#115E59] text-white hover:bg-[#0d4a46]',
+            confirmClass: APPROVE_ACTION_CONFIRM_CLASS,
             notices: [{
                 title: 'Data telah diverifikasi',
                 message: 'Anda akan meneruskan pengajuan surat ini ke Kaprodi/Sekprodi. Pastikan semua data sudah benar dan lengkap.',

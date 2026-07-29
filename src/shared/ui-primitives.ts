@@ -216,7 +216,7 @@ export function renderDashboardLinkButton(options: {
         .join('');
 
     return `<button type="button"${options.id ? ` id="${escapeFormAttribute(options.id)}"` : ''}${attrs} class="${
-        cx('text-xs font-bold text-[#115E59] hover:text-[#0d4a46] transition-colors underline-offset-2 hover:underline', options.extraClass)
+        cx('text-xs font-bold text-teal-800 hover:text-teal-900 transition-colors underline-offset-2 hover:underline', options.extraClass)
     }">${escapeFormHtml(options.label)}</button>`;
 }
 

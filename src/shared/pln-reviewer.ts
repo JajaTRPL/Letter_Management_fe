@@ -209,7 +209,7 @@ export function createPlnTextActions(
                 cancelId: `${options.prefix}-cancel-revise`,
                 confirmId: `${options.prefix}-confirm-revise`,
                 confirmText: 'Kirim Permintaan Revisi',
-                confirmClass: 'bg-[#FACC15] hover:bg-[#EAB308] text-yellow-900 border border-[#0D4A46]',
+                confirmClass: 'bg-[#FACC15] hover:bg-[#EAB308] text-yellow-900 border border-teal-900',
                 summaryRows,
                 fields: [{
                     id: `${options.prefix}-revision-note`,

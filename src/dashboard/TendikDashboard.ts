@@ -67,7 +67,7 @@ const queueRow = (task: any): string => `
             </span>
         </td>
         <td class="px-7 py-3 align-top text-right">
-            <button class="review-btn inline-block text-center text-[10px] font-bold border-2 border-[#115E59] text-[#115E59] hover:bg-[#115E59] hover:text-white transition-colors rounded-xl px-4 py-2 w-full max-w-[140px] shadow-sm" data-id="${escapeHtml(task.id)}" data-letter-type="${escapeHtml(task.letter_type || '')}">
+            <button class="review-btn inline-block text-center text-[10px] font-bold border-2 border-teal-800 text-teal-800 hover:bg-teal-800 hover:text-white transition-colors rounded-xl px-4 py-2 w-full max-w-[140px] shadow-sm" data-id="${escapeHtml(task.id)}" data-letter-type="${escapeHtml(task.letter_type || '')}">
                 Review Dokumen
             </button>
         </td>
@@ -340,7 +340,7 @@ const tendikRiwayatRow = (task: TendikTaskRow): string => {
     const typeLabel = escapeHtml(getAssignedTaskLabel(letterType) || task.type || 'Surat Administrasi');
     const nomor = escapeHtml(task.nomor_surat || '-');
     const detailButton = resolveTendikReviewRenderer(letterType)
-        ? `<button class="tendik-history-detail-btn text-xs font-bold text-[#115E59] hover:underline transition-colors" data-id="${escapeHtml(String(task.id ?? ''))}" data-letter-type="${escapeHtml(letterType)}">Lihat Detail</button>`
+        ? `<button class="tendik-history-detail-btn text-xs font-bold text-teal-800 hover:underline transition-colors" data-id="${escapeHtml(String(task.id ?? ''))}" data-letter-type="${escapeHtml(letterType)}">Lihat Detail</button>`
         : '<span class="text-xs text-gray-400">-</span>';
 
     return `

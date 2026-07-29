@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { segmentedTabClass, SPINNER_CLASS } from '../shared/design-system';
 import { renderReviewScholarship } from './ReviewScholarship';
 import { renderReviewProsesLuarNegeri } from './ReviewProsesLuarNegeri';
 import { renderReviewSuratKeteranganAktif } from './ReviewSuratKeteranganAktif';
@@ -133,7 +134,7 @@ const renderTabs = (activeScope: DokumenScope): string => `
         ${(Object.keys(DOKUMEN_SCOPES) as DokumenScope[]).map((scope) => {
             const isActive = scope === activeScope;
             return `
-                <button class="dokumen-tab px-6 py-2.5 text-sm font-bold outline-none transition-colors ${isActive ? 'bg-[#0D4A46] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}" data-scope="${scope}" type="button">
+                <button class="dokumen-tab ${segmentedTabClass(isActive)}" data-scope="${scope}" type="button">
                     ${DOKUMEN_SCOPES[scope].label}
                 </button>
             `;
@@ -143,7 +144,7 @@ const renderTabs = (activeScope: DokumenScope): string => `
 
 const renderLoading = (): string => `
     <div class="flex items-center justify-center py-20">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0D4A46]"></div>
+        <div class="h-12 w-12 ${SPINNER_CLASS}"></div>
     </div>
 `;
 

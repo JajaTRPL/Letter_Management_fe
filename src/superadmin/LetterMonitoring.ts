@@ -1,5 +1,6 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { apiFetch } from '../shared/api-client';
+import { SPINNER_CLASS } from '../shared/design-system';
 
 const PERIODS = [
     { key: 'today', label: 'Hari Ini' },
@@ -174,7 +175,7 @@ export const renderLetterMonitoring = async () => {
     // Show loading
     renderDashboardLayout('Monitoring Surat', `
         <div class="flex items-center justify-center min-h-[400px]">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0D4A46]"></div>
+            <div class="h-12 w-12 ${SPINNER_CLASS}"></div>
         </div>
     `, 'super_admin', 'monitoring');
 
