@@ -60,7 +60,7 @@ export function tendikListFilters(items: readonly TendikListItem[], mode: Tendik
     const seen = new Map<string, string>();
     for (const item of items) {
         if (item.status && !seen.has(item.status)) {
-            seen.set(item.status, getLetterStatusLabel(item.status, variant) || item.status);
+            seen.set(item.status, getLetterStatusLabel(item.status, variant) || 'Diproses');
         }
     }
     const statusOptions: ListOption[] = Array.from(seen, ([value, label]) => ({ value, label }));
@@ -121,7 +121,7 @@ const statusBadge = (item: TendikListItem, mode: TendikListMode): string => {
     const variant = labelVariantFor(mode);
     // 'tendik-review' / 'tendik-history' are members of both the label and tone
     // variant unions, so the same value drives both lookups.
-    const label = getLetterStatusLabel(item.status, variant) || item.status || '-';
+    const label = getLetterStatusLabel(item.status, variant) || 'Diproses';
     const tone = getLetterStatusTone(item.status, variant as LetterStatusToneVariant);
     const minWidth = mode === 'history' ? 'min-w-[70px]' : 'min-w-[120px]';
     return `<span class="inline-flex items-center justify-center ${minWidth} px-3 py-1.5 rounded-full text-[10px] font-bold ${escapeFormAttribute(tone)}">${escapeFormHtml(label)}</span>`;

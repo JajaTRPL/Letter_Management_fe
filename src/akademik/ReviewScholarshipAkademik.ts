@@ -135,7 +135,7 @@ function readOnlyMessage(
     isProdiReviewer?: boolean,
     isDepartmentReviewer?: boolean,
 ): string {
-    const label = getLetterStatusLabel(status, 'akademik-review') || status || '-';
+    const label = getLetterStatusLabel(status, 'akademik-review') || '-';
     if (isDepartmentReviewer) {
         return `Pengajuan berada pada status ${label}, sehingga tindakan Kadep/Sekdep tidak tersedia.`;
     }

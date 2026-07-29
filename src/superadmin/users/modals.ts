@@ -123,14 +123,14 @@ export const renderUserModal = (user: any = null, onRefresh: () => void) => {
                             <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Jenis Peran Tendik</label>
                             <select name="tendikRole" id="modal-tendik-role-select" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all">
                                 <optgroup label="Administrasi">
-                                    <option value="persuratan" ${(!user?.tendik_role || user?.tendik_role === 'persuratan') ? 'selected' : ''}>Persuratan</option>
+                                    <option value="persuratan" ${(!user?.tendik_role || user?.tendik_role === 'persuratan') ? 'selected' : ''}>Staf Administrasi Persuratan</option>
                                 </optgroup>
                                 <optgroup label="Sarana & Prasarana">
-                                    <option value="sarpras" ${user?.tendik_role === 'sarpras' ? 'selected' : ''}>Sarpras</option>
+                                    <option value="sarpras" ${user?.tendik_role === 'sarpras' ? 'selected' : ''}>Pengelola Sarana & Prasarana</option>
                                 </optgroup>
                                 <optgroup label="Laboratorium">
-                                    <option value="kepala_lab" ${user?.tendik_role === 'kepala_lab' ? 'selected' : ''}>Kepala Lab</option>
-                                    <option value="laboran" ${user?.tendik_role === 'laboran' ? 'selected' : ''}>Laboran</option>
+                                    <option value="kepala_lab" ${user?.tendik_role === 'kepala_lab' ? 'selected' : ''}>Kepala Laboratorium</option>
+                                    <option value="laboran" ${user?.tendik_role === 'laboran' ? 'selected' : ''}>Laboran / Teknisi Lab</option>
                                 </optgroup>
                             </select>
                             <p id="tendik-role-helper" class="text-[10px] text-gray-500 mt-1.5 font-medium transition-all duration-300"></p>

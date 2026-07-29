@@ -16,6 +16,7 @@ import {
 } from '../shared/review-performance-widget';
 import { getGreetingName } from '../utils/nameHelper';
 import { apiFetch } from '../shared/api-client';
+import { getRoleDisplayName } from '../shared/role-helpers';
 import { renderReviewScholarshipAkademik } from '../akademik/ReviewScholarshipAkademik';
 import { renderReviewProsesLuarNegeriAkademik } from '../akademik/ReviewProsesLuarNegeriAkademik';
 import { renderReviewSuratKeteranganAktifAkademik } from '../akademik/ReviewSuratKeteranganAktifAkademik';
@@ -58,13 +59,8 @@ const buildRoleLabel = (role: string, profileUser: Record<string, any> | null | 
         profileUser?.department?.name,
         profileUser?.department_name,
     );
-
-    if (subRole === 'kaprodi') return prodi ? `Kaprodi ${prodi}` : 'Kaprodi';
-    if (subRole === 'sekprodi') return prodi ? `Sekprodi ${prodi}` : 'Sekprodi';
-    if (subRole === 'kadep') return dept ? `Kadep ${dept}` : 'Kadep';
-    if (subRole === 'sekdep') return dept ? `Sekdep ${dept}` : 'Sekdep';
-    if (subRole === 'akademik') return 'Akademik';
-    return subRole ? subRole.charAt(0).toUpperCase() + subRole.slice(1) : 'Akademik';
+    const scopeCode = ['kaprodi', 'sekprodi'].includes(subRole) ? prodi : dept;
+    return getRoleDisplayName('akademik', subRole, scopeCode);
 };
 
 interface RiwayatRow extends TendikTaskRow {

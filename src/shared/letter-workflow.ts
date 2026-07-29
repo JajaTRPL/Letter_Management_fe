@@ -80,43 +80,52 @@ export const STUDENT_PROCESSING_STATUSES = [
 ] as const;
 
 const DEFAULT_STATUS_LABELS: Record<string, string> = {
-    [DRAFT]: 'Draft',
-    [SUBMITTED]: 'Diajukan',
-    [REVISION]: 'Perlu Revisi',
-    [REJECTED]: 'Ditolak',
-    [APPROVED_TENDIK]: 'Diverifikasi Tendik',
-    [APPROVED_KAPRODI]: 'Disetujui Kaprodi/Sekprodi',
-    [READY_FOR_STUDENT_REVIEW]: 'Menunggu Review Mahasiswa',
-    [COMPLETED]: 'Selesai',
+    [DRAFT]: 'Draft Pengajuan',
+    [SUBMITTED]: 'Menunggu Verifikasi Persuratan',
+    [REVISION]: 'Perlu Perbaikan (Revisi)',
+    [REJECTED]: 'Pengajuan Ditolak',
+    [APPROVED_TENDIK]: 'Diverifikasi — Menunggu Paraf Prodi',
+    [APPROVED_KAPRODI]: 'Diparaf — Menunggu Tanda Tangan Departemen',
+    [READY_FOR_STUDENT_REVIEW]: 'Siap Ditinjau Mahasiswa',
+    [COMPLETED]: 'Surat Selesai & Terbit',
 };
 
 const STUDENT_LIST_STATUS_LABELS: Record<string, string> = {
-    [READY_FOR_STUDENT_REVIEW]: 'Menunggu Review',
-    [REVISION]: 'Revisi',
-    [REJECTED]: 'Ditolak',
-    [COMPLETED]: 'Selesai',
+    [DRAFT]: 'Draft',
+    [SUBMITTED]: 'Diproses Persuratan',
+    [APPROVED_TENDIK]: 'Diparaf Ketua Program Studi',
+    [APPROVED_KAPRODI]: 'Diproses Departemen',
+    [READY_FOR_STUDENT_REVIEW]: 'Menunggu Peninjauan Anda',
+    [REVISION]: 'Perlu Revisi',
+    [REJECTED]: 'Pengajuan Ditolak',
+    [COMPLETED]: 'Selesai & Terbit',
 };
 
 const TENDIK_REVIEW_STATUS_LABELS: Record<string, string> = {
     ...DEFAULT_STATUS_LABELS,
-    [SUBMITTED]: 'Menunggu Verifikasi',
-    [REVISION]: 'Revisi',
-    [APPROVED_KAPRODI]: 'Disetujui Kaprodi',
+    [SUBMITTED]: 'Menunggu Verifikasi Persuratan',
+    [REVISION]: 'Perlu Revisi',
+    [APPROVED_TENDIK]: 'Diteruskan ke Ketua Program Studi',
+    [APPROVED_KAPRODI]: 'Diparaf Ketua Program Studi',
+    [READY_FOR_STUDENT_REVIEW]: 'Siap Ditinjau Mahasiswa',
+    [COMPLETED]: 'Selesai',
 };
 
 const AKADEMIK_REVIEW_STATUS_LABELS: Record<string, string> = {
     ...TENDIK_REVIEW_STATUS_LABELS,
-    [APPROVED_KAPRODI]: 'Diparaf Kaprodi/Sekprodi',
+    [APPROVED_TENDIK]: 'Menunggu Paraf Ketua Program Studi',
+    [APPROVED_KAPRODI]: 'Diparaf Ketua Program Studi — Menunggu Tanda Tangan Departemen',
+    [COMPLETED]: 'Disetujui & Selesai',
 };
 
 const TENDIK_HISTORY_STATUS_LABELS: Record<string, string> = {
-    [SUBMITTED]: 'Menunggu Verifikasi',
-    'Menunggu Verifikasi': 'Menunggu Verifikasi',
-    [APPROVED_TENDIK]: 'Diteruskan',
-    [APPROVED_KAPRODI]: 'Diteruskan',
-    [READY_FOR_STUDENT_REVIEW]: 'Selesai',
-    [COMPLETED]: 'Selesai',
-    [REVISION]: 'Revisi',
+    [SUBMITTED]: 'Menunggu Verifikasi Persuratan',
+    'Menunggu Verifikasi': 'Menunggu Verifikasi Persuratan',
+    [APPROVED_TENDIK]: 'Diteruskan ke Ketua Program Studi',
+    [APPROVED_KAPRODI]: 'Diteruskan ke Departemen',
+    [READY_FOR_STUDENT_REVIEW]: 'Selesai Ditinjau',
+    [COMPLETED]: 'Selesai & Terbit',
+    [REVISION]: 'Dalam Revisi',
     [REJECTED]: 'Ditolak',
 };
 
@@ -151,9 +160,10 @@ export const getLetterStatusLabel = (
     if (!key) return '';
 
     const labels = STATUS_LABELS_BY_VARIANT[variant];
-    if (labels[key]) return labels[key];
+    if (labels && labels[key]) return labels[key];
+    if (DEFAULT_STATUS_LABELS[key]) return DEFAULT_STATUS_LABELS[key];
 
-    return variant === 'student-list' ? 'Diproses' : key;
+    return 'Diproses';
 };
 
 // Action-oriented label for the Akademik queue (Dashboard + Dokumen),

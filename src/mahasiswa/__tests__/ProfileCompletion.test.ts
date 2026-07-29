@@ -189,7 +189,7 @@ describe('role-aware profile completion', () => {
     expect(document.getElementById('nip')).not.toBeNull()
     expect(document.getElementById('study-program')).toBeNull()
     expect(document.getElementById('department')).toBeNull()
-    expect(document.getElementById('completion-role-label')?.textContent).toBe('Ketua Program Studi')
+    expect(document.getElementById('completion-role-label')?.textContent).toBe('Ketua Program Studi (Kaprodi)')
   })
 
   it('blocks stale staff scope fields instead of rendering self-assignment selectors', async () => {
