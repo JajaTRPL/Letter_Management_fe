@@ -56,6 +56,15 @@ vi.mock('toastify-js', () => ({
     default: vi.fn((opts: { text: string }) => ({ showToast: () => m.toasts.push(opts.text) })),
 }));
 
+// ScholarshipForm.ts now routes through the shared toast wrapper instead of
+// calling Toastify directly; re-route it back into the same `m.toasts` array.
+vi.mock('../shared/toast', () => ({
+    showSuccess: (text: string) => m.toasts.push(text),
+    showError: (text: string) => m.toasts.push(text),
+    showWarning: (text: string) => m.toasts.push(text),
+    showInfo: (text: string) => m.toasts.push(text),
+}));
+
 import { renderScholarshipForm } from '../mahasiswa/ScholarshipForm';
 import { mapApplicationToFormData } from '../mahasiswa/scholarship-form/ScholarshipDataMapper';
 import { BEASISWA_SUPPORTING_DOCUMENT_UPLOADS } from '../shared/beasiswa-form';

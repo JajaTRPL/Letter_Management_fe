@@ -1,4 +1,4 @@
-import Toastify from 'toastify-js';
+import { showSuccess, showError } from '../shared/toast';
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import {
     approveTendikBooking,
@@ -225,13 +225,11 @@ const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/'/g, '&#039;');
 
 const showToast = (text: string, success: boolean): void => {
-    Toastify({
-        text,
-        duration: 3000,
-        gravity: 'top',
-        position: 'right',
-        style: { background: success ? '#0f766e' : '#b91c1c' },
-    }).showToast();
+    if (success) {
+        showSuccess(text);
+    } else {
+        showError(text);
+    }
 };
 
 const formatDateTime = (iso: string | null | undefined): string => {

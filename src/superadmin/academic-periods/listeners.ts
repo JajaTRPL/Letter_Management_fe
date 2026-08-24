@@ -3,6 +3,7 @@ import { showSuccess, showError } from '../../shared/toast';
 import { deleteAcademicPeriod, toggleAcademicPeriod } from './api';
 import { renderAcademicPeriodModal } from './modals';
 import { renderAcademicPeriodTable } from './ui-utils';
+import { confirmModal } from '../../shared/confirm-modal';
 import {
     formatLocalDateLong,
     isCurrentToday,
@@ -10,55 +11,79 @@ import {
     isFuture,
 } from './state';
 
+const TONE_TEAL = 'bg-teal-700 hover:bg-teal-800';
+const TONE_RED = 'bg-red-600 hover:bg-red-700';
+
 /**
- * Build a confirm() message that explains the consequence of toggling this
- * specific period at the time of the click. Returns the user's confirm choice.
+ * Build and show a styled confirm dialog explaining the consequence of
+ * toggling this specific period at the time of the click. Resolves to the
+ * user's choice.
  */
-const confirmToggleAction = (period: AcademicPeriod): boolean => {
+const confirmToggleAction = (period: AcademicPeriod): Promise<boolean> => {
     if (period.is_active) {
         // Toggling OFF
         if (isCurrentToday(period)) {
-            return confirm(
-                'Periode ini sedang berjalan hari ini.\n\n'
-                + 'Setelah dinonaktifkan, tidak ada periode berjalan hari ini sampai Anda mengaktifkan periode lain yang tanggalnya mencakup hari ini.\n\n'
-                + 'Lanjutkan menonaktifkan?'
-            );
+            return confirmModal({
+                title: 'Nonaktifkan Periode yang Sedang Berjalan?',
+                body: 'Periode ini sedang berjalan hari ini.\n\n'
+                    + 'Setelah dinonaktifkan, tidak ada periode berjalan hari ini sampai Anda mengaktifkan periode lain yang tanggalnya mencakup hari ini.',
+                confirmLabel: 'Ya, Nonaktifkan',
+                confirmTone: TONE_TEAL,
+            });
         }
-        return confirm('Apakah Anda yakin ingin menonaktifkan periode akademik ini?');
+        return confirmModal({
+            title: 'Nonaktifkan Periode Akademik?',
+            body: 'Apakah Anda yakin ingin menonaktifkan periode akademik ini?',
+            confirmLabel: 'Ya, Nonaktifkan',
+            confirmTone: TONE_TEAL,
+        });
     }
 
     // Toggling ON
     if (isFuture(period)) {
-        return confirm(
-            `Periode ini baru mulai pada ${formatLocalDateLong(period.start_date)}.\n\n`
-            + 'Jika diaktifkan sekarang, periode ini TETAP BELUM menjadi periode berjalan sampai tanggal tersebut. Sistem akan menganggap tidak ada periode berjalan hari ini.\n\n'
-            + 'Lanjutkan mengaktifkan?'
-        );
+        return confirmModal({
+            title: 'Aktifkan Periode yang Belum Dimulai?',
+            body: `Periode ini baru mulai pada ${formatLocalDateLong(period.start_date)}.\n\n`
+                + 'Jika diaktifkan sekarang, periode ini TETAP BELUM menjadi periode berjalan sampai tanggal tersebut. Sistem akan menganggap tidak ada periode berjalan hari ini.',
+            confirmLabel: 'Ya, Aktifkan',
+            confirmTone: TONE_TEAL,
+        });
     }
     if (isExpired(period)) {
-        return confirm(
-            `Periode ini sudah berakhir pada ${formatLocalDateLong(period.end_date)}.\n\n`
-            + 'Jika diaktifkan sekarang, periode ini TETAP TIDAK menjadi periode berjalan hari ini. Rendering surat yang membutuhkan periode akademik akan mengisi nilai kosong.\n\n'
-            + 'Lanjutkan mengaktifkan?'
-        );
+        return confirmModal({
+            title: 'Aktifkan Periode yang Sudah Berakhir?',
+            body: `Periode ini sudah berakhir pada ${formatLocalDateLong(period.end_date)}.\n\n`
+                + 'Jika diaktifkan sekarang, periode ini TETAP TIDAK menjadi periode berjalan hari ini. Rendering surat yang membutuhkan periode akademik akan mengisi nilai kosong.',
+            confirmLabel: 'Ya, Aktifkan',
+            confirmTone: TONE_TEAL,
+        });
     }
     // Date range covers today → activating makes it the current period.
-    return confirm(
-        'Periode ini akan menjadi periode berjalan hari ini. Periode aktif lainnya akan otomatis dinonaktifkan.\n\n'
-        + 'Lanjutkan mengaktifkan?'
-    );
+    return confirmModal({
+        title: 'Aktifkan Periode Ini?',
+        body: 'Periode ini akan menjadi periode berjalan hari ini. Periode aktif lainnya akan otomatis dinonaktifkan.',
+        confirmLabel: 'Ya, Aktifkan',
+        confirmTone: TONE_TEAL,
+    });
 };
 
 /** Confirm copy for delete; adds an extra warning when the row is current today. */
-const confirmDeleteAction = (period: AcademicPeriod): boolean => {
+const confirmDeleteAction = (period: AcademicPeriod): Promise<boolean> => {
     if (isCurrentToday(period)) {
-        return confirm(
-            'Periode ini SEDANG BERJALAN hari ini.\n\n'
-            + 'Menghapusnya akan membuat sistem tidak memiliki periode berjalan sampai Anda mengaktifkan periode lain yang valid.\n\n'
-            + 'Apakah Anda yakin ingin menghapus periode akademik ini secara permanen?'
-        );
+        return confirmModal({
+            title: 'Hapus Periode yang Sedang Berjalan?',
+            body: 'Periode ini SEDANG BERJALAN hari ini.\n\n'
+                + 'Menghapusnya akan membuat sistem tidak memiliki periode berjalan sampai Anda mengaktifkan periode lain yang valid. Tindakan ini tidak dapat dibatalkan.',
+            confirmLabel: 'Ya, Hapus',
+            confirmTone: TONE_RED,
+        });
     }
-    return confirm('Apakah Anda yakin ingin menghapus periode akademik ini secara permanen?');
+    return confirmModal({
+        title: 'Hapus Periode Akademik?',
+        body: 'Periode akademik ini akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.',
+        confirmLabel: 'Ya, Hapus',
+        confirmTone: TONE_RED,
+    });
 };
 
 const attachRowListeners = (periods: AcademicPeriod[], onRefresh: () => void): void => {
@@ -75,7 +100,7 @@ const attachRowListeners = (periods: AcademicPeriod[], onRefresh: () => void): v
             const id = parseInt((btn as HTMLElement).dataset.id ?? '');
             const period = periods.find(p => p.id === id);
             if (!period) return;
-            if (!confirmToggleAction(period)) return;
+            if (!(await confirmToggleAction(period))) return;
             try {
                 const response = await toggleAcademicPeriod(id);
                 const result = await response.json();
@@ -102,7 +127,7 @@ const attachRowListeners = (periods: AcademicPeriod[], onRefresh: () => void): v
             const id = parseInt((btn as HTMLElement).dataset.id ?? '');
             const period = periods.find(p => p.id === id);
             if (!period) return;
-            if (!confirmDeleteAction(period)) return;
+            if (!(await confirmDeleteAction(period))) return;
             try {
                 const response = await deleteAcademicPeriod(id);
                 const result = await response.json();

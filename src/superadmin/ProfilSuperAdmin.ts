@@ -1,5 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
-import Toastify from 'toastify-js';
+import { showSuccess } from '../shared/toast';
 import { renderLogin } from '../login/Login';
 import { apiFetch } from '../shared/api-client';
 
@@ -110,7 +110,7 @@ export const renderProfilSuperAdmin = () => {
             }
             localStorage.clear();
             modal.remove();
-            Toastify({ text: "Berhasil keluar!", duration: 2000, style: { background: "#10B981" } }).showToast();
+            showSuccess('Berhasil keluar!', 2000);
             setTimeout(() => renderLogin(), 500);
         });
     });

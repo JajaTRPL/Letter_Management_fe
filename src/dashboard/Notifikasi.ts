@@ -1,6 +1,6 @@
-import { renderDashboardLayout } from './DashboardLayout';
+import { renderDashboardLayout, refreshNotificationBadge } from './DashboardLayout';
 import { segmentedTabClass } from '../shared/design-system';
-import Toastify from 'toastify-js';
+import { showSuccess, showError } from '../shared/toast';
 import {
     fetchNotifications,
     formatNotificationTime,
@@ -331,7 +331,9 @@ export const renderNotifikasi = (role: string, options: NotifikasiOptions = {}):
                 items = items.filter((n) => n.id !== item.id);
             }
             rerender();
-            void markNotificationRead(item.id).catch(() => undefined);
+            void markNotificationRead(item.id)
+                .then(() => refreshNotificationBadge())
+                .catch(() => undefined);
         }
         // Deep-link to the correct workbench for the item's route key.
         await navigateForNotification(item.action?.route_key ?? null, item.subject_id, role);
@@ -342,11 +344,12 @@ export const renderNotifikasi = (role: string, options: NotifikasiOptions = {}):
         if (btn) btn.disabled = true;
         try {
             await markAllNotificationsRead();
-            Toastify({ text: 'Semua notifikasi ditandai dibaca.', duration: 2000, gravity: 'top', position: 'right', style: { background: '#0f766e' } }).showToast();
+            showSuccess('Semua notifikasi ditandai dibaca.', 2000);
             await load();
+            void refreshNotificationBadge();
         } catch {
             if (btn) btn.disabled = false;
-            Toastify({ text: 'Gagal menandai semua notifikasi.', duration: 2500, gravity: 'top', position: 'right', style: { background: '#b91c1c' } }).showToast();
+            showError('Gagal menandai semua notifikasi.', 2500);
         }
     };
 

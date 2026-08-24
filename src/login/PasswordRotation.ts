@@ -1,4 +1,4 @@
-import Toastify from 'toastify-js'
+import { showSuccess } from '../shared/toast'
 import {
   getPasswordRotationStatus,
   logoutPasswordRotation,
@@ -176,14 +176,7 @@ const renderForm = (initialMessage?: string): void => {
 
       if (response.ok) {
         clearAllAuthenticationState()
-        Toastify({
-          text: payloadMessage(payload, 'Kata sandi berhasil diganti. Silakan login kembali.'),
-          duration: 3000,
-          close: true,
-          gravity: 'top',
-          position: 'right',
-          style: { background: '#10B981' },
-        }).showToast()
+        showSuccess(payloadMessage(payload, 'Kata sandi berhasil diganti. Silakan login kembali.'), 3000)
         const { renderLogin } = await import('./Login')
         renderLogin('Kata sandi berhasil diganti. Silakan login dengan kata sandi baru.')
         return

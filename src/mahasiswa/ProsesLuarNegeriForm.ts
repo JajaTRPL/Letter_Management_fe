@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { renderDashboardLoadingState } from '../shared/ui-primitives';
 import { apiFetch } from '../shared/api-client';
 import { attachProtectedPdfViewer, renderProtectedPdfViewer } from '../shared/protected-pdf-viewer';
 import {
@@ -163,7 +164,7 @@ const renderGeneratedLetterPreviewCard = (): string => renderProtectedPdfViewer(
 
 export const renderProsesLuarNegeriForm = async (forceEditRevision = false) => {
     resetState();
-    renderLoading('Memuat formulir Proses Luar Negeri...');
+    renderLoading();
 
     try {
         if (!forceEditRevision) {
@@ -212,7 +213,7 @@ export const renderProsesLuarNegeriDetail = async (applicationId: number | strin
     const activePage = activePageForDetailOrigin(origin);
 
     cleanupGeneratedLetterPreview();
-    renderLoading('Memuat detail pengajuan...', activePage);
+    renderLoading(activePage);
 
     try {
         // With Global Profile.1 the PLN detail endpoint ships an additive
@@ -378,15 +379,8 @@ const applySemesterPrefill = (currentSemester: number | null): void => {
     formData.semester = String(currentSemester);
 };
 
-const renderLoading = (message: string, activePage = 'administrasi') => {
-    renderDashboardLayout('Formulir Surat', `
-        <div class="max-w-5xl mx-auto">
-            <div class="bg-white border border-gray-100 rounded-[24px] p-10 shadow-sm flex items-center gap-4">
-                <div class="w-9 h-9 rounded-full border-4 border-teal-100 border-t-primary-teal animate-spin"></div>
-                <p class="text-sm font-semibold text-gray-600">${escapeHtml(message)}</p>
-            </div>
-        </div>
-    `, 'mahasiswa', activePage);
+const renderLoading = (activePage = 'administrasi') => {
+    renderDashboardLayout('Formulir Surat', renderDashboardLoadingState(), 'mahasiswa', activePage);
 };
 
 const renderForm = () => {
@@ -409,26 +403,38 @@ const renderForm = () => {
     attachFormEvents();
 };
 
+// Progress-bar + numbered-circle stepper, matching the pattern established by
+// renderScholarshipStepper in ScholarshipForm.ts: a proper <nav>/<ol> with an
+// aria-current step marker and a status-aware aria-label per step, instead of
+// the previous unlabeled card grid.
 const renderStepper = () => {
-    const steps = [
+    const steps: Array<{ number: number; label: string }> = [
         { number: 1, label: 'Profil SSO' },
         { number: 2, label: 'Detail Profil & Pengajuan' },
         { number: 3, label: 'Tinjau Pengajuan' },
     ];
+    const segmentWidth = steps.length > 1 ? 100 / (steps.length - 1) : 100;
 
     return `
-        <nav class="bg-white rounded-[18px] border border-gray-200 shadow-sm px-5 py-4" aria-label="Tahap formulir">
-            <ol class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                ${steps.map((step, index) => {
-                    const isComplete = currentStep > step.number;
-                    const isCurrent = currentStep === step.number;
+        <nav class="bg-white p-8 rounded-[24px] shadow-sm border border-gray-100" aria-label="Tahap formulir Proses Luar Negeri">
+            <ol class="relative flex justify-between list-none">
+                <div class="absolute top-5 left-8 right-8 h-0.5 -z-0">
+                    <div class="absolute inset-0 bg-gray-100"></div>
+                    <div class="absolute inset-y-0 left-0 bg-primary-teal transition-all duration-500" style="width: ${(currentStep - 1) * segmentWidth}%"></div>
+                </div>
+
+                ${steps.map(({ number, label }) => {
+                    const isDone = currentStep > number;
+                    const isCurrent = currentStep === number;
+                    const stepStatus = isDone ? 'selesai' : isCurrent ? 'sedang berlangsung' : 'belum dimulai';
                     return `
-                        <li class="flex items-center gap-3 ${isCurrent ? 'text-gray-900' : 'text-gray-400'}">
-                            <span class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${isComplete ? 'bg-emerald-500 text-white' : isCurrent ? 'bg-white text-primary-teal border-2 border-primary-teal' : 'bg-gray-100 text-gray-400'}">
-                                ${isComplete ? iconCheck('18') : step.number}
+                        <li class="relative z-10 flex flex-col items-center gap-3" ${isCurrent ? 'aria-current="step"' : ''} aria-label="Langkah ${number}: ${escapeHtml(label)}, ${stepStatus}">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center border-4 border-white shadow-sm transition-all duration-300 ${isCurrent ? 'bg-primary-teal text-white scale-110 ring-4 ring-teal-50' : isDone ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-400'}">
+                                ${isDone ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>' : `<span class="font-bold text-sm" aria-hidden="true">${number}</span>`}
+                            </div>
+                            <span class="text-[10px] font-bold uppercase tracking-wider ${isCurrent ? 'text-primary-teal' : 'text-gray-400'}" aria-hidden="true">
+                                ${escapeHtml(label)}
                             </span>
-                            <span class="text-sm font-bold">${escapeHtml(step.label)}</span>
-                            ${index < steps.length - 1 ? `<span class="hidden md:block ml-auto text-gray-700">${iconChevronRight('18')}</span>` : ''}
                         </li>
                     `;
                 }).join('')}
@@ -1232,6 +1238,5 @@ const downloadIdentifier = (detailApplication: ProsesLuarNegeriApplication) => {
 const escapeHtml = escapeFormHtml;
 
 const iconCheck = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-const iconChevronRight = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
 const iconAlert = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
 const iconDownload = (size: string) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;

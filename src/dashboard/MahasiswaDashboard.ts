@@ -18,9 +18,9 @@ import {
     isSuratTugasLetter,
     LETTER_WORKFLOW_STATUS,
 } from '../shared/letter-workflow';
-import Toastify from 'toastify-js';
+import { showSuccess, showError } from '../shared/toast';
 import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
-import { buttonClass, cx, surfaceClass, textClass } from '../shared/design-system';
+import { buttonClass, cx, surfaceClass, textClass, SPINNER_CLASS } from '../shared/design-system';
 import {
     buildTrackingStages,
     dashboardSectionIcon,
@@ -315,6 +315,19 @@ const renderLetterTrackingCard = (item: TrackingItem): string => {
 };
 
 export const renderMahasiswaDashboard = async () => {
+    // Paint a loading placeholder immediately — the dashboard aggregates five
+    // letter-type endpoints plus room bookings below (all awaited before any
+    // content exists), which previously left the screen looking frozen for
+    // however long that fan-out takes. Uses the same branded spinner card as
+    // Peminjaman Ruangan's loading state so both pages read as one system.
+    const dashboardLoadingState = `
+        <div data-state="loading" class="${surfaceClass('card', 'px-6 py-16 text-center')}">
+            <div class="mx-auto h-10 w-10 ${SPINNER_CLASS}" aria-hidden="true"></div>
+            <p class="mt-4 text-sm font-bold text-gray-700">Memuat dashboard...</p>
+        </div>
+    `;
+    renderDashboardLayout('Dashboard', dashboardLoadingState, 'mahasiswa', 'dashboard');
+
     // Aggregate all five letter types so the count cards and Recent Riwayat
     // table reflect the same total set the dedicated Riwayat page shows. The
     // fetch + normalize + newest-first sort are now owned by the shared
@@ -611,11 +624,11 @@ export const renderMahasiswaDashboard = async () => {
 };
 
 const showToast = (text: string, success = true) => {
-    Toastify({
-        text,
-        duration: 3500,
-        style: { background: success ? '#10B981' : '#EF4444' }
-    }).showToast();
+    if (success) {
+        showSuccess(text);
+    } else {
+        showError(text);
+    }
 };
 
 // Resolve the per-letter /complete endpoint prefix from the row's letter type.

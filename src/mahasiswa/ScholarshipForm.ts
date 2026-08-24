@@ -3,7 +3,8 @@
 // that page↔page edge is part of the inherited import cycle (C1). Identical
 // behavior; the dynamic import matches the app's existing navigation convention.
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
-import Toastify from 'toastify-js';
+import { renderDashboardLoadingState } from '../shared/ui-primitives';
+import { showSuccess, showError } from '../shared/toast';
 import { apiFetch } from '../shared/api-client';
 import { attachProtectedPdfViewer, renderProtectedPdfViewer } from '../shared/protected-pdf-viewer';
 import {
@@ -90,21 +91,11 @@ const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/'/g, '&#039;');
 
 const showErrorToast = (text: string) => {
-    // @ts-ignore Toastify has no types
-    Toastify({
-        text,
-        duration: 4000,
-        style: { background: '#EF4444' },
-    }).showToast();
+    showError(text);
 };
 
 const showSuccessToast = (text: string) => {
-    // @ts-ignore Toastify has no types
-    Toastify({
-        text,
-        duration: 3500,
-        style: { background: '#10B981' },
-    }).showToast();
+    showSuccess(text);
 };
 
 const parseApiError = async (res: Response, fallback: string): Promise<string> => {
@@ -152,6 +143,7 @@ const fetchExistingApplication = async (): Promise<any | null> => {
 };
 
 export const renderScholarshipForm = async () => {
+    renderDashboardLayout('Permohonan Beasiswa', renderDashboardLoadingState(), 'mahasiswa', 'administrasi');
     const existing = await fetchExistingApplication();
 
     if (existing && READONLY_DETAIL_STATUSES.includes(existing.status)) {
@@ -215,25 +207,7 @@ const renderScholarshipFormEditable = () => {
                     </div>
                 </div>
 
-                <div class="bg-white p-8 rounded-[24px] shadow-sm border border-gray-100">
-                    <div class="relative flex justify-between">
-                        <div class="absolute top-5 left-0 right-0 h-0.5 bg-gray-100 -z-0 mx-8"></div>
-                        <div class="absolute top-5 left-0 h-0.5 bg-primary-teal transition-all duration-500 -z-0 mx-8" style="width: ${(currentStep - 1) * 33.33}%"></div>
-
-                        ${[1, 2, 3, 4].map(step => `
-                            <div class="relative z-10 flex flex-col items-center gap-3">
-                                <div class="w-10 h-10 rounded-full flex items-center justify-center border-4 border-white shadow-sm transition-all duration-300 ${currentStep === step ? 'bg-primary-teal text-white scale-110 ring-4 ring-teal-50' :
-                currentStep > step ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-400'
-            }">
-                                    ${currentStep > step ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>' : `<span class="font-bold text-sm">${step}</span>`}
-                                </div>
-                                <span class="text-[10px] font-bold uppercase tracking-wider ${currentStep === step ? 'text-primary-teal' : 'text-gray-400'}">
-                                    ${step === 1 ? 'Biodata' : step === 2 ? 'Keluarga' : step === 3 ? 'Akademik' : 'Submit'}
-                                </span>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
+                ${renderScholarshipStepper(currentStep)}
 
                 ${isRevision ? renderRevisionBanner(formData.revision_note) : ''}
 
@@ -614,6 +588,45 @@ const renderScholarshipFormEditable = () => {
     render();
 };
 
+// Same visual design as before (progress bar + numbered circles), wrapped as a
+// proper <nav>/<ol> with an aria-label per step so assistive tech announces
+// which step is current and which are done, instead of an unlabeled div grid.
+const renderScholarshipStepper = (currentStep: number): string => {
+    const steps: Array<{ number: number; label: string }> = [
+        { number: 1, label: 'Biodata' },
+        { number: 2, label: 'Keluarga' },
+        { number: 3, label: 'Akademik' },
+        { number: 4, label: 'Submit' },
+    ];
+
+    return `
+        <nav class="bg-white p-8 rounded-[24px] shadow-sm border border-gray-100" aria-label="Tahap formulir pengajuan beasiswa">
+            <ol class="relative flex justify-between list-none">
+                <div class="absolute top-5 left-8 right-8 h-0.5 -z-0">
+                    <div class="absolute inset-0 bg-gray-100"></div>
+                    <div class="absolute inset-y-0 left-0 bg-primary-teal transition-all duration-500" style="width: ${(currentStep - 1) * 33.33}%"></div>
+                </div>
+
+                ${steps.map(({ number, label }) => {
+                    const isDone = currentStep > number;
+                    const isCurrent = currentStep === number;
+                    const stepStatus = isDone ? 'selesai' : isCurrent ? 'sedang berlangsung' : 'belum dimulai';
+                    return `
+                        <li class="relative z-10 flex flex-col items-center gap-3" ${isCurrent ? 'aria-current="step"' : ''} aria-label="Langkah ${number}: ${escapeHtml(label)}, ${stepStatus}">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center border-4 border-white shadow-sm transition-all duration-300 ${isCurrent ? 'bg-primary-teal text-white scale-110 ring-4 ring-teal-50' : isDone ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-400'}">
+                                ${isDone ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>' : `<span class="font-bold text-sm" aria-hidden="true">${number}</span>`}
+                            </div>
+                            <span class="text-[10px] font-bold uppercase tracking-wider ${isCurrent ? 'text-primary-teal' : 'text-gray-400'}" aria-hidden="true">
+                                ${escapeHtml(label)}
+                            </span>
+                        </li>
+                    `;
+                }).join('')}
+            </ol>
+        </nav>
+    `;
+};
+
 const badgeToneFor = (state: AutosaveState, status?: string): string => {
     if (status === LETTER_WORKFLOW_STATUS.REVISION) {
         return 'bg-red-50 text-red-700 border-red-100';
@@ -840,15 +853,7 @@ export const renderScholarshipDetail = async (applicationId: number | string, op
     const origin = resolveDetailOrigin(options);
     const activePage = activePageForDetailOrigin(origin);
 
-    renderDashboardLayout(
-        'Permohonan Beasiswa',
-        `<div class="max-w-5xl mx-auto bg-white border border-gray-100 rounded-[24px] p-10 shadow-sm flex items-center gap-4 animate-fade-in">
-            <div class="w-9 h-9 rounded-full border-4 border-teal-100 border-t-primary-teal animate-spin"></div>
-            <p class="text-sm font-semibold text-gray-600">Memuat detail pengajuan beasiswa...</p>
-        </div>`,
-        'mahasiswa',
-        activePage,
-    );
+    renderDashboardLayout('Permohonan Beasiswa', renderDashboardLoadingState(), 'mahasiswa', activePage);
 
     let application: any = null;
     try {

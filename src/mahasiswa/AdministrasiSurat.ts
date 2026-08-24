@@ -5,9 +5,22 @@ import { renderSuratPengantarMagangForm } from './SuratPengantarMagangForm';
 import { renderSuratKeteranganAktifForm } from './SuratKeteranganAktifForm';
 import { renderProsesLuarNegeriForm } from './ProsesLuarNegeriForm';
 import { renderSuratTugasForm } from './SuratTugasForm';
-import Toastify from 'toastify-js';
+import { showWarning, showInfo } from '../shared/toast';
 import { apiFetch } from '../shared/api-client';
 import { ADMINISTRASI_LETTER_CARDS, renderLetterCard } from '../shared/letter-presentation';
+import { SPINNER_CLASS } from '../shared/design-system';
+
+// Clock icon SVG reused across every duration badge state (loading/dynamic/fallback).
+const CLOCK_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+
+// Swaps every duration badge to the same branded spinner used on Peminjaman
+// Ruangan while `fetchDurationEstimates` is in flight, sized down to fit the badge.
+const showDurationLoadingSpinners = (): void => {
+    ADMINISTRASI_LETTER_CARDS.forEach((card) => {
+        const el = document.getElementById(card.durationId);
+        if (el) el.innerHTML = `<div class="h-3.5 w-3.5 ${SPINNER_CLASS}" aria-hidden="true"></div>`;
+    });
+};
 
 export const renderAdministrasiSurat = () => {
     const content = `
@@ -34,6 +47,7 @@ export const renderAdministrasiSurat = () => {
     `;
 
     renderDashboardLayout('Administrasi Surat', content, 'mahasiswa', 'administrasi');
+    showDurationLoadingSpinners();
 
     setTimeout(() => {
         document.getElementById('btn-back-dashboard-dokumen')?.addEventListener('click', () => {
@@ -49,13 +63,7 @@ export const renderAdministrasiSurat = () => {
                 if (res.ok) {
                     const data = await res.json();
                     if (data.completeness && !data.completeness.is_complete) {
-                        Toastify({
-                            text: "⚠️ Mohon lengkapi profil Anda terlebih dahulu sebelum mengajukan surat.",
-                            duration: 4000,
-                            gravity: "top",
-                            position: "right",
-                            style: { background: "#F59E0B" }
-                        }).showToast();
+                        showWarning('⚠️ Mohon lengkapi profil Anda terlebih dahulu sebelum mengajukan surat.', 4000);
 
                         import('./ProfilMahasiswa').then(({ renderProfilMahasiswa }) => {
                             renderProfilMahasiswa();
@@ -68,13 +76,7 @@ export const renderAdministrasiSurat = () => {
             }
             if (callback) callback();
             else {
-                Toastify({
-                    text: "Fitur surat ini segera hadir.",
-                    duration: 2000,
-                    gravity: "top",
-                    position: "right",
-                    style: { background: "#6b7280" }
-                }).showToast();
+                showInfo('Fitur surat ini segera hadir.', 2000);
             }
         };
 
@@ -100,35 +102,42 @@ export const renderAdministrasiSurat = () => {
 };
 
 /**
- * Fetch average duration data from API and update card badges.
- * On failure, static fallback labels remain in place (no-op).
+ * Fetch average duration data from API and update card badges, replacing the
+ * loading spinner `showDurationLoadingSpinners` painted. Every card is resolved
+ * to either the dynamic value, the API's own fallback label, or (on missing
+ * data / a failed request) the card's static fallback label — never left stuck
+ * on the spinner.
  */
 const fetchDurationEstimates = async () => {
     try {
         const res = await apiFetch('/api/surat/average-duration');
-        if (!res.ok) return;
+        const data: Record<string, { value: number | null; source: string; label: string | null }> = res.ok
+            ? await res.json()
+            : {};
 
-        const data: Record<string, { value: number | null; source: string; label: string | null }> = await res.json();
-
-        // Clock icon SVG (reused in each badge)
-        const clockSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
-
-        for (const [type, info] of Object.entries(data)) {
-            const el = document.getElementById(`duration-${type}`);
+        for (const card of ADMINISTRASI_LETTER_CARDS) {
+            const el = document.getElementById(card.durationId);
             if (!el) continue;
 
-            if (info.source === 'dynamic' && info.value !== null && info.value > 0) {
+            const type = card.durationId.replace('duration-', '');
+            const info = data[type];
+
+            if (info?.source === 'dynamic' && info.value !== null && info.value > 0) {
                 // Round to nearest integer for clean display
                 const rounded = Math.round(info.value);
                 const display = rounded < 1 ? '<1' : `~${rounded}`;
-                el.innerHTML = `${clockSvg} ${display} Hari Kerja`;
-            } else if (info.source === 'fallback' && info.label) {
-                el.innerHTML = `${clockSvg} ${info.label}`;
+                el.innerHTML = `${CLOCK_SVG} ${display} Hari Kerja`;
+            } else if (info?.source === 'fallback' && info.label) {
+                el.innerHTML = `${CLOCK_SVG} ${info.label}`;
+            } else {
+                el.innerHTML = `${CLOCK_SVG} ${card.durationLabel}`;
             }
-            // else: keep existing static text (safe no-op)
         }
     } catch (e) {
-        // Silently fail — static fallback labels remain
         console.error('Duration fetch failed (using fallback):', e);
+        ADMINISTRASI_LETTER_CARDS.forEach((card) => {
+            const el = document.getElementById(card.durationId);
+            if (el) el.innerHTML = `${CLOCK_SVG} ${card.durationLabel}`;
+        });
     }
 };

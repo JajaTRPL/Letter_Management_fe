@@ -54,7 +54,13 @@ export async function apiFetch(url: string, options: ApiFetchOptions = {}): Prom
         },
     });
 
-    if (response.status === 423) {
+    // A relogin between when this request started and when its response
+    // arrives replaces `auth_token` in localStorage. Guard both branches below
+    // with this check so a stale error from the OLD token never logs out the
+    // session the user just started with the NEW token.
+    const isResponseForCurrentToken = (): boolean => localStorage.getItem('auth_token') === token;
+
+    if (response.status === 423 && isResponseForCurrentToken()) {
         let code: unknown;
         try {
             const payload: unknown = await response.clone().json();
@@ -77,6 +83,14 @@ export async function apiFetch(url: string, options: ApiFetchOptions = {}): Prom
                 renderLogin('Akses akun memerlukan penggantian kata sandi. Silakan login kembali.');
             }
         }
+    }
+
+    // Handle 401 Unauthorized: token expired, revoked, or invalid.
+    // Skip the logout endpoint itself to prevent an infinite redirect loop.
+    if (response.status === 401 && !url.includes('/api/logout') && isResponseForCurrentToken()) {
+        clearNormalAuthState();
+        const { renderLogin } = await import('../login/Login');
+        renderLogin('Sesi Anda telah berakhir. Silakan login kembali.');
     }
 
     return response;

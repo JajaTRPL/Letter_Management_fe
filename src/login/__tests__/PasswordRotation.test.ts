@@ -15,8 +15,11 @@ vi.mock('../password-rotation-api', () => ({
   logoutPasswordRotation: mocks.logout,
 }))
 vi.mock('../Login', () => ({ renderLogin: mocks.renderLogin }))
-vi.mock('toastify-js', () => ({
-  default: vi.fn(() => ({ showToast: mocks.showToast })),
+vi.mock('../../shared/toast', () => ({
+  showSuccess: mocks.showToast,
+  showError: vi.fn(),
+  showWarning: vi.fn(),
+  showInfo: vi.fn(),
 }))
 
 import { renderPasswordRotation } from '../PasswordRotation'

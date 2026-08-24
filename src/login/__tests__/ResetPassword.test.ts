@@ -8,6 +8,15 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('toastify-js', () => ({ default: mocks.toast }))
+// ResetPassword.ts now routes through the shared toast wrapper instead of
+// calling Toastify directly. Re-route the wrapper's calls back through the
+// same `mocks.toast` spy so existing assertions on `options.text` still work.
+vi.mock('../../shared/toast', () => ({
+  showSuccess: (text: string) => mocks.toast({ text }),
+  showError: (text: string) => mocks.toast({ text }),
+  showWarning: (text: string) => mocks.toast({ text }),
+  showInfo: (text: string) => mocks.toast({ text }),
+}))
 vi.mock('../Login', () => ({ renderLogin: mocks.renderLogin }))
 
 import { renderForgotPassword } from '../ResetPassword'

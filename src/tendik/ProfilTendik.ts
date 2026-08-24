@@ -1,5 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
-import Toastify from 'toastify-js';
+import { showSuccess, showError } from '../shared/toast';
 import { renderLogin } from '../login/Login';
 import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
 import { getAssignedTaskLabel } from '../shared/letter-workflow';
@@ -38,11 +38,11 @@ const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/'/g, '&#039;');
 
 const showToast = (text: string, success = true) => {
-    Toastify({
-        text,
-        duration: 3000,
-        style: { background: success ? '#10B981' : '#EF4444' },
-    }).showToast();
+    if (success) {
+        showSuccess(text);
+    } else {
+        showError(text);
+    }
 };
 
 const roleLabel = (role?: string | null): string => {
@@ -566,7 +566,7 @@ export const renderProfilTendik = (role: string) => {
             } catch { /* ignore */ }
         }
         localStorage.clear();
-        Toastify({ text: 'Berhasil keluar!', duration: 2000, style: { background: '#10B981' } }).showToast();
+        showSuccess('Berhasil keluar!', 2000);
         setTimeout(() => renderLogin(), 500);
     });
 

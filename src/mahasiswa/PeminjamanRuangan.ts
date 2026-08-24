@@ -1,4 +1,4 @@
-import Toastify from 'toastify-js';
+import { showSuccess, showError } from '../shared/toast';
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { renderMahasiswaDashboard } from '../dashboard/MahasiswaDashboard';
 import {
@@ -80,13 +80,11 @@ function createInitialViewState(): CalendarViewState {
 }
 
 const showToast = (text: string, success: boolean): void => {
-    Toastify({
-        text,
-        duration: 3000,
-        gravity: 'top',
-        position: 'right',
-        style: { background: success ? '#0f766e' : '#b91c1c' },
-    }).showToast();
+    if (success) {
+        showSuccess(text);
+    } else {
+        showError(text);
+    }
 };
 
 const renderPageShell = (): string => `

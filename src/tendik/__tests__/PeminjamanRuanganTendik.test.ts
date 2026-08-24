@@ -128,6 +128,15 @@ vi.mock('toastify-js', () => ({
     })),
 }));
 
+// PeminjamanRuanganTendik.ts now routes through the shared toast wrapper
+// instead of calling Toastify directly; re-route it back into `m.toasts`.
+vi.mock('../../shared/toast', () => ({
+    showSuccess: (text: string) => m.toasts.push(text),
+    showError: (text: string) => m.toasts.push(text),
+    showWarning: (text: string) => m.toasts.push(text),
+    showInfo: (text: string) => m.toasts.push(text),
+}));
+
 import { PeminjamanApiError } from '../../mahasiswa/peminjaman/api';
 import type {
     BookingStatus,
