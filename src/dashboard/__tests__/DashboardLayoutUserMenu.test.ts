@@ -2,7 +2,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../login/Login', () => ({ renderLogin: vi.fn() }));
-vi.mock('toastify-js', () => ({ default: vi.fn(() => ({ showToast: vi.fn() })) }));
+vi.mock('../../shared/toast', () => ({
+    showSuccess: vi.fn(),
+    showError: vi.fn(),
+    showWarning: vi.fn(),
+    showInfo: vi.fn(),
+}));
 vi.mock('../../shared/api-client', () => ({
     apiFetch: vi.fn(async () => ({})),
     loadProtectedImageObjectUrl: vi.fn(async () => null),

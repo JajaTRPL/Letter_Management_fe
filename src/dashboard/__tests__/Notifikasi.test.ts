@@ -22,7 +22,12 @@ vi.mock('../../shared/notifications-api', async (importOriginal) => ({
     markAllNotificationsRead: m.markAllNotificationsRead,
 }));
 
-vi.mock('toastify-js', () => ({ default: vi.fn(() => ({ showToast: vi.fn() })) }));
+vi.mock('../../shared/toast', () => ({
+    showSuccess: vi.fn(),
+    showError: vi.fn(),
+    showWarning: vi.fn(),
+    showInfo: vi.fn(),
+}));
 
 // The inbox test must not load real workbench pages on click — the deep-link
 // registry is unit-tested separately (notification-routes.test.ts).

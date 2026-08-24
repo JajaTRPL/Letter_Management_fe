@@ -4,7 +4,7 @@
 // existing navigation convention and preserves identical runtime behavior.
 import { renderSidebar } from '../components/Sidebar';
 import { getGreetingName } from '../utils/nameHelper';
-import Toastify from 'toastify-js';
+import { showSuccess, showWarning } from '../shared/toast';
 import { apiFetch, loadProtectedImageObjectUrl, revokeProtectedImageObjectUrl } from '../shared/api-client';
 import { clearAllAuthenticationState } from '../login/password-rotation-state';
 import { fetchUnreadCount } from '../shared/notifications-api';
@@ -15,7 +15,7 @@ import { getRoleDisplayName } from '../shared/role-helpers';
  * failure-isolated: any error (network, auth, malformed body) leaves the badge
  * hidden and never disrupts the dashboard chrome.
  */
-const refreshNotificationBadge = async (): Promise<void> => {
+export const refreshNotificationBadge = async (): Promise<void> => {
     const badge = document.getElementById('notif-badge');
     if (!badge) return;
     try {
@@ -308,13 +308,7 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
                 renderProfilKaprodi(role);
             });
         } else {
-            Toastify({
-                text: "Profil untuk role ini belum tersedia",
-                duration: 2000,
-                gravity: "top",
-                position: "right",
-                style: { background: "#F59E0B" }
-            }).showToast();
+            showWarning("Profil untuk role ini belum tersedia");
         }
     });
 
@@ -431,6 +425,14 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         });
     });
 
+    document.getElementById('sidebar-panduan-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        (window as any).clearDashboardInterval?.();
+        import('../mahasiswa/PanduanMahasiswa').then(({ renderPanduanMahasiswa }) => {
+            renderPanduanMahasiswa();
+        });
+    });
+
     document.getElementById('sidebar-administrasi-link')?.addEventListener('click', (e) => {
         e.preventDefault();
         (window as any).clearDashboardInterval?.();
@@ -500,15 +502,7 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
 
         clearAllAuthenticationState();
 
-        Toastify({
-            text: "Berhasil keluar!",
-            duration: 2000,
-            gravity: "top",
-            position: "right",
-            style: {
-                background: "#10B981",
-            }
-        }).showToast();
+        showSuccess("Berhasil keluar!");
 
         setTimeout(() => {
             void import('../login/Login').then(({ renderLogin }) => renderLogin());
