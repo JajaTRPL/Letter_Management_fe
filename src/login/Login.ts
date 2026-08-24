@@ -1,5 +1,5 @@
 import { renderForgotPassword } from './ResetPassword'
-import Toastify from 'toastify-js'
+import { showError } from '../shared/toast'
 import { renderAdminDashboard } from '../dashboard/AdminDashboard'
 import { renderMahasiswaDashboard } from '../dashboard/MahasiswaDashboard'
 import { renderTendikDashboard } from '../dashboard/TendikDashboard'
@@ -67,14 +67,7 @@ export const handleRedirection = async (
   } else if (['akademik', 'kaprodi', 'kadep', 'sekdep', 'sekprodi'].includes(role)) {
     renderAkademikDashboard(role)
   } else {
-    Toastify({
-      text: 'Role tidak dikenali, menghubungi admin.',
-      duration: 3000,
-      close: true,
-      gravity: "top",
-      position: "right",
-      style: { background: "#EF4444" }
-    }).showToast()
+    showError('Role tidak dikenali, menghubungi admin.')
   }
 }
 
@@ -194,6 +187,13 @@ export const renderLogin = (initialMessage?: string) => {
               <p id="login-google-hint" class="mt-4 text-center text-xs leading-relaxed text-white/50">
                 Gunakan akun <span class="font-medium text-white/70">Google UGM</span> Anda (@mail.ugm.ac.id / @ugm.ac.id). Mahasiswa baru bisa langsung masuk lalu melengkapi data. Akun staf &amp; dosen didaftarkan lebih dulu oleh Super Admin.
               </p>
+
+              <!-- Google's own rendered button, kept off-screen. Our styled
+                   button above proxies a click into it instead of relying
+                   solely on the One Tap prompt() flow, which some browsers
+                   silently refuse when FedCM is disabled or was previously
+                   dismissed by the user for this site. -->
+              <div id="google-real-btn" style="position: fixed; top: -9999px; left: -9999px;"></div>
             </form>
           </div>
         </div>
@@ -370,6 +370,15 @@ export const renderLogin = (initialMessage?: string) => {
     btn.disabled = true
     btn.innerHTML = 'Memproses...'
 
+    // Watchdog for a FedCM request that the browser aborts without ever
+    // invoking GIS's `callback` below (e.g. third-party sign-in disabled,
+    // or previously dismissed for this site — see the FedCM comment further
+    // down). Without this, `settled` never flips and the button is stuck on
+    // "Memproses..." forever with no feedback. 12s is generous headroom
+    // over a normal credential round-trip.
+    let settled = false
+    let watchdog: ReturnType<typeof setTimeout> | undefined
+
     try {
       await loadGIS()
 
@@ -381,9 +390,14 @@ export const renderLogin = (initialMessage?: string) => {
         return
       }
 
-      ;(window as any).google.accounts.id.initialize({
+      const google = (window as any).google
+
+      google.accounts.id.initialize({
         client_id: clientId,
         callback: async (response: any) => {
+          settled = true
+          clearTimeout(watchdog)
+
           if (!response.credential) {
             showLoginError('Google login dibatalkan.')
             resetGoogleBtn(btn)
@@ -433,8 +447,48 @@ export const renderLogin = (initialMessage?: string) => {
         },
       })
 
-      ;(window as any).google.accounts.id.prompt()
+      // Start the stuck-button watchdog right before the attempt that can
+      // hit FedCM. renderButton()'s click can also go through FedCM on
+      // current Chrome (not just prompt()), so this covers both paths.
+      watchdog = setTimeout(() => {
+        if (settled) return
+        settled = true
+        showLoginError(
+          'Google Sign-In tidak merespons. Browser mungkin memblokir sign-in pihak ketiga (FedCM) untuk situs ini — coba izinkan lewat ikon kunci/info di address bar lalu ulangi, atau login dengan email & kata sandi.',
+        )
+        resetGoogleBtn(btn)
+      }, 12000)
+
+      // Render Google's own button off-screen and proxy a click into it,
+      // rather than calling the One Tap `.prompt()` flow directly. `.prompt()`
+      // depends on FedCM and fails silently/with a console-only error when a
+      // browser has FedCM disabled or previously dismissed the prompt for this
+      // site — leaving the user stuck with no visible feedback. The rendered
+      // button uses Google's standard sign-in flow, which degrades far more
+      // reliably across browsers, while still invoking the exact same
+      // `callback` above (same ID-token/credential shape, no backend change).
+      const realBtnContainer = document.getElementById('google-real-btn')
+      if (realBtnContainer) {
+        realBtnContainer.innerHTML = ''
+        google.accounts.id.renderButton(realBtnContainer, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+        })
+        const clickable = realBtnContainer.querySelector<HTMLElement>('div[role="button"]')
+        if (clickable) {
+          clickable.click()
+        } else {
+          // Google's markup hasn't hydrated the way we expect — fall back to
+          // the prompt so the attempt still has a chance to succeed.
+          google.accounts.id.prompt()
+        }
+      } else {
+        google.accounts.id.prompt()
+      }
     } catch (err) {
+      settled = true
+      clearTimeout(watchdog)
       console.error(err)
       showLoginError('Gagal memuat Google Sign-In. Pastikan koneksi internet aktif.')
       resetGoogleBtn(btn)
