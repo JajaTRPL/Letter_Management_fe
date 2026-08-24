@@ -174,3 +174,30 @@ export interface RoomFacilitySyncResult {
 }
 
 export type RoomManagementValidationErrors = Record<string, string[]>;
+
+/** A department reference as embedded in a LaboratoryOption. */
+export interface LaboratoryDepartmentRef {
+    id: number;
+    name: string;
+}
+
+/**
+ * Master Laboratorium (SuperAdmin CRUD). Distinct from ManagedLaboratory
+ * (the lightweight id/code/name dropdown shape used elsewhere) — this carries
+ * the department + usage counts needed by the management table.
+ */
+export interface LaboratoryOption {
+    id: number;
+    name: string;
+    code: string;
+    department: LaboratoryDepartmentRef | null;
+    department_id: number | null;
+    users_count: number;
+    rooms_count: number;
+}
+
+export interface LaboratoryPayload {
+    name: string;
+    code: string;
+    department_id: number;
+}

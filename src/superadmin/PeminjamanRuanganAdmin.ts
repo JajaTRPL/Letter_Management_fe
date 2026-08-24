@@ -1,4 +1,4 @@
-import Toastify from 'toastify-js';
+import { showSuccess, showError } from '../shared/toast';
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import {
     downloadSuratPeminjamanPdf,
@@ -60,9 +60,10 @@ import {
     openRoomFormModal,
 } from '../shared/room-management/room-form';
 import { renderFacilityMaster } from '../shared/room-management/facility-master';
+import { renderLaboratoryMaster } from '../shared/room-management/laboratory-master';
 import type { ManagedRoom } from '../shared/room-management/types';
 
-type ActiveTab = 'rooms' | 'facilities' | 'monitoring' | 'calendar';
+type ActiveTab = 'rooms' | 'facilities' | 'laboratories' | 'monitoring' | 'calendar';
 type CalendarRoomTypeFilter = 'all' | RoomType;
 type CalendarStatusFilter = BookingCalendarStatusScope;
 
@@ -168,13 +169,11 @@ const escapeHtml = (value: unknown): string => String(value ?? '')
     .replace(/'/g, '&#039;');
 
 const showToast = (text: string, success: boolean): void => {
-    Toastify({
-        text,
-        duration: 3000,
-        gravity: 'top',
-        position: 'right',
-        style: { background: success ? '#0f766e' : '#b91c1c' },
-    }).showToast();
+    if (success) {
+        showSuccess(text);
+    } else {
+        showError(text);
+    }
 };
 
 const formatDateTime = (iso?: string | null): string => {
@@ -367,6 +366,7 @@ const pageContent = (): string => `
             <div class="mt-5 flex flex-wrap gap-2" role="tablist" aria-label="Bagian Peminjaman Ruangan">
                 <button id="admin-peminjaman-tab-rooms" type="button" role="tab" aria-selected="${activeTab === 'rooms'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'rooms' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Master Ruangan</button>
                 <button id="admin-peminjaman-tab-facilities" type="button" role="tab" aria-selected="${activeTab === 'facilities'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'facilities' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Master Fasilitas</button>
+                <button id="admin-peminjaman-tab-laboratories" type="button" role="tab" aria-selected="${activeTab === 'laboratories'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'laboratories' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Master Laboratorium</button>
                 <button id="admin-peminjaman-tab-monitoring" type="button" role="tab" aria-selected="${activeTab === 'monitoring'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'monitoring' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Monitoring Pengajuan</button>
                 <button id="admin-peminjaman-tab-calendar" type="button" role="tab" aria-selected="${activeTab === 'calendar'}" class="rounded-xl px-4 py-2.5 text-sm font-bold ${activeTab === 'calendar' ? 'bg-teal-700 text-white' : 'border border-gray-200 bg-white text-gray-600'}">Kalender Peminjaman</button>
             </div>
@@ -376,9 +376,11 @@ const pageContent = (): string => `
                 ? renderRoomManagement()
                 : activeTab === 'facilities'
                     ? '<div id="admin-facility-master-root"></div>'
-                    : activeTab === 'monitoring'
-                        ? renderMonitoring()
-                        : renderCalendarMonitoring()}
+                    : activeTab === 'laboratories'
+                        ? '<div id="admin-laboratory-master-root"></div>'
+                        : activeTab === 'monitoring'
+                            ? renderMonitoring()
+                            : renderCalendarMonitoring()}
         </div>
     </div>
 `;
@@ -720,6 +722,12 @@ const attachPageListeners = (): void => {
         closeCalendarDayDrawer();
         renderPage();
     });
+    document.getElementById('admin-peminjaman-tab-laboratories')?.addEventListener('click', () => {
+        activeTab = 'laboratories';
+        clearRoomSelection();
+        closeCalendarDayDrawer();
+        renderPage();
+    });
     document.getElementById('admin-peminjaman-tab-monitoring')?.addEventListener('click', () => {
         activeTab = 'monitoring';
         clearRoomSelection();
@@ -739,6 +747,9 @@ const attachPageListeners = (): void => {
 
     const facilityHost = document.getElementById('admin-facility-master-root');
     if (facilityHost) void renderFacilityMaster(facilityHost, { onOpenRoom: openRoomFromFacilityUsage });
+
+    const laboratoryHost = document.getElementById('admin-laboratory-master-root');
+    if (laboratoryHost) void renderLaboratoryMaster(laboratoryHost);
 };
 
 /**

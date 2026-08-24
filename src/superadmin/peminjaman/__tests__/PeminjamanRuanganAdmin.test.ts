@@ -93,6 +93,10 @@ vi.mock('../../../shared/room-management/api', () => ({
     deactivateRoomTemplate: vi.fn(),
     downloadRoomTemplate: vi.fn(),
     listRoomAuditLogs: m.listAudit,
+    listLaboratories: vi.fn(),
+    createLaboratory: vi.fn(),
+    updateLaboratory: vi.fn(),
+    deleteLaboratory: vi.fn(),
 }));
 
 vi.mock('../../../shared/protected-pdf-viewer', () => ({
@@ -104,6 +108,15 @@ vi.mock('toastify-js', () => ({
     default: vi.fn((options: { text: string }) => ({
         showToast: () => m.toasts.push(options.text),
     })),
+}));
+
+// PeminjamanRuanganAdmin.ts now routes through the shared toast wrapper
+// instead of calling Toastify directly; re-route it back into `m.toasts`.
+vi.mock('../../../shared/toast', () => ({
+    showSuccess: (text: string) => m.toasts.push(text),
+    showError: (text: string) => m.toasts.push(text),
+    showWarning: (text: string) => m.toasts.push(text),
+    showInfo: (text: string) => m.toasts.push(text),
 }));
 
 import { PeminjamanApiError } from '../../../mahasiswa/peminjaman/api';
@@ -917,6 +930,7 @@ describe('Super Admin calendar monitoring', () => {
         expect(tabs).toEqual([
             'Master Ruangan',
             'Master Fasilitas',
+            'Master Laboratorium',
             'Monitoring Pengajuan',
             'Kalender Peminjaman',
         ]);

@@ -27,6 +27,15 @@ vi.mock('toastify-js', () => ({
     default: vi.fn((options: { text: string }) => ({ showToast: () => m.toasts.push(options.text) })),
 }));
 
+// facility-master.ts now routes through the shared toast wrapper instead of
+// calling Toastify directly; re-route it back into the same `m.toasts` array.
+vi.mock('../../toast', () => ({
+    showSuccess: (text: string) => m.toasts.push(text),
+    showError: (text: string) => m.toasts.push(text),
+    showWarning: (text: string) => m.toasts.push(text),
+    showInfo: (text: string) => m.toasts.push(text),
+}));
+
 import { renderFacilityMaster } from '../facility-master';
 import type { FacilityTypeOption } from '../types';
 

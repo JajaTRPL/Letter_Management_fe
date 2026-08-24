@@ -5,6 +5,8 @@ import type {
     FacilitySyncEntry,
     FacilityTypeOption,
     FacilityUsage,
+    LaboratoryOption,
+    LaboratoryPayload,
     ManagedRoom,
     ManagedRoomDetail,
     ManagedRoomFacility,
@@ -16,6 +18,10 @@ import type {
 } from './types';
 
 const BASE = '/api/room-management';
+// Master Laboratorium lives under the SuperAdmin dashboard prefix, alongside
+// /api/super-admin/departments — separate from the read-only /api/laboratories
+// dropdown feed (RoomBookingController@laboratories), which stays untouched.
+const LABORATORY_BASE = '/api/super-admin/laboratories';
 
 export interface RoomListFilters {
     type?: 'classroom' | 'laboratory';
@@ -315,6 +321,38 @@ export async function downloadRoomTemplate(
     } finally {
         URL.revokeObjectURL(objectUrl);
     }
+}
+
+// ─────────────────────────── laboratories (Master Laboratorium) ───────────────────────────
+
+export async function listLaboratories(): Promise<LaboratoryOption[]> {
+    const response = await apiFetch(LABORATORY_BASE);
+    return (await readJson<Envelope<LaboratoryOption[]>>(response, 'Gagal memuat daftar laboratorium.')).data;
+}
+
+export async function createLaboratory(payload: LaboratoryPayload): Promise<LaboratoryOption> {
+    const response = await apiFetch(LABORATORY_BASE, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+    return (await readJson<Envelope<LaboratoryOption>>(response, 'Gagal menambahkan laboratorium.')).data;
+}
+
+export async function updateLaboratory(id: number, payload: LaboratoryPayload): Promise<LaboratoryOption> {
+    const response = await apiFetch(`${LABORATORY_BASE}/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+    });
+    return (await readJson<Envelope<LaboratoryOption>>(response, 'Gagal memperbarui laboratorium.')).data;
+}
+
+/**
+ * Hard-delete a laboratory. The backend blocks this (409 laboratory_in_use)
+ * when users (Kepala Lab/Laboran) or rooms are still linked to it.
+ */
+export async function deleteLaboratory(id: number): Promise<void> {
+    const response = await apiFetch(`${LABORATORY_BASE}/${id}`, { method: 'DELETE' });
+    await readJson<Envelope<unknown>>(response, 'Gagal menghapus laboratorium.');
 }
 
 // ─────────────────────────── audit ───────────────────────────
