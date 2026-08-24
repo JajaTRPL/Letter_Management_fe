@@ -5,7 +5,13 @@ import { showSuccess, showError } from '../../shared/toast';
 export const refreshUsers = async (onSuccess: () => void) => {
     try {
         const role = tabManager.getActive();
-        const params = new URLSearchParams({ role, page: String(state.currentPage), per_page: '25' });
+        const params = new URLSearchParams({
+            role,
+            page: String(state.currentPage),
+            per_page: '25',
+            sort_by: state.currentSortBy,
+            sort_dir: state.currentSortDir,
+        });
         if (state.currentSearch) params.set('search', state.currentSearch);
         if (state.currentStatus) params.set('status', state.currentStatus);
         const response = await apiFetch(`/api/super-admin/users?${params}`);

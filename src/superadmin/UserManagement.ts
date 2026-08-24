@@ -10,6 +10,8 @@ export const renderUserManagement = async () => {
     state.currentPage = 1;
     state.currentSearch = '';
     state.currentStatus = '';
+    state.currentSortBy = 'created_at';
+    state.currentSortDir = 'desc';
     state.meta = null;
 
     renderDashboardLayout(
@@ -75,7 +77,14 @@ function renderContent() {
                                 <th class="px-4 py-3 text-xs font-semibold text-gray-500">Nama</th>
                                 <th class="px-4 py-3 text-xs font-semibold text-gray-500">NIM</th>
                                 <th class="px-4 py-3 text-xs font-semibold text-gray-500">Prodi</th>
-                                <th class="px-4 py-3 text-xs font-semibold text-gray-500">Angkatan</th>
+                                <th class="px-4 py-3 text-xs font-semibold text-gray-500">
+                                    <button type="button" id="sort-angkatan-btn" class="flex items-center gap-1 select-none transition-colors hover:text-teal-700 ${state.currentSortBy === 'angkatan' ? 'text-teal-700' : ''}">
+                                        Angkatan
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="transition-transform ${state.currentSortBy === 'angkatan' && state.currentSortDir === 'asc' ? 'rotate-180' : ''} ${state.currentSortBy === 'angkatan' ? 'opacity-100' : 'opacity-30'}">
+                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                        </svg>
+                                    </button>
+                                </th>
                                 <th class="px-4 py-3 text-xs font-semibold text-gray-500">Status</th>
                                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 sticky right-0 bg-white shadow-[-4px_0_12px_rgba(0,0,0,0.03)] z-10">Aksi</th>
                             ` : `

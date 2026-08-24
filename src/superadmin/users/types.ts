@@ -2,12 +2,19 @@ import { TabManager } from '../../shared/tab-manager';
 
 export type TabType = 'super_admin' | 'tendik' | 'akademik' | 'mahasiswa';
 
+export type UserSortBy = 'created_at' | 'angkatan';
+export type UserSortDir = 'asc' | 'desc';
+
 export interface UserState {
     allUsers: any[];
     meta: { current_page: number; per_page: number; total: number; last_page: number } | null;
     currentPage: number;
     currentSearch: string;
     currentStatus: string;
+    // 'angkatan' only means anything on the Mahasiswa tab (derived from NIM
+    // server-side); other tabs ignore it and fall back to created_at.
+    currentSortBy: UserSortBy;
+    currentSortDir: UserSortDir;
 }
 
 /** Data-only state — no tab logic here. */
@@ -17,6 +24,8 @@ export const state: UserState = {
     currentPage: 1,
     currentSearch: '',
     currentStatus: '',
+    currentSortBy: 'created_at',
+    currentSortDir: 'desc',
 };
 
 /**

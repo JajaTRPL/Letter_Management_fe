@@ -1,5 +1,6 @@
 import { apiFetch } from '../../shared/api-client';
 import { showSuccess, showError } from '../../shared/toast';
+import { confirmModal } from '../../shared/confirm-modal';
 import { isSuspended } from '../../shared/user-status';
 import { state, tabConfig, tabManager, type TabType } from './types';
 import { refreshUsers } from './api';
@@ -77,8 +78,26 @@ export const setupListeners = (renderContent: () => void) => {
             state.currentPage = 1;
             state.currentSearch = '';
             state.currentStatus = '';
+            // 'angkatan' only makes sense on the Mahasiswa tab (it's the only
+            // one with a NIM to derive it from) — don't carry it to other tabs.
+            state.currentSortBy = 'created_at';
+            state.currentSortDir = 'desc';
             refreshUsers(renderContent);
         });
+    });
+
+    // --- Angkatan column sort (Mahasiswa tab only) ---
+    document.getElementById('sort-angkatan-btn')?.addEventListener('click', () => {
+        if (state.currentSortBy === 'angkatan') {
+            state.currentSortDir = state.currentSortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+            state.currentSortBy = 'angkatan';
+            state.currentSortDir = 'desc';
+        }
+        state.currentPage = 1;
+        // Full re-render (not doPartialRefresh) so the header's sort
+        // indicator arrow updates too, not just the table body.
+        refreshUsers(renderContent);
     });
 
     // --- Search & Status filter (backend-driven) ---
@@ -156,7 +175,13 @@ export const setupListeners = (renderContent: () => void) => {
         const selectedIds = Array.from(document.querySelectorAll('.user-checkbox:checked'))
             .map(cb => (cb as HTMLElement).dataset.id);
         if (selectedIds.length === 0) return;
-        if (!confirm(`Hapus ${selectedIds.length} akun secara permanen?`)) return;
+        const ok = await confirmModal({
+            title: 'Hapus Akun Terpilih?',
+            body: `${selectedIds.length} akun akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.`,
+            confirmLabel: 'Ya, Hapus',
+            confirmTone: 'bg-red-600 hover:bg-red-700',
+        });
+        if (!ok) return;
 
         try {
             await Promise.all(selectedIds.map(id =>
@@ -273,7 +298,13 @@ export const attachActionListeners = (renderContent: () => void, onSelectionChan
     // Delete
     document.querySelectorAll('.delete-user-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!confirm('Apakah Anda yakin ingin menghapus akun ini secara permanen?')) return;
+            const ok = await confirmModal({
+                title: 'Hapus Akun?',
+                body: 'Akun ini akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.',
+                confirmLabel: 'Ya, Hapus',
+                confirmTone: 'bg-red-600 hover:bg-red-700',
+            });
+            if (!ok) return;
             const id = (btn as HTMLElement).dataset.id;
             try {
                 const response = await apiFetch(`/api/super-admin/users/${id}`, {
@@ -337,7 +368,13 @@ const attachDetailModalListeners = (renderContent: () => void) => {
 
     // Delete from detail modal
     document.querySelector('.user-detail-delete-btn')?.addEventListener('click', async () => {
-        if (!confirm('Apakah Anda yakin ingin menghapus akun ini secara permanen?')) return;
+        const ok = await confirmModal({
+            title: 'Hapus Akun?',
+            body: 'Akun ini akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.',
+            confirmLabel: 'Ya, Hapus',
+            confirmTone: 'bg-red-600 hover:bg-red-700',
+        });
+        if (!ok) return;
         const id = (document.querySelector('.user-detail-delete-btn') as HTMLElement)?.dataset.id;
         try {
             const response = await apiFetch(`/api/super-admin/users/${id}`, {
