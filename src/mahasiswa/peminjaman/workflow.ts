@@ -94,8 +94,25 @@ export const validateBookingForm = (
     }
 
     if (values.startTime && values.endTime) {
-        if (values.startTime === values.endTime) {
-            errors.endTime = 'Waktu mulai dan selesai tidak boleh sama.';
+        const operatingStart = '07:00';
+        const operatingEnd = '22:00';
+
+        if (
+            values.startTime < operatingStart
+            || values.startTime > operatingEnd
+        ) {
+            errors.startTime = 'Jam mulai peminjaman harus berada antara 07.00 dan 22.00 WIB.';
+        }
+
+        if (
+            values.endTime < operatingStart
+            || values.endTime > operatingEnd
+        ) {
+            errors.endTime = 'Jam selesai peminjaman harus berada antara 07.00 dan 22.00 WIB.';
+        }
+
+        if (values.endTime <= values.startTime) {
+            errors.endTime = 'Waktu selesai harus lebih dari waktu mulai dan tidak boleh melewati tengah malam.';
         }
     }
 
@@ -135,19 +152,34 @@ export const buildOccurrenceDrafts = (
     const lastDate = values.bookingMode === 'consecutive_days' ? values.endDate : values.date;
     const count = inclusiveDayCount(values.date, lastDate);
     if (!values.date || !values.startTime || !values.endTime || count < 1) return [];
-    const overnight = values.endTime <= values.startTime;
-    const startMinutes = Number(values.startTime.slice(0, 2)) * 60 + Number(values.startTime.slice(3, 5));
-    const endMinutes = Number(values.endTime.slice(0, 2)) * 60 + Number(values.endTime.slice(3, 5));
-    const durationMinutes = (overnight ? 24 * 60 : 0) + endMinutes - startMinutes;
+
+    const operatingStart = '07:00';
+    const operatingEnd = '22:00';
+
+    if (
+        values.endTime <= values.startTime
+        || values.startTime < operatingStart
+        || values.startTime > operatingEnd
+        || values.endTime < operatingStart
+        || values.endTime > operatingEnd
+    ) {
+        return [];
+    }
+
+    const startMinutes = Number(values.startTime.slice(0, 2)) * 60
+        + Number(values.startTime.slice(3, 5));
+    const endMinutes = Number(values.endTime.slice(0, 2)) * 60
+        + Number(values.endTime.slice(3, 5));
+    const durationMinutes = endMinutes - startMinutes;
 
     return Array.from({ length: count }, (_, index) => {
         const date = addDaysToDateKey(values.date, index);
-        const endDate = overnight ? addDaysToDateKey(date, 1) : date;
+
         return {
             sequence: index + 1,
             date,
             startAt: jakartaOffsetIso(date, values.startTime),
-            endAt: jakartaOffsetIso(endDate, values.endTime),
+            endAt: jakartaOffsetIso(date, values.endTime),
             durationHours: durationMinutes / 60,
         };
     });
