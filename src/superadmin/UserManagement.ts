@@ -12,6 +12,7 @@ export const renderUserManagement = async () => {
     state.currentStatus = '';
     state.currentSortBy = 'created_at';
     state.currentSortDir = 'desc';
+    state.currentStudyProgramId = '';
     state.meta = null;
 
     renderDashboardLayout(
@@ -46,6 +47,11 @@ function renderContent() {
                     <input type="text" id="user-search" value="${state.currentSearch}" placeholder="Cari berdasarkan Nama, NIP, atau NIM..." class="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 outline-none transition-all">
                 </div>
                 <div class="flex items-center gap-3">
+                    ${activeTab === 'mahasiswa' ? `
+                        <select id="study-program-filter" class="pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none cursor-pointer bg-white text-gray-600">
+                            <option value="">Semua Jurusan</option>
+                        </select>
+                    ` : ''}
                     <select id="status-filter" class="pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none cursor-pointer bg-white text-gray-600">
                         <option value="" ${state.currentStatus === '' ? 'selected' : ''}>Semua Status</option>
                         <option value="Active" ${state.currentStatus === 'Active' ? 'selected' : ''}>Aktif</option>

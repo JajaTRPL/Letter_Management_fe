@@ -15,6 +15,9 @@ export interface UserState {
     // server-side); other tabs ignore it and fall back to created_at.
     currentSortBy: UserSortBy;
     currentSortDir: UserSortDir;
+    // Jurusan/Prodi filter — only surfaced on the Mahasiswa tab; other tabs
+    // ignore it (kept empty so the API param is simply omitted for them).
+    currentStudyProgramId: string;
 }
 
 /** Data-only state — no tab logic here. */
@@ -26,6 +29,7 @@ export const state: UserState = {
     currentStatus: '',
     currentSortBy: 'created_at',
     currentSortDir: 'desc',
+    currentStudyProgramId: '',
 };
 
 /**

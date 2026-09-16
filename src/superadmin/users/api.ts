@@ -14,6 +14,7 @@ export const refreshUsers = async (onSuccess: () => void) => {
         });
         if (state.currentSearch) params.set('search', state.currentSearch);
         if (state.currentStatus) params.set('status', state.currentStatus);
+        if (state.currentStudyProgramId) params.set('study_program_id', state.currentStudyProgramId);
         const response = await apiFetch(`/api/super-admin/users?${params}`);
         const result = await response.json();
         state.allUsers = result.data ?? [];

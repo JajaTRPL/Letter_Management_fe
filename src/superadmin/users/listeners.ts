@@ -2,6 +2,7 @@ import { apiFetch } from '../../shared/api-client';
 import { showSuccess, showError } from '../../shared/toast';
 import { confirmModal } from '../../shared/confirm-modal';
 import { isSuspended } from '../../shared/user-status';
+import { populateStudyProgramSelect } from '../../shared/study-program-select';
 import { state, tabConfig, tabManager, type TabType } from './types';
 import { refreshUsers } from './api';
 import { renderFilteredRows, renderPaginationControls, renderUserDetailModal } from './ui-utils';
@@ -74,14 +75,25 @@ export const setupListeners = (renderContent: () => void) => {
     // --- Tab switching ---
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            tabManager.setActive((btn as HTMLElement).dataset.tab as TabType);
+            const nextTab = (btn as HTMLElement).dataset.tab as TabType;
+            tabManager.setActive(nextTab);
             state.currentPage = 1;
             state.currentSearch = '';
             state.currentStatus = '';
+            // Jurusan filter only means anything on the Mahasiswa tab.
+            state.currentStudyProgramId = '';
             // 'angkatan' only makes sense on the Mahasiswa tab (it's the only
             // one with a NIM to derive it from) — don't carry it to other tabs.
-            state.currentSortBy = 'created_at';
-            state.currentSortDir = 'desc';
+            // The Mahasiswa tab defaults to angkatan ascending (smallest
+            // angkatan first, A-Z within each angkatan server-side) instead
+            // of created_at so the roster reads in the order staff expect.
+            if (nextTab === 'mahasiswa') {
+                state.currentSortBy = 'angkatan';
+                state.currentSortDir = 'asc';
+            } else {
+                state.currentSortBy = 'created_at';
+                state.currentSortDir = 'desc';
+            }
             refreshUsers(renderContent);
         });
     });
@@ -117,6 +129,25 @@ export const setupListeners = (renderContent: () => void) => {
         state.currentPage = 1;
         doPartialRefresh();
     });
+
+    // --- Jurusan/Prodi filter (Mahasiswa tab only) ---
+    const studyProgramFilter = document.getElementById('study-program-filter') as HTMLSelectElement | null;
+    if (studyProgramFilter) {
+        // populateStudyProgramSelect replaces the whole option list with its
+        // own "Pilih Program Studi..." placeholder at value="" — relabel it
+        // to fit this filter's "show everyone" meaning instead.
+        populateStudyProgramSelect(studyProgramFilter, state.currentStudyProgramId).then(() => {
+            const placeholder = studyProgramFilter.querySelector('option[value=""]');
+            if (placeholder) placeholder.textContent = 'Semua Jurusan';
+            studyProgramFilter.value = state.currentStudyProgramId;
+        });
+
+        studyProgramFilter.addEventListener('change', () => {
+            state.currentStudyProgramId = studyProgramFilter.value;
+            state.currentPage = 1;
+            doPartialRefresh();
+        });
+    }
 
     // --- Add user ---
     document.getElementById('add-user-btn')?.addEventListener('click', () => {
