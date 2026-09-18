@@ -22,6 +22,14 @@ export interface BookingFormValues {
 
 export type BookingFormErrors = Partial<Record<keyof BookingFormValues | 'form', string>>;
 
+// Rooms may only be booked for use between 07:00 and 22:00 (same-day, no
+// wrapping past midnight) — mirrors ValidatesRoomBookingSchedule on the
+// backend, which remains the source of truth. Submitting a request itself
+// is unrestricted 24/7; only the requested start/end time-of-day is capped.
+export const ROOM_BOOKING_OPERATIONAL_START_TIME = '07:00';
+export const ROOM_BOOKING_OPERATIONAL_END_TIME = '22:00';
+const OPERATIONAL_HOURS_LABEL = `${ROOM_BOOKING_OPERATIONAL_START_TIME}-${ROOM_BOOKING_OPERATIONAL_END_TIME}`;
+
 export const emptyBookingFormValues = (
     roomId = '',
     date = '',
@@ -82,8 +90,22 @@ export const validateBookingForm = (
             errors.endDate = `Rentang peminjaman maksimal ${MAX_CONSECUTIVE_DAYS} hari berturut-turut.`;
         }
     }
-    if (!values.startTime) errors.startTime = 'Waktu mulai wajib diisi.';
-    if (!values.endTime) errors.endTime = 'Waktu selesai wajib diisi.';
+    if (!values.startTime) {
+        errors.startTime = 'Waktu mulai wajib diisi.';
+    } else if (
+        values.startTime < ROOM_BOOKING_OPERATIONAL_START_TIME
+        || values.startTime > ROOM_BOOKING_OPERATIONAL_END_TIME
+    ) {
+        errors.startTime = `Waktu mulai harus berada dalam jam operasional ruangan (${OPERATIONAL_HOURS_LABEL}).`;
+    }
+    if (!values.endTime) {
+        errors.endTime = 'Waktu selesai wajib diisi.';
+    } else if (
+        values.endTime < ROOM_BOOKING_OPERATIONAL_START_TIME
+        || values.endTime > ROOM_BOOKING_OPERATIONAL_END_TIME
+    ) {
+        errors.endTime = `Waktu selesai harus berada dalam jam operasional ruangan (${OPERATIONAL_HOURS_LABEL}).`;
+    }
     if (!values.activityName.trim()) errors.activityName = 'Nama kegiatan wajib diisi.';
     if (!values.purpose.trim()) errors.purpose = 'Tujuan peminjaman wajib diisi.';
 
@@ -93,9 +115,11 @@ export const validateBookingForm = (
         errors.participantCount = `Jumlah peserta melebihi kapasitas ${selectedRoom.capacity} orang.`;
     }
 
-    if (values.startTime && values.endTime) {
-        if (values.startTime === values.endTime) {
-            errors.endTime = 'Waktu mulai dan selesai tidak boleh sama.';
+    if (values.startTime && values.endTime && !errors.startTime && !errors.endTime) {
+        // Same-day only: within the 07:00-22:00 window already checked
+        // above, end must simply be later than start — no overnight wrap.
+        if (values.endTime <= values.startTime) {
+            errors.endTime = 'Waktu selesai harus lebih dari waktu mulai.';
         }
     }
 

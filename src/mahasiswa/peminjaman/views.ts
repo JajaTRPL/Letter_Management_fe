@@ -23,6 +23,8 @@ import {
     hasSuratPeminjamanPdf,
     isActiveLifecycleBooking,
     MAX_CANCELLATION_REASON_LENGTH,
+    ROOM_BOOKING_OPERATIONAL_END_TIME,
+    ROOM_BOOKING_OPERATIONAL_START_TIME,
     type LifecycleTimelineEntry,
 } from './workflow';
 import type {
@@ -133,15 +135,16 @@ export const renderBookingFormDialog = (
                         </div>
                         <div>
                             <label for="peminjaman-start-time" class="text-sm font-bold text-gray-700">Mulai</label>
-                            <input id="peminjaman-start-time" name="startTime" type="time" value="${escapeHtml(values.startTime)}" class="${inputClass(Boolean(errors.startTime))}">
+                            <input id="peminjaman-start-time" name="startTime" type="time" min="${ROOM_BOOKING_OPERATIONAL_START_TIME}" max="${ROOM_BOOKING_OPERATIONAL_END_TIME}" value="${escapeHtml(values.startTime)}" class="${inputClass(Boolean(errors.startTime))}">
                             ${fieldError(errors.startTime)}
                         </div>
                         <div>
                             <label for="peminjaman-end-time" class="text-sm font-bold text-gray-700">Selesai</label>
-                            <input id="peminjaman-end-time" name="endTime" type="time" value="${escapeHtml(values.endTime)}" class="${inputClass(Boolean(errors.endTime))}">
+                            <input id="peminjaman-end-time" name="endTime" type="time" min="${ROOM_BOOKING_OPERATIONAL_START_TIME}" max="${ROOM_BOOKING_OPERATIONAL_END_TIME}" value="${escapeHtml(values.endTime)}" class="${inputClass(Boolean(errors.endTime))}">
                             ${fieldError(errors.endTime)}
                         </div>
                     </div>
+                    <p class="text-xs text-gray-400">Jam operasional ruangan: ${ROOM_BOOKING_OPERATIONAL_START_TIME}-${ROOM_BOOKING_OPERATIONAL_END_TIME}.</p>
                     <div>
                         <label for="peminjaman-activity-name" class="text-sm font-bold text-gray-700">Nama Kegiatan</label>
                         <input id="peminjaman-activity-name" name="activityName" type="text" maxlength="255" value="${escapeHtml(values.activityName)}" class="${inputClass(Boolean(errors.activityName))}" placeholder="Contoh: Rapat koordinasi organisasi">

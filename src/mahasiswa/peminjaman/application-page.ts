@@ -31,6 +31,8 @@ import {
     emptyBookingFormValues,
     formatFileSize,
     getLifecycleStatusLabel,
+    ROOM_BOOKING_OPERATIONAL_END_TIME,
+    ROOM_BOOKING_OPERATIONAL_START_TIME,
     validateBookingForm,
     validateSuratPdfFile,
     type BookingFormErrors,
@@ -690,15 +692,16 @@ const renderSectionOne = (): string => {
                     ` : ''}
                     <div>
                         <label for="peminjaman-start-time" class="text-sm font-bold text-gray-700">Mulai</label>
-                        <input id="peminjaman-start-time" type="time" value="${escapeHtml(state.values.startTime)}"${fieldAria('startTime')} class="${inputClass(Boolean(state.errors.startTime))}">
+                        <input id="peminjaman-start-time" type="time" min="${ROOM_BOOKING_OPERATIONAL_START_TIME}" max="${ROOM_BOOKING_OPERATIONAL_END_TIME}" value="${escapeHtml(state.values.startTime)}"${fieldAria('startTime')} class="${inputClass(Boolean(state.errors.startTime))}">
                         ${fieldError(errorId('startTime'), state.errors.startTime)}
                     </div>
                     <div>
                         <label for="peminjaman-end-time" class="text-sm font-bold text-gray-700">Selesai</label>
-                        <input id="peminjaman-end-time" type="time" value="${escapeHtml(state.values.endTime)}"${fieldAria('endTime')} class="${inputClass(Boolean(state.errors.endTime))}">
+                        <input id="peminjaman-end-time" type="time" min="${ROOM_BOOKING_OPERATIONAL_START_TIME}" max="${ROOM_BOOKING_OPERATIONAL_END_TIME}" value="${escapeHtml(state.values.endTime)}"${fieldAria('endTime')} class="${inputClass(Boolean(state.errors.endTime))}">
                         ${fieldError(errorId('endTime'), state.errors.endTime)}
                     </div>
                 </div>
+                <p class="text-xs text-gray-400">Jam operasional ruangan: ${ROOM_BOOKING_OPERATIONAL_START_TIME}-${ROOM_BOOKING_OPERATIONAL_END_TIME}.</p>
                 ${renderSelectedRoomContext(room)}
                 <div data-occurrence-preview-container>${renderOccurrencePreview()}</div>
                 <div id="peminjaman-availability" role="status" aria-live="polite" tabindex="-1" class="rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-3">

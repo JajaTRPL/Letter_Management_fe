@@ -88,13 +88,22 @@ describe('Peminjaman booking workflow rules', () => {
             '2026-06-18',
         );
 
-        expect(errors.endTime).toContain('tidak boleh sama');
+        expect(errors.endTime).toContain('harus lebih dari waktu mulai');
     });
 
-    it('treats an earlier end clock as one overnight occurrence', () => {
-        const values = { ...validValues, startTime: '23:00', endTime: '01:00' };
-        expect(validateBookingForm(values, [room], '2026-06-18').endTime).toBeUndefined();
-        expect(bookingFormToPayload(values).end_at).toBe('2026-06-21T01:00:00+07:00');
+    it('rejects a time range outside the 07:00-22:00 operational hours', () => {
+        const errors = validateBookingForm(
+            { ...validValues, startTime: '06:00', endTime: '12:00' },
+            [room],
+            '2026-06-18',
+        );
+
+        expect(errors.startTime).toContain('jam operasional');
+    });
+
+    it('rejects an overnight (past-midnight) time range even within 07:00-22:00 bounds', () => {
+        const values = { ...validValues, startTime: '21:00', endTime: '10:00' };
+        expect(validateBookingForm(values, [room], '2026-06-18').endTime).toContain('harus lebih dari waktu mulai');
     });
 
     it('builds one occurrence per inclusive date with one shared daily clock', () => {
