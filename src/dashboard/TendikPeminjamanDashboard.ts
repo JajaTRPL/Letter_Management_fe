@@ -98,7 +98,7 @@ const STAT_ICON_DONE = '<svg width="28" height="28" viewBox="0 0 24 24" fill="no
 const SUBTITLES: Record<string, string> = {
     sarpras: 'Pantau dan verifikasi pengajuan peminjaman ruang kelas.',
     kepala_lab: 'Tinjau pengajuan peminjaman laboratorium yang menjadi tanggung jawab Anda.',
-    laboran: 'Kelola serah terima kunci dan pengembalian di laboratorium Anda.',
+    laboran: 'Tinjau pengajuan peminjaman, serta kelola serah terima kunci dan pengembalian di laboratorium Anda.',
 };
 
 const TONE_PILL: Record<string, string> = {

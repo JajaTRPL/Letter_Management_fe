@@ -251,7 +251,9 @@ const reviewerRole = (): TendikReviewerRole | null =>
     reviewerProfile?.tendik_role ?? null;
 
 const canAct = (): boolean =>
-    reviewerRole() === 'sarpras' || reviewerRole() === 'kepala_lab';
+    reviewerRole() === 'sarpras'
+    || reviewerRole() === 'kepala_lab'
+    || reviewerRole() === 'laboran';
 
 // Room master-data management surface is available to sarpras (classrooms),
 // kepala_lab (own lab), and laboran (all labs). Persuratan/unknown roles keep
@@ -573,7 +575,7 @@ const renderRoleNotice = (): string => {
         case 'laboran':
             return `
                 <div data-reviewer-role="laboran" class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
-                    <strong>Akses baca saja.</strong> Laboran dapat melihat antrean dan detail, tetapi tidak dapat menyetujui, meminta revisi, atau menolak pengajuan.
+                    Anda dapat menyetujui, meminta revisi, atau menolak peminjaman laboratorium dalam lingkup laboratorium Anda, serta menangani serah terima dan verifikasi pengembalian kunci.
                 </div>
             `;
         case 'persuratan':
@@ -1565,9 +1567,6 @@ const renderHistory = (booking: TendikBooking): string => {
 };
 
 const renderActionButtons = (booking: TendikBooking): string => {
-    if (reviewerRole() === 'laboran') {
-        return '<p class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Mode baca saja: tindakan reviewer tidak tersedia untuk Laboran.</p>';
-    }
     if (
         !canAct()
         || booking.status !== 'submitted'

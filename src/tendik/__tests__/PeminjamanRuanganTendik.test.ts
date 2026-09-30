@@ -570,7 +570,7 @@ describe('Tendik Peminjaman reviewer page', () => {
         },
     );
 
-    it('shows Laboran read-only mode and no mutation buttons', async () => {
+    it('lets Laboran approve, revise, or reject a submitted lab booking', async () => {
         const withPdf = booking({
             surat_peminjaman_pdf: {
                 exists: true,
@@ -585,14 +585,13 @@ describe('Tendik Peminjaman reviewer page', () => {
         await openDetail();
 
         expect(document.querySelector('[data-reviewer-role="laboran"]')?.textContent)
-            .toContain('Akses baca saja');
-        // PDF evidence is visible to the monitor role…
+            .toContain('Anda dapat menyetujui');
         expect(document.getElementById('peminjaman-surat-preview')).not.toBeNull();
         expect(document.getElementById('peminjaman-surat-download')).not.toBeNull();
-        // …but preview access grants no mutation or upload authority.
-        expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
-        expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
-        expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('approve-tendik-peminjaman')).not.toBeNull();
+        expect(document.getElementById('revise-tendik-peminjaman')).not.toBeNull();
+        expect(document.getElementById('reject-tendik-peminjaman')).not.toBeNull();
+        // Reviewing grants no upload authority.
         expect(document.getElementById('peminjaman-surat-replace-input')).toBeNull();
     });
 
@@ -1065,14 +1064,14 @@ describe('Tendik Peminjaman reviewer page', () => {
         await flush();
         expect(m.getBooking).toHaveBeenCalledWith(71);
         expect(document.querySelector('[data-reviewer-detail-state="success"]')).not.toBeNull();
-        expect(document.body.textContent).toContain('Mode baca saja: tindakan reviewer tidak tersedia untuk Laboran.');
+        // Booking is already approved, so no review buttons remain.
         expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
         expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
         expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
         expect(document.body.textContent).not.toMatch(/Minta Revisi|Relokasi|Delegasi|Konflik/i);
     });
 
-    it('shows pending-overlap warnings for Laboran without mutation controls', async () => {
+    it('shows pending-overlap warnings for Laboran alongside review controls', async () => {
         const labRoom = {
             ...room,
             id: 10,
@@ -1125,9 +1124,9 @@ describe('Tendik Peminjaman reviewer page', () => {
         expect(document.body.textContent).toContain(
             'Ada pengajuan lain pada ruang dan waktu yang sama. Periksa detail sebelum mengambil keputusan.',
         );
-        expect(document.getElementById('approve-tendik-peminjaman')).toBeNull();
-        expect(document.getElementById('revise-tendik-peminjaman')).toBeNull();
-        expect(document.getElementById('reject-tendik-peminjaman')).toBeNull();
+        expect(document.getElementById('approve-tendik-peminjaman')).not.toBeNull();
+        expect(document.getElementById('revise-tendik-peminjaman')).not.toBeNull();
+        expect(document.getElementById('reject-tendik-peminjaman')).not.toBeNull();
         expect(document.body.textContent).not.toMatch(/Relokasi|Delegasi|Override|Prioritas/i);
     });
 
