@@ -3,8 +3,18 @@ import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
-// Set the worker source
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+// FIX: see protected-pdf-viewer.ts for rationale (MIME type workaround).
+const workerReady: Promise<void> = (async () => {
+    try {
+        const response = await fetch(pdfWorker);
+        if (!response.ok) throw new Error('worker fetch failed');
+        const blob = await response.blob();
+        const correctedBlob = new Blob([blob], { type: 'application/javascript' });
+        pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(correctedBlob);
+    } catch {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+    }
+})();
 
 interface TemplateInfo {
     name: string;
@@ -169,6 +179,7 @@ export const renderTemplateDetail = async (template: TemplateInfo) => {
         const cacheBuster = template.pdfUrl.includes('?') ? `&t=${Date.now()}` : `?t=${Date.now()}`;
         const finalUrl = template.pdfUrl.startsWith('/') ? `${template.pdfUrl}${cacheBuster}` : template.pdfUrl;
 
+        await workerReady;
         pdfDoc = await pdfjsLib.getDocument(finalUrl).promise;
         totalPages = pdfDoc.numPages;
         currentPage = 1;

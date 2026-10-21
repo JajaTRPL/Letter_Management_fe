@@ -6,7 +6,18 @@ import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+// FIX: see protected-pdf-viewer.ts for rationale (MIME type workaround).
+const workerReady: Promise<void> = (async () => {
+    try {
+        const response = await fetch(pdfWorker);
+        if (!response.ok) throw new Error('worker fetch failed');
+        const blob = await response.blob();
+        const correctedBlob = new Blob([blob], { type: 'application/javascript' });
+        pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(correctedBlob);
+    } catch {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+    }
+})();
 
 interface TemplateInfo {
     name: string;
@@ -25,6 +36,7 @@ interface TextItem {
 const extractHtmlFromPdf = async (url: string): Promise<string> => {
     try {
         console.log('Fetching PDF from:', url);
+        await workerReady;
         const loadingTask = pdfjsLib.getDocument(url);
         const pdf = await loadingTask.promise;
         console.log(`PDF loaded. Pages: ${pdf.numPages}`);

@@ -4,7 +4,31 @@ import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore - Vite resolves the PDF.js worker as a URL.
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+// FIX: some production nginx configs serve .mjs with MIME type
+// application/octet-stream instead of application/javascript, causing the
+// browser to reject the PDF.js worker module script ("Failed to load module
+// script... Strict MIME type checking"). Server-side nginx config SHOULD be
+// fixed too, but this client-side workaround makes the viewer resilient even
+// when that hasn't shipped yet: fetch the worker bytes ourselves and re-wrap
+// them in a Blob with the correct type — the browser trusts the Blob's own
+// `type`, not any server response header, for module scripts loaded this way.
+//
+// `workerReady` is awaited by loadPdf() below before the first
+// pdfjsLib.getDocument() call, so there's no race between worker-src
+// assignment and PDF.js spinning up its worker.
+const workerReady: Promise<void> = (async () => {
+    try {
+        const response = await fetch(pdfWorker);
+        if (!response.ok) throw new Error('worker fetch failed');
+        const blob = await response.blob();
+        const correctedBlob = new Blob([blob], { type: 'application/javascript' });
+        pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(correctedBlob);
+    } catch {
+        // Fallback to the direct URL — correct in local dev and on any server
+        // that already serves .mjs with the right MIME type.
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+    }
+})();
 
 type PdfRenderTask = {
     cancel: () => void;
@@ -249,6 +273,9 @@ export function attachProtectedPdfViewer(options: AttachProtectedPdfViewerOption
         destroyPdf();
 
         try {
+            // Wait for PDF.js worker setup to complete (see workerReady above).
+            await workerReady;
+
             const response = await apiFetch(options.endpointUrl, {
                 cache: 'no-store',
                 headers: {
