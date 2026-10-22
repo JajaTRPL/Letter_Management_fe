@@ -246,6 +246,7 @@ const occurrenceStatusPresentation = (occurrence: BookingOccurrence): { label: s
         case 'overdue': return { label: 'Pengembalian melewati tenggat', tone: 'border-red-200 bg-red-50 text-red-700' };
         case 'return_rejected': return { label: `Bukti ditolak — kirim ulang sebelum ${deadline} WIB`, tone: 'border-red-200 bg-red-50 text-red-700' };
         case 'not_returned': return { label: 'Tidak mengembalikan kunci', tone: 'border-red-200 bg-red-50 text-red-700' };
+        case 'key_not_issued': return { label: 'Kunci tidak diserahkan', tone: 'border-gray-200 bg-gray-100 text-gray-600' };
         case 'cancelled': return { label: 'Penggunaan dibatalkan', tone: 'border-gray-200 bg-gray-100 text-gray-600' };
         // A booking that is not approved owns occurrence rows for compatibility
         // only — never promise a key handover that cannot happen.

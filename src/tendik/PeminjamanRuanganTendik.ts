@@ -925,6 +925,7 @@ const operationalStatusLabel = (status: string): string => ({
     revision_required: 'Perlu perbaikan bukti', returned_on_time: 'Selesai tepat waktu',
     returned_late: 'Selesai terlambat', overdue: 'Terlambat', cancelled: 'Dibatalkan',
     return_rejected: 'Bukti ditolak', not_returned: 'Tidak mengembalikan kunci',
+    key_not_issued: 'Kunci tidak diserahkan',
 }[status] ?? 'Status operasional');
 
 const formatJakarta = (iso: string): string =>
@@ -978,7 +979,7 @@ const renderOperationalTab = (): string => {
                             ${item.capabilities.can_issue_key ? `<button type="button" data-operation-issue="${escapeHtml(item.occurrence_ref)}" class="rounded-xl bg-teal-700 px-3 py-2 text-xs font-bold text-white">Serahkan Kunci</button>` : ''}
                             ${item.capabilities.can_verify_return ? `<button type="button" data-operation-verify="${escapeHtml(item.occurrence_ref)}" class="rounded-xl bg-teal-700 px-3 py-2 text-xs font-bold text-white">Verifikasi Pengembalian</button>` : ''}
                             ${item.return?.evidence ? `<button type="button" data-operation-preview="${escapeHtml(item.occurrence_ref)}" class="rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700">Lihat Bukti</button>` : ''}
-                            ${!item.capabilities.can_issue_key && !item.capabilities.can_verify_return && !['return_rejected', 'not_returned', 'returned_on_time', 'returned_late'].includes(item.operational_status) && item.responsible_label
+                            ${!item.capabilities.can_issue_key && !item.capabilities.can_verify_return && !['return_rejected', 'not_returned', 'returned_on_time', 'returned_late', 'key_not_issued'].includes(item.operational_status) && item.responsible_label
                                 ? `<span data-operation-responsible class="inline-flex items-center rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-500">${escapeHtml(item.responsible_label)}</span>`
                                 : ''}
                         </div>

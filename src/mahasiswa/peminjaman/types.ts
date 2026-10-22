@@ -212,6 +212,8 @@ export type OccurrenceOperationalStatus =
     | 'return_rejected'
     // Past the 1-hour window with no accepted return: closed, staff get the contact.
     | 'not_returned'
+    // Usage ended without the key ever being marked as handed over.
+    | 'key_not_issued'
     // The parent booking is not approved (submitted/revision/rejected): the
     // occurrence row exists for compatibility only and has no operational life.
     | 'not_actionable';
