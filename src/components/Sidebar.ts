@@ -34,6 +34,10 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                 <span class="font-medium">Dashboard</span>
             </a>
+            <a href="#" id="sidebar-panduan-staf-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'panduan' ? activeClass : inactiveClass}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                <span class="font-medium">Panduan</span>
+            </a>
             <a href="#" id="sidebar-peminjaman-admin-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'peminjaman-admin' ? activeClass : inactiveClass}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 11h18"></path></svg>
                 <span class="font-medium">Peminjaman Ruangan</span>
@@ -93,8 +97,8 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
                 <span class="font-medium">Dokumen</span>
             </a>
         `;
-        // Guide (Buku Panduan) for Pejabat Akademik, Tendik Persuratan, and Sarpras.
-        const hasStafGuide = isAcademicRole || tendikRole === 'persuratan' || tendikRole === 'sarpras';
+        // Guide (Buku Panduan) for Pejabat Akademik and every Tendik sub-role.
+        const hasStafGuide = isAcademicRole || ['persuratan', 'sarpras', 'laboran', 'kepala_lab'].includes(tendikRole);
         const panduanMenu = hasStafGuide ? `
             <a href="#" id="sidebar-panduan-staf-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'panduan' ? activeClass2 : inactiveClass2}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>

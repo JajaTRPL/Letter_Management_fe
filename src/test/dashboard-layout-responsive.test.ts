@@ -126,9 +126,11 @@ describe('DashboardLayout responsive sidebar drawer', () => {
         // Grouped by intent: operational monitoring first (Peminjaman →
         // Monitoring Surat → Monitoring Kinerja), then administration, then the
         // audit trail. Monitoring Kinerja sits with the monitoring surfaces
-        // because it reports on work in flight, not on configuration.
+        // because it reports on work in flight, not on configuration. The
+        // guide (Panduan) sits right under Dashboard, as for every role.
         expect(labels).toEqual([
             'Dashboard',
+            'Panduan',
             'Peminjaman Ruangan',
             'Monitoring Surat',
             'Monitoring Kinerja',

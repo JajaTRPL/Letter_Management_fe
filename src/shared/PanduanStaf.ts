@@ -4,11 +4,15 @@ import { SPINNER_CLASS, surfaceClass } from './design-system';
 /**
  * "Panduan" page for staff roles. Each role only gets its own chapter of the
  * Buku Panduan Sistem Persuratan DTEDI: Tendik Persuratan and Pejabat Akademik
- * (Kaprodi/Sekprodi/Kadep/Sekdep), plus the Sarpras guide.
+ * (Kaprodi/Sekprodi/Kadep/Sekdep), plus the Sarpras, Laboran, Kepala Lab and
+ * Super Admin guides.
  */
 export const TENDIK_PERSURATAN_MANUAL_URL = '/panduan/user-manual-tendik-persuratan.pdf';
 export const PEJABAT_AKADEMIK_MANUAL_URL = '/panduan/user-manual-pejabat-akademik.pdf';
 export const SARPRAS_MANUAL_URL = '/panduan/user-manual-sarpras.pdf';
+export const LABORAN_MANUAL_URL = '/panduan/user-manual-laboran.pdf';
+export const SUPER_ADMIN_MANUAL_URL = '/panduan/user-manual-super-admin.pdf';
+export const KEPALA_LAB_MANUAL_URL = '/panduan/user-manual-kepala-lab.pdf';
 
 const ACADEMIC_ROLES = ['kadep', 'kaprodi', 'sekdep', 'sekprodi', 'akademik'];
 
@@ -34,8 +38,32 @@ const SARPRAS_MANUAL: StafManual = {
     downloadName: 'Panduan Sarpras.pdf',
 };
 
+const LABORAN_MANUAL: StafManual = {
+    url: LABORAN_MANUAL_URL,
+    title: 'Panduan Laboran / Teknisi Lab',
+    description: 'Pelajari cara meninjau pengajuan peminjaman laboratorium, menyerahkan kunci, memverifikasi pengembalian, memakai jadwal laboratorium, dan melengkapi data ruangan.',
+    downloadName: 'Panduan Laboran.pdf',
+};
+
+const SUPER_ADMIN_MANUAL: StafManual = {
+    url: SUPER_ADMIN_MANUAL_URL,
+    title: 'Panduan Super Admin',
+    description: 'Pelajari pengelolaan ruangan, akun, template dokumen, periode akademik, arsip, batas waktu pemeriksaan, serta pemantauan surat dan aktivitas sistem.',
+    downloadName: 'Panduan Super Admin.pdf',
+};
+
+const KEPALA_LAB_MANUAL: StafManual = {
+    url: KEPALA_LAB_MANUAL_URL,
+    title: 'Panduan Kepala Laboratorium',
+    description: 'Pelajari cara meninjau pengajuan peminjaman laboratorium, meninjau aktivitas lab, memantau kondisi kunci dan pengembalian, memakai kalender, dan mengelola ruangan.',
+    downloadName: 'Panduan Kepala Laboratorium.pdf',
+};
+
 export const stafManualFor = (role: string, tendikRole: string = currentTendikRole()): StafManual => {
+    if (role === 'super_admin') return SUPER_ADMIN_MANUAL;
     if (!ACADEMIC_ROLES.includes(role) && tendikRole === 'sarpras') return SARPRAS_MANUAL;
+    if (!ACADEMIC_ROLES.includes(role) && tendikRole === 'laboran') return LABORAN_MANUAL;
+    if (!ACADEMIC_ROLES.includes(role) && tendikRole === 'kepala_lab') return KEPALA_LAB_MANUAL;
     return stafManualForPersuratanOrAkademik(role);
 };
 
