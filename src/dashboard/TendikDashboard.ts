@@ -192,7 +192,7 @@ export const renderTendikDashboard = async (role: string) => {
             : tendikRole === 'kepala_lab'
                 ? 'Tinjau pengajuan peminjaman laboratorium yang menjadi tanggung jawab Anda.'
                 : tendikRole === 'laboran'
-                    ? 'Pantau jadwal dan pengajuan laboratorium yang berada dalam cakupan Anda.'
+                    ? 'Tinjau pengajuan dan pembatalan, serta kelola kunci dan pengembalian laboratorium Anda.'
                     : 'Tinjau dan proses dokumen administrasi surat mahasiswa.';
 
         const content = `

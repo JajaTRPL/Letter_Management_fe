@@ -575,7 +575,7 @@ const renderRoleNotice = (): string => {
         case 'laboran':
             return `
                 <div data-reviewer-role="laboran" class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
-                    Anda dapat menyetujui, meminta revisi, atau menolak peminjaman laboratorium dalam lingkup laboratorium Anda, serta menangani serah terima dan verifikasi pengembalian kunci.
+                    Anda dapat menyetujui, meminta revisi, atau menolak peminjaman laboratorium dalam lingkup laboratorium Anda, memutuskan permintaan pembatalan, serta menangani serah terima dan verifikasi pengembalian kunci.
                 </div>
             `;
         case 'persuratan':
@@ -901,7 +901,7 @@ const renderRoomsTab = (): string => {
         ? 'Kelola data ruang kelas: informasi, foto, fasilitas, dan template.'
         : reviewerRole() === 'kepala_lab'
             ? 'Kelola data laboratorium dalam lingkup Anda.'
-            : 'Kelola data seluruh laboratorium. Persetujuan pengajuan tetap oleh Kepala Lab.';
+            : 'Kelola data seluruh laboratorium (tanpa menambah atau menonaktifkan ruangan).';
     return `
         <div class="space-y-5">
             <section class="overflow-hidden rounded-[24px] border border-gray-100 bg-white shadow-sm" aria-live="polite">
