@@ -38,6 +38,8 @@ export interface NotificationWidgetConfig {
     limit?: number;
     /** Accent flavour: 'alert' (health) leans red, 'calm' (reminders) leans blue. */
     accent?: 'alert' | 'calm';
+    /** Show only unread items; an item disappears from the panel once it is read. */
+    unreadOnly?: boolean;
 }
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
@@ -84,6 +86,7 @@ export async function hydrateNotificationWidget(config: NotificationWidgetConfig
         const page = await fetchNotifications({
             category: config.category,
             unresolved: true,
+            ...(config.unreadOnly ? { unread: true } : {}),
             perPage: limitOf(config),
         });
         paint({ phase: 'ready', items: page.items, total: page.total });
@@ -144,23 +147,28 @@ function bodyMarkup(config: NotificationWidgetConfig, state: WidgetState): strin
             </div>
         `;
     }
-    const rows = state.items.slice(0, limitOf(config)).map(itemMarkup).join('');
+    const rows = state.items.slice(0, limitOf(config)).map((item) => itemMarkup(item, config)).join('');
     return `<ul role="list" class="divide-y divide-gray-50">${rows}</ul>`;
 }
 
-function itemMarkup(item: AppNotification): string {
+function itemMarkup(item: AppNotification, config: NotificationWidgetConfig): string {
     const label = `${notificationCategoryLabel(item.category)}. ${item.title}.${item.action ? ` ${item.action.label}.` : ''}`;
+    const dismiss = config.unreadOnly
+        ? `<button type="button" data-widget-dismiss="${escapeHtml(item.id)}" aria-label="Tandai sudah dibaca: ${escapeHtml(item.title)}"
+                class="absolute right-3 top-3 rounded-md px-2 py-1 text-[11px] font-bold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-200">Tandai dibaca</button>`
+        : '';
     return `
-        <li>
+        <li class="${config.unreadOnly ? 'relative' : ''}">
             <button type="button" data-widget-notif="${escapeHtml(item.id)}" aria-label="${escapeHtml(label)}"
                 class="block w-full px-5 py-3.5 text-left transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-200 ${notificationPriorityAccent(item.priority)}">
-                <p class="break-words text-sm font-semibold text-gray-900">${escapeHtml(item.title)}</p>
+                <p class="break-words text-sm font-semibold text-gray-900 ${config.unreadOnly ? 'pr-24' : ''}">${escapeHtml(item.title)}</p>
                 <p class="mt-0.5 break-words text-xs text-gray-600">${escapeHtml(item.body)}</p>
                 <div class="mt-1.5 flex items-center justify-between gap-2">
                     <span class="text-[11px] font-semibold text-gray-400">${escapeHtml(formatNotificationTime(item.occurred_at))}</span>
                     ${item.action ? `<span class="text-[11px] font-bold text-teal-700">${escapeHtml(item.action.label)} →</span>` : ''}
                 </div>
             </button>
+            ${dismiss}
         </li>
     `;
 }
@@ -187,8 +195,22 @@ function bind(config: NotificationWidgetConfig, state: WidgetState): void {
             const item = state.items.find((n) => n.id === id);
             if (!item) return;
             // Mark read (best-effort) then deep-link to where the user acts.
-            if (!item.is_read) void markNotificationRead(item.id).catch(() => undefined);
-            void navigateForNotification(item.action?.route_key ?? null, item.subject_id, config.role);
+            const marking = item.is_read ? Promise.resolve() : markNotificationRead(item.id).catch(() => undefined);
+            void navigateForNotification(item.action?.route_key ?? null, item.subject_id, config.role).then((navigated) => {
+                // Still on this page (no deep link): drop the read item from an unread-only panel.
+                if (!navigated && config.unreadOnly) void marking.then(() => hydrateNotificationWidget(config));
+            });
+        });
+    });
+
+    document.querySelectorAll<HTMLElement>(`#${config.mountId} [data-widget-dismiss]`).forEach((el) => {
+        el.addEventListener('click', () => {
+            const id = el.dataset.widgetDismiss;
+            if (!id) return;
+            el.setAttribute('disabled', 'true');
+            void markNotificationRead(id)
+                .catch(() => undefined)
+                .then(() => hydrateNotificationWidget(config));
         });
     });
 }

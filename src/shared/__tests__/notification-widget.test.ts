@@ -144,4 +144,29 @@ describe('notification dashboard widget', () => {
         retry!.click();
         await vi.waitFor(() => expect(document.body.textContent).toContain('Pengembalian kunci hari ini'));
     });
+
+    it('unread-only panel fetches unread items and drops one once it is marked read', async () => {
+        const health: NotificationWidgetConfig = { ...CONFIG, mountId: 'health-widget', category: 'system', role: 'super_admin', unreadOnly: true };
+        document.body.innerHTML = notificationWidgetShell(health);
+        m.fetchNotifications.mockResolvedValueOnce(page([notif({ id: 's1', category: 'system', title: 'Penerima tugas tidak tersedia', action: null })]));
+        await hydrateNotificationWidget(health);
+
+        expect(m.fetchNotifications).toHaveBeenCalledWith({ category: 'system', unresolved: true, unread: true, perPage: 4 });
+        expect(document.body.textContent).toContain('Penerima tugas tidak tersedia');
+
+        m.fetchNotifications.mockResolvedValueOnce(page([]));
+        (document.querySelector('#health-widget [data-widget-dismiss="s1"]') as HTMLElement).click();
+
+        await vi.waitFor(() => expect(document.body.textContent).toContain(CONFIG.emptyTitle));
+        expect(m.markNotificationRead).toHaveBeenCalledWith('s1');
+        expect(document.body.textContent).not.toContain('Penerima tugas tidak tersedia');
+    });
+
+    it('regular panels keep read items and show no dismiss control', async () => {
+        m.fetchNotifications.mockResolvedValue(page([notif({ is_read: true })]));
+        await hydrateNotificationWidget(CONFIG);
+
+        expect(document.querySelector('#test-widget [data-widget-dismiss]')).toBeNull();
+        expect(document.body.textContent).toContain('Pengembalian kunci hari ini');
+    });
 });

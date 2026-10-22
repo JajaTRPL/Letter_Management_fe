@@ -51,9 +51,11 @@ const ADMIN_HEALTH_WIDGET: NotificationWidgetConfig = {
     title: 'Status Sistem',
     subtitle: 'Anomali alur kerja yang perlu ditangani admin (mis. penerima tugas tidak tersedia).',
     emptyTitle: 'Sistem sehat',
-    emptyBody: 'Tidak ada anomali kesehatan sistem saat ini.',
+    emptyBody: 'Tidak ada anomali kesehatan sistem yang belum dibaca.',
     limit: 5,
     accent: 'alert',
+    // Once the admin has read an anomaly it leaves the dashboard panel (it stays in the inbox).
+    unreadOnly: true,
 };
 
 let refreshInterval: any = null;

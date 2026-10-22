@@ -59,6 +59,7 @@ import {
     canPreviewFinalForMahasiswa,
     resolveMahasiswaRetentionState,
 } from '../shared/retention-state';
+import { renderLetterApprovalTimeline } from '../shared/letter-approval-timeline';
 
 const BEASISWA_API_PREFIX = '/api/mahasiswa/surat-permohonan-beasiswa';
 const GENERATED_LETTER_PREVIEW_ROOT_ID = 'beasiswa-mahasiswa-generated-letter-preview';
@@ -696,19 +697,6 @@ const renderRejectedBanner = (reason?: string | null) => `
     </div>
 `;
 
-// Long Indonesian datetime formatter for timeline / Informasi Surat.
-// Returns e.g. "Jumat, 20 Feb 2026 10:07". Honest fallback "-" when missing.
-const formatDateTime = (value?: string | null): string => {
-    if (!value) return '-';
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return '-';
-    const date = parsed.toLocaleDateString('id-ID', {
-        weekday: 'long', day: 'numeric', month: 'short', year: 'numeric',
-    });
-    const time = parsed.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-    return `${date} ${time}`;
-};
-
 // Banner shown to students at Ready_For_Student_Review.
 const renderMenungguKonfirmasiBanner = (): string => `
     <div class="bg-amber-50 border border-amber-200 rounded-[20px] p-5 shadow-sm flex items-start gap-3">
@@ -746,107 +734,6 @@ const cleanupGeneratedLetterPreview = (): void => {
     if (!revokeGeneratedLetterPreview) return;
     revokeGeneratedLetterPreview();
     revokeGeneratedLetterPreview = null;
-};
-
-// Status-driven step list. Only renders timestamps that exist on the payload;
-// never invents actor names. Step state is derived from canonical status enum
-// + presence of *_approved_at timestamps the backend already exposes.
-const renderTahapPersetujuanCard = (application: any): string => {
-    const status: string = application?.status ?? '';
-
-    const submittedAt = application?.submitted_at ?? null;
-    const tendikAt = application?.tendik_approved_at ?? null;
-    const kaprodiAt = application?.kaprodi_approved_at ?? null;
-    const kadepAt = application?.kadep_approved_at ?? null;
-    const completedAt = application?.completed_at ?? null;
-    const rejectedAt = application?.rejected_at ?? null;
-    const revisedAt = application?.revised_at ?? null;
-
-    type Step = { label: string; timestamp: string | null; state: 'done' | 'current' | 'pending' };
-    const steps: Step[] = [];
-
-    if (status === LETTER_WORKFLOW_STATUS.REJECTED) {
-        steps.push({ label: 'Diajukan', timestamp: submittedAt, state: 'done' });
-        if (tendikAt) steps.push({ label: 'Verifikasi Tenaga Pendidik', timestamp: tendikAt, state: 'done' });
-        if (kaprodiAt) steps.push({ label: 'Persetujuan Ketua Program Studi', timestamp: kaprodiAt, state: 'done' });
-        steps.push({ label: 'Pengajuan Ditolak', timestamp: rejectedAt, state: 'done' });
-    } else if (status === LETTER_WORKFLOW_STATUS.REVISION) {
-        steps.push({ label: 'Diajukan', timestamp: submittedAt, state: 'done' });
-        if (tendikAt) steps.push({ label: 'Verifikasi Tenaga Pendidik', timestamp: tendikAt, state: 'done' });
-        steps.push({ label: 'Dikembalikan untuk Revisi', timestamp: revisedAt, state: 'done' });
-    } else {
-        steps.push({
-            label: 'Diajukan',
-            timestamp: submittedAt,
-            state: 'done',
-        });
-        steps.push({
-            label: 'Verifikasi Tenaga Pendidik',
-            timestamp: tendikAt,
-            state: tendikAt ? 'done' : (status === LETTER_WORKFLOW_STATUS.SUBMITTED ? 'current' : 'pending'),
-        });
-        steps.push({
-            label: 'Persetujuan Ketua Program Studi',
-            timestamp: kaprodiAt,
-            state: kaprodiAt ? 'done' : (status === LETTER_WORKFLOW_STATUS.APPROVED_TENDIK ? 'current' : 'pending'),
-        });
-        steps.push({
-            label: 'Tanda Tangan Ketua Departemen',
-            timestamp: kadepAt,
-            state: kadepAt ? 'done' : (status === LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI ? 'current' : 'pending'),
-        });
-        steps.push({
-            label: 'Selesai',
-            timestamp: completedAt,
-            state: status === LETTER_WORKFLOW_STATUS.COMPLETED
-                ? 'done'
-                : (status === LETTER_WORKFLOW_STATUS.READY_FOR_STUDENT_REVIEW ? 'current' : 'pending'),
-        });
-    }
-
-    const renderStepIcon = (state: Step['state']): string => {
-        if (state === 'done') {
-            return `
-                <span class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 z-10 relative">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                </span>`;
-        }
-        if (state === 'current') {
-            return `
-                <span class="w-7 h-7 rounded-full border-2 border-amber-400 bg-white flex items-center justify-center shrink-0 z-10 relative">
-                    <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-                </span>`;
-        }
-        return `
-            <span class="w-7 h-7 rounded-full border-2 border-gray-200 bg-white shrink-0 z-10 relative"></span>`;
-    };
-
-    const rendered = steps.map((step, idx) => {
-        const isLast = idx === steps.length - 1;
-        const nextIsDone = !isLast && steps[idx + 1].state === 'done';
-        const connectorClass = step.state === 'done' && nextIsDone ? 'bg-emerald-200' : 'bg-gray-200';
-        const labelClass = step.state === 'pending' ? 'text-gray-400' : 'text-gray-800';
-        const tsLabelClass = step.state === 'pending' ? 'text-gray-300' : 'text-gray-500';
-        return `
-            <li class="relative flex gap-4 pb-6 last:pb-0">
-                ${isLast ? '' : `<span class="absolute left-3 top-7 bottom-0 w-0.5 ${connectorClass}"></span>`}
-                ${renderStepIcon(step.state)}
-                <div class="flex-1 -mt-0.5">
-                    <p class="text-[11px] ${tsLabelClass} font-medium">${escapeHtml(formatDateTime(step.timestamp))}</p>
-                    <p class="text-sm font-bold ${labelClass} mt-0.5">${escapeHtml(step.label)}</p>
-                </div>
-            </li>
-        `;
-    }).join('');
-
-    return `
-        <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
-            <div class="px-7 py-5 border-b border-gray-50">
-                <h3 class="text-base font-bold text-gray-800">Tahap Persetujuan</h3>
-            </div>
-            <ol class="px-7 py-6 list-none">${rendered}</ol>
-        </div>
-    `;
 };
 
 export const renderScholarshipDetail = async (applicationId: number | string, options?: MahasiswaDetailNavigationOptions) => {
@@ -930,7 +817,7 @@ export const renderScholarshipDetail = async (applicationId: number | string, op
 
                 ${renderReviewDokumenSection(status)}
 
-                ${renderTahapPersetujuanCard(application)}
+                ${renderLetterApprovalTimeline(application)}
             </div>
         `;
 

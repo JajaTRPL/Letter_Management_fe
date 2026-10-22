@@ -433,6 +433,14 @@ export const renderDashboardLayout = (title: string, content: string, role: stri
         });
     });
 
+    document.getElementById('sidebar-panduan-staf-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        (window as any).clearDashboardInterval?.();
+        import('../shared/PanduanStaf').then(({ renderPanduanStaf }) => {
+            renderPanduanStaf(role);
+        });
+    });
+
     document.getElementById('sidebar-administrasi-link')?.addEventListener('click', (e) => {
         e.preventDefault();
         (window as any).clearDashboardInterval?.();

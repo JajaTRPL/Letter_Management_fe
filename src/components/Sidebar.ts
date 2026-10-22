@@ -93,6 +93,14 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
                 <span class="font-medium">Dokumen</span>
             </a>
         `;
+        // Guide (Buku Panduan) for Pejabat Akademik, Tendik Persuratan, and Sarpras.
+        const hasStafGuide = isAcademicRole || tendikRole === 'persuratan' || tendikRole === 'sarpras';
+        const panduanMenu = hasStafGuide ? `
+            <a href="#" id="sidebar-panduan-staf-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'panduan' ? activeClass2 : inactiveClass2}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                <span class="font-medium">Panduan</span>
+            </a>
+        ` : '';
         const riwayatMenu = isPeminjamanOnlyTendik ? '' : `
             <a href="#" id="${riwayatLinkId}" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'riwayat' ? activeClass2 : inactiveClass2}">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
@@ -104,6 +112,7 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                 <span class="font-medium">Dashboard</span>
             </a>
+            ${panduanMenu}
             ${dokumenMenu}
             ${peminjamanMenu}
             ${riwayatMenu}

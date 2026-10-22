@@ -286,7 +286,7 @@ function renderTimeline(app: BeasiswaApplication, audience: 'tendik' | 'akademik
     ];
 
     return renderReviewerShellTimeline([
-        { label: 'Pengajuan Diterima', date: app.submitted_at || app.created_at, done: true },
+        { label: 'Diajukan', date: app.submitted_at || app.created_at, done: true },
         { label: 'Verifikasi Tenaga Pendidik', date: app.tendik_approved_at, done: tendikDoneStatuses.includes(app.status || ''), current: audience === 'tendik' && app.status === LETTER_WORKFLOW_STATUS.SUBMITTED },
         { label: 'Paraf Kaprodi/Sekprodi', date: app.kaprodi_approved_at, done: kaprodiDoneStatuses.includes(app.status || ''), current: app.status === LETTER_WORKFLOW_STATUS.APPROVED_TENDIK },
         { label: 'Tanda Tangan Kadep/Sekdep', date: app.kadep_approved_at, done: departmentDoneStatuses.includes(app.status || ''), current: app.status === LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI },

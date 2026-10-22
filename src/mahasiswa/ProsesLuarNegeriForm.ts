@@ -53,6 +53,7 @@ import {
     resolveMahasiswaRetentionState,
     type LetterRetentionSummary,
 } from '../shared/retention-state';
+import { renderLetterApprovalTimeline } from '../shared/letter-approval-timeline';
 
 type ProsesLuarNegeriApplication = {
     id: number;
@@ -898,7 +899,7 @@ const renderDetailContent = (detailApplication: ProsesLuarNegeriApplication, vie
 
         ${renderDocumentReviewSection(detailApplication)}
 
-        ${renderTimeline(status)}
+        ${renderLetterApprovalTimeline(detailApplication)}
 
         ${status === LETTER_WORKFLOW_STATUS.REVISION ? `
             <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm p-6 md:p-7 flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -1060,47 +1061,6 @@ const downloadCompletedDocument = async (detailApplication: ProsesLuarNegeriAppl
     } finally {
         restoreButton(button, `${iconDownload('18')}<span>Unduh Dokumen Final</span>`);
     }
-};
-
-const renderTimeline = (status: string) => {
-    const steps = [
-        { key: LETTER_WORKFLOW_STATUS.SUBMITTED, label: 'Diajukan' },
-        { key: LETTER_WORKFLOW_STATUS.APPROVED_TENDIK, label: 'Menunggu verifikasi Tenaga Pendidik' },
-        { key: LETTER_WORKFLOW_STATUS.APPROVED_KAPRODI, label: 'Menunggu persetujuan Ketua Program Studi' },
-        { key: LETTER_WORKFLOW_STATUS.READY_FOR_STUDENT_REVIEW, label: 'Menunggu tanda tangan Ketua Departemen' },
-        { key: LETTER_WORKFLOW_STATUS.COMPLETED, label: 'Selesai' },
-    ];
-    const foundIndex = steps.findIndex((step) => step.key === status);
-    const currentIndex = status === LETTER_WORKFLOW_STATUS.REVISION || status === LETTER_WORKFLOW_STATUS.REJECTED
-        ? 0
-        : Math.max(0, foundIndex);
-    const inactiveStatuses = [
-        LETTER_WORKFLOW_STATUS.REVISION,
-        LETTER_WORKFLOW_STATUS.REJECTED,
-        LETTER_WORKFLOW_STATUS.COMPLETED,
-    ] as readonly string[];
-
-    return `
-        <div class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
-            <div class="px-7 py-5 border-b border-gray-50">
-                <h3 class="text-base font-bold text-gray-800">Tahap Persetujuan</h3>
-            </div>
-            <ol class="px-7 py-6 space-y-4">
-                ${steps.map((step, index) => {
-                    const done = index <= currentIndex && status !== LETTER_WORKFLOW_STATUS.REJECTED;
-                    const active = index === currentIndex && !inactiveStatuses.includes(status);
-                    return `
-                        <li class="flex gap-4">
-                            <span class="mt-0.5 w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${done ? 'bg-emerald-500 text-white' : active ? 'bg-amber-100 text-amber-600 border border-amber-300' : 'bg-gray-100 text-gray-400'}">
-                                ${done ? iconCheck('14') : ''}
-                            </span>
-                            <span class="text-sm font-semibold ${done || active ? 'text-gray-800' : 'text-gray-400'}">${escapeHtml(step.label)}</span>
-                        </li>
-                    `;
-                }).join('')}
-            </ol>
-        </div>
-    `;
 };
 
 const renderRevisionBanner = (note?: string | null) => `
