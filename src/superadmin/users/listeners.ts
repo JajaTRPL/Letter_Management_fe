@@ -319,6 +319,10 @@ export const attachActionListeners = (renderContent: () => void, onSelectionChan
                     method: 'PATCH',
                 });
                 const result = await response.json();
+                if (!response.ok) {
+                    showError(result.message || 'Status akun gagal diubah');
+                    return;
+                }
                 showSuccess(result.message);
                 state.currentPage = 1;
                 await refreshUsers(renderContent);
@@ -389,6 +393,10 @@ const attachDetailModalListeners = (renderContent: () => void) => {
                 method: 'PATCH',
             });
             const result = await response.json();
+            if (!response.ok) {
+                showError(result.message || 'Status akun gagal diubah');
+                return;
+            }
             const modalContainer = document.getElementById('modal-container')!;
             modalContainer.innerHTML = '';
             showSuccess(result.message);
