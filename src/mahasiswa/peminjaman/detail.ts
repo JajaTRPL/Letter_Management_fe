@@ -15,7 +15,7 @@ import {
 } from './api';
 import { isMahasiswaBooking } from './booking-schema';
 import { closeBookingWorkflow, openBookingWorkflowForm } from './booking-form';
-import { renderBookingDetailDialog, renderCancelDialog } from './views';
+import { escapeHtml, renderBookingDetailDialog, renderCancelDialog } from './views';
 import { validateCancellationReason, validateSuratPdfFile } from './workflow';
 import {
     attachProtectedPdfViewer,
@@ -218,6 +218,7 @@ const openReturnDialog = (
     root.id = 'peminjaman-return-root';
     document.body.appendChild(root);
     let selectedFile: File | null = null;
+    let note = '';
     let error: string | null = null;
     let submitting = false;
     const idempotencyKey = generateRoomBookingIdempotencyKey();
@@ -229,13 +230,17 @@ const openReturnDialog = (
                 <p class="mt-1 text-xs text-gray-500">Penggunaan ${occurrence.sequence} · tenggat absolut ${new Date(occurrence.return_due_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</p>
                 ${error ? `<p role="alert" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">${error}</p>` : ''}
                 <form id="return-evidence-form" class="mt-4 space-y-4">
-                    <div><label for="return-evidence-file" class="text-sm font-bold text-gray-700">Foto bukti (JPG, PNG, atau WebP; maks. 5 MiB)</label><input id="return-evidence-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" class="mt-2 block w-full text-sm" ${submitting ? 'disabled' : ''}><p class="mt-1 text-xs text-gray-500">${selectedFile ? selectedFile.name : 'Belum ada foto dipilih.'}</p></div>
+                    <div><label for="return-evidence-file" class="text-sm font-bold text-gray-700">Foto bukti (JPG, PNG, atau WebP; maks. 5 MiB)</label><input id="return-evidence-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" class="mt-2 block w-full text-sm" ${submitting ? 'disabled' : ''}><p class="mt-1 text-xs text-gray-500">${selectedFile ? escapeHtml(selectedFile.name) : 'Belum ada foto dipilih.'}</p></div>
+                    <div><label for="return-evidence-note" class="text-sm font-bold text-gray-700">Catatan (opsional)</label><textarea id="return-evidence-note" maxlength="2000" rows="3" placeholder="Contoh: Kunci sudah saya serahkan ke petugas Sarpras pukul 12.15." class="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm" ${submitting ? 'disabled' : ''}>${escapeHtml(note)}</textarea></div>
                     <div class="flex justify-end gap-2"><button id="return-evidence-cancel" type="button" class="${buttonClass('outline', 'sm')}" ${submitting ? 'disabled' : ''}>Batal</button><button type="submit" class="${buttonClass('primary', 'sm')}" ${submitting ? 'disabled' : ''}>${submitting ? 'Mengirim...' : 'Kirim Bukti'}</button></div>
                 </form>
             </section>`;
         const close = (): void => { if (!submitting) root.remove(); };
         root.querySelector('[data-return-overlay]')?.addEventListener('click', close);
         root.querySelector('#return-evidence-cancel')?.addEventListener('click', close);
+        root.querySelector('#return-evidence-note')?.addEventListener('input', (event) => {
+            note = (event.target as HTMLTextAreaElement).value;
+        });
         root.querySelector('#return-evidence-file')?.addEventListener('change', (event) => {
             selectedFile = (event.target as HTMLInputElement).files?.[0] ?? null;
             error = validateReturnImage(selectedFile);
@@ -247,7 +252,7 @@ const openReturnDialog = (
             if (error || !selectedFile) { render(); return; }
             submitting = true; render();
             try {
-                const updated = await submitRoomReturnEvidence(occurrence, selectedFile, idempotencyKey);
+                const updated = await submitRoomReturnEvidence(occurrence, selectedFile, idempotencyKey, note);
                 root.remove();
                 options.onMutated?.();
                 renderDetailState(updated, false, null, false, options);
@@ -262,7 +267,8 @@ const openReturnDialog = (
 };
 
 const openReturnEvidencePreview = async (occurrence: BookingOccurrence): Promise<void> => {
-    if (!occurrence.return) return;
+    if (!occurrence.return?.evidence) return;
+    const evidence = occurrence.return.evidence;
     document.getElementById('peminjaman-return-preview-root')?.remove();
     if (returnEvidenceObjectUrl) URL.revokeObjectURL(returnEvidenceObjectUrl);
     returnEvidenceObjectUrl = null;
@@ -272,7 +278,7 @@ const openReturnEvidencePreview = async (occurrence: BookingOccurrence): Promise
     root.innerHTML = '<div class="rounded-xl bg-white p-6 text-sm font-semibold text-gray-700">Memuat bukti pengembalian...</div>';
     document.body.appendChild(root);
     try {
-        returnEvidenceObjectUrl = await fetchReturnEvidenceObjectUrl(occurrence.return.evidence.preview_url);
+        returnEvidenceObjectUrl = await fetchReturnEvidenceObjectUrl(evidence.preview_url);
         root.innerHTML = `<div class="flex max-h-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white"><div class="flex items-center justify-between border-b px-4 py-3"><p class="text-sm font-bold">Bukti Pengembalian</p><button id="close-return-preview" type="button" aria-label="Tutup bukti" class="p-2">×</button></div><img src="${returnEvidenceObjectUrl}" alt="Bukti pengembalian kunci penggunaan ${occurrence.sequence}" class="max-h-[80vh] w-auto object-contain"></div>`;
         root.querySelector('#close-return-preview')?.addEventListener('click', () => root.remove());
     } catch (error) {

@@ -347,11 +347,13 @@ export async function submitRoomReturnEvidence(
     occurrence: BookingOccurrence,
     evidence: File,
     idempotencyKey: string,
+    note = '',
 ): Promise<MahasiswaBooking> {
     const body = new FormData();
     body.append('expected_occurrence_version', String(occurrence.version));
     body.append('idempotency_key', idempotencyKey);
     body.append('evidence', evidence);
+    if (note.trim()) body.append('note', note.trim());
     const response = await apiFetch(`${BASE}/occurrences/${encodeURIComponent(occurrence.occurrence_ref)}/return`, {
         method: 'POST', body, isFormData: true,
     });
@@ -429,6 +431,27 @@ export async function decideRoomReturn(
         }),
     });
     return readMutationBooking(response, 'Keputusan pengembalian gagal disimpan.');
+}
+
+/**
+ * "Paksa Selesai": close a rejected or overdue return after contacting the
+ * applicant and receiving the key. The note is required and kept in history.
+ */
+export async function forceCloseRoomReturn(
+    occurrence: TendikOperationalOccurrence,
+    input: { note: string; keyReceivedAt?: string },
+    idempotencyKey: string,
+): Promise<MahasiswaBooking> {
+    const response = await apiFetch(`${TENDIK_BASE}/operations/${encodeURIComponent(occurrence.occurrence_ref)}/return/force-close`, {
+        method: 'POST',
+        body: JSON.stringify({
+            expected_occurrence_version: occurrence.version,
+            note: input.note.trim(),
+            key_received_at: input.keyReceivedAt || null,
+            idempotency_key: idempotencyKey,
+        }),
+    });
+    return readMutationBooking(response, 'Paksa selesai gagal disimpan.');
 }
 
 /**

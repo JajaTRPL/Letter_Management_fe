@@ -53,12 +53,15 @@ const isReturnSummary = (value: unknown): boolean => isRecord(value)
     && (value.decision_note === null || typeof value.decision_note === 'string')
     && (value.key_received_at === null || typeof value.key_received_at === 'string')
     && (value.verified_at === null || typeof value.verified_at === 'string')
-    && isRecord(value.evidence)
-    && typeof value.evidence.original_name === 'string'
-    && typeof value.evidence.mime === 'string'
-    && typeof value.evidence.size_bytes === 'number'
-    && typeof value.evidence.preview_url === 'string'
-    && typeof value.evidence.download_url === 'string';
+    && (value.is_forced === undefined || typeof value.is_forced === 'boolean')
+    && (value.requester_note === undefined || value.requester_note === null || typeof value.requester_note === 'string')
+    // A force-closed return has no photo.
+    && (value.evidence === null || (isRecord(value.evidence)
+        && typeof value.evidence.original_name === 'string'
+        && typeof value.evidence.mime === 'string'
+        && typeof value.evidence.size_bytes === 'number'
+        && typeof value.evidence.preview_url === 'string'
+        && typeof value.evidence.download_url === 'string'));
 
 export const isBookingOccurrence = (value: unknown): value is BookingOccurrence => isRecord(value)
     && typeof value.occurrence_ref === 'string'
@@ -92,6 +95,8 @@ export const isTendikOperationalOccurrence = (
     && typeof value.booking.id === 'number'
     && typeof value.booking.activity_name === 'string'
     && (value.booking.applicant_name === null || typeof value.booking.applicant_name === 'string')
+    && (value.booking.applicant_phone === undefined || value.booking.applicant_phone === null
+        || typeof value.booking.applicant_phone === 'string')
     && isRoom(value.booking.room);
 
 export const isMahasiswaBooking = (value: unknown): value is MahasiswaBooking =>

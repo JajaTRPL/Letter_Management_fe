@@ -244,6 +244,8 @@ const occurrenceStatusPresentation = (occurrence: BookingOccurrence): { label: s
         case 'returned_on_time': return { label: 'Selesai tepat waktu', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
         case 'returned_late': return { label: 'Selesai terlambat', tone: 'border-orange-200 bg-orange-50 text-orange-800' };
         case 'overdue': return { label: 'Pengembalian melewati tenggat', tone: 'border-red-200 bg-red-50 text-red-700' };
+        case 'return_rejected': return { label: 'Bukti ditolak — petugas akan menghubungi Anda', tone: 'border-red-200 bg-red-50 text-red-700' };
+        case 'force_closed': return { label: 'Diselesaikan oleh petugas', tone: 'border-gray-200 bg-gray-100 text-gray-700' };
         case 'cancelled': return { label: 'Penggunaan dibatalkan', tone: 'border-gray-200 bg-gray-100 text-gray-600' };
         // A booking that is not approved owns occurrence rows for compatibility
         // only — never promise a key handover that cannot happen.
@@ -467,7 +469,14 @@ const renderOccurrenceJourney = (booking: MahasiswaBooking): string => {
         <section>
             <h3 class="mb-3 text-sm font-bold text-gray-800">Bukti dan Keputusan Pengembalian</h3>
             <div class="space-y-2">
-                ${occurrences.map((occurrence) => occurrence.return ? `<div class="rounded-xl border border-gray-100 p-3 text-xs text-gray-600"><p class="font-bold text-gray-800">Penggunaan ${occurrence.sequence} · ${escapeHtml(occurrence.return.evidence.original_name)}</p><p class="mt-1">Dikirim ${escapeHtml(formatUpdatedDate(occurrence.return.submitted_at))} · ${escapeHtml(occurrence.return.status)}</p>${occurrence.return.decision_note ? `<p class="mt-1 text-amber-800">Catatan: ${escapeHtml(occurrence.return.decision_note)}</p>` : ''}<button type="button" data-return-preview="${escapeHtml(occurrence.occurrence_ref)}" class="mt-2 text-xs font-bold text-teal-700 hover:underline">Lihat bukti</button></div>` : `<p class="rounded-xl border border-dashed border-gray-200 p-3 text-xs text-gray-500">Penggunaan ${occurrence.sequence}: bukti belum dikirim.</p>`).join('')}
+                ${occurrences.map((occurrence) => {
+                    const ret = occurrence.return;
+                    if (!ret) return `<p class="rounded-xl border border-dashed border-gray-200 p-3 text-xs text-gray-500">Penggunaan ${occurrence.sequence}: bukti belum dikirim.</p>`;
+                    if (ret.is_forced) {
+                        return `<div data-return-forced class="rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700"><p class="font-bold text-gray-800">Penggunaan ${occurrence.sequence} · Diselesaikan oleh petugas</p><p class="mt-1">${escapeHtml(formatUpdatedDate(ret.verified_at ?? ret.submitted_at))}</p>${ret.decision_note ? `<p class="mt-1">Catatan petugas: ${escapeHtml(ret.decision_note)}</p>` : ''}</div>`;
+                    }
+                    return `<div class="rounded-xl border border-gray-100 p-3 text-xs text-gray-600"><p class="font-bold text-gray-800">Penggunaan ${occurrence.sequence}${ret.evidence ? ` · ${escapeHtml(ret.evidence.original_name)}` : ''}</p><p class="mt-1">Dikirim ${escapeHtml(formatUpdatedDate(ret.submitted_at))} · ${escapeHtml(ret.status)}</p>${ret.requester_note ? `<p class="mt-1">Catatan Anda: ${escapeHtml(ret.requester_note)}</p>` : ''}${ret.decision_note ? `<p class="mt-1 text-amber-800">Catatan petugas: ${escapeHtml(ret.decision_note)}</p>` : ''}${ret.evidence ? `<button type="button" data-return-preview="${escapeHtml(occurrence.occurrence_ref)}" class="mt-2 text-xs font-bold text-teal-700 hover:underline">Lihat bukti</button>` : ''}</div>`;
+                }).join('')}
             </div>
         </section>
     `;
