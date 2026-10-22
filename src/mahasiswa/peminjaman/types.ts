@@ -208,10 +208,10 @@ export type OccurrenceOperationalStatus =
     | 'scheduled' | 'key_issued' | 'in_use' | 'return_due'
     | 'awaiting_verification' | 'revision_required'
     | 'returned_on_time' | 'returned_late' | 'overdue' | 'cancelled'
-    // Evidence rejected: key still out until staff force-close it.
+    // Evidence rejected inside the 1-hour window: the applicant may resend.
     | 'return_rejected'
-    // Closed by staff after contacting the applicant (no photo).
-    | 'force_closed'
+    // Past the 1-hour window with no accepted return: closed, staff get the contact.
+    | 'not_returned'
     // The parent booking is not approved (submitted/revision/rejected): the
     // occurrence row exists for compatibility only and has no operational life.
     | 'not_actionable';
@@ -231,12 +231,10 @@ export interface BookingReturnSummary {
     status: BookingReturnStatus;
     version: number;
     submitted_at: string;
-    is_forced?: boolean;
     requester_note?: string | null;
     decision_note: string | null;
     key_received_at: string | null;
     verified_at: string | null;
-    /** Null for a force-closed return (no photo). */
     evidence: ReturnEvidenceSummary | null;
     verified_by?: { name: string | null; role: string | null } | null;
     received_time_change_reason?: string | null;
@@ -264,7 +262,6 @@ export interface BookingOccurrence {
         can_resubmit_return: boolean;
         can_issue_key?: boolean;
         can_verify_return?: boolean;
-        can_force_close?: boolean;
     };
     event_hooks: Array<{ type: string; at: string }>;
 }
@@ -357,14 +354,6 @@ export interface TendikOperationalOccurrence extends BookingOccurrence {
         applicant_phone?: string | null;
         room: Room;
     };
-    /** Set when the room's key is still with an earlier borrower. */
-    key_blocked_by?: {
-        occurrence_ref: string;
-        applicant_name: string | null;
-        applicant_phone: string | null;
-        activity_name: string;
-        end_at: string;
-    } | null;
 }
 
 export interface ApiEnvelope<T> {

@@ -12,7 +12,6 @@ const m = vi.hoisted(() => ({
     getOperations: vi.fn(),
     issueKey: vi.fn(),
     decideReturn: vi.fn(),
-    forceClose: vi.fn(),
     generateKey: vi.fn(),
     fetchReturnEvidence: vi.fn(),
     downloadSurat: vi.fn(),
@@ -74,7 +73,6 @@ vi.mock('../../mahasiswa/peminjaman/api', () => {
         getTendikOperationalOccurrences: m.getOperations,
         issueRoomKey: m.issueKey,
         decideRoomReturn: m.decideReturn,
-        forceCloseRoomReturn: m.forceClose,
         generateRoomBookingIdempotencyKey: m.generateKey,
         fetchReturnEvidenceObjectUrl: m.fetchReturnEvidence,
         // Requester-side exports pulled in transitively via the shared
@@ -499,7 +497,7 @@ describe('Tendik Peminjaman reviewer page', () => {
             operational_status: 'awaiting_verification',
             return: {
                 return_ref: 'return-public-1', status: 'pending', version: 1,
-                submitted_at: '2026-06-25T11:10:00+07:00', is_forced: false,
+                submitted_at: '2026-06-25T11:10:00+07:00',
                 requester_note: 'Kunci di pos satpam.', decision_note: null,
                 key_received_at: null, verified_at: null,
                 evidence: {
@@ -525,31 +523,21 @@ describe('Tendik Peminjaman reviewer page', () => {
         expect(document.body.textContent).toContain('Kunci di pos satpam.');
     });
 
-    it('shows contact and Paksa Selesai for a rejected return, and names who still holds the key', async () => {
+    it('shows the applicant contact for rejected and not-returned usages, with no force-close action', async () => {
         m.getProfile.mockResolvedValue(profile('sarpras'));
-        m.forceClose.mockResolvedValue(booking());
+        const followUp = (ref: string, status: 'return_rejected' | 'not_returned') => operationalOccurrence({
+            occurrence_ref: ref,
+            operational_status: status,
+            key_issuance: { issued: true, issued_at: '2026-06-25T08:55:00+07:00', issued_by: null },
+            booking: { id: 71, activity_name: 'Kuliah Tamu', applicant_name: 'Arif Rizky', applicant_phone: '081234567890', room },
+            capabilities: {
+                can_submit_return: false, can_withdraw_return: false, can_resubmit_return: false,
+                can_issue_key: false, can_verify_return: false,
+            },
+        });
         m.getOperations.mockResolvedValue([
-            operationalOccurrence({
-                operational_status: 'return_rejected',
-                key_issuance: { issued: true, issued_at: '2026-06-25T08:55:00+07:00', issued_by: null },
-                booking: { id: 71, activity_name: 'Kuliah Tamu', applicant_name: 'Arif Rizky', applicant_phone: '081234567890', room },
-                capabilities: {
-                    can_submit_return: false, can_withdraw_return: false, can_resubmit_return: false,
-                    can_issue_key: false, can_verify_return: false, can_force_close: true,
-                },
-            }),
-            operationalOccurrence({
-                occurrence_ref: 'occurrence-public-2',
-                key_blocked_by: {
-                    occurrence_ref: 'occurrence-public-1', applicant_name: 'Arif Rizky',
-                    applicant_phone: '081234567890', activity_name: 'Kuliah Tamu',
-                    end_at: '2026-06-25T11:00:00+07:00',
-                },
-                capabilities: {
-                    can_submit_return: false, can_withdraw_return: false, can_resubmit_return: false,
-                    can_issue_key: false, can_verify_return: false,
-                },
-            }),
+            followUp('occurrence-rejected', 'return_rejected'),
+            followUp('occurrence-not-returned', 'not_returned'),
         ]);
 
         await renderPeminjamanRuanganTendik();
@@ -557,23 +545,40 @@ describe('Tendik Peminjaman reviewer page', () => {
         await flush();
 
         const contacts = Array.from(document.querySelectorAll('[data-operation-contact]')).map((node) => node.textContent ?? '');
-        expect(contacts.some((text) => text.includes('Bukti pengembalian ditolak') && text.includes('081234567890'))).toBe(true);
-        expect(contacts.some((text) => text.includes('masih dipegang peminjam sebelumnya') && text.includes('Arif Rizky'))).toBe(true);
-        expect(document.querySelector('[data-operation-issue="occurrence-public-2"]')).toBeNull();
+        expect(contacts.some((text) => text.includes('dapat mengirim ulang') && text.includes('081234567890'))).toBe(true);
+        expect(contacts.some((text) => text.includes('Tidak mengembalikan kunci dalam 1 jam') && text.includes('Arif Rizky'))).toBe(true);
+        expect(document.body.textContent).toContain('Tidak mengembalikan kunci');
+        expect(document.body.textContent).not.toContain('Paksa Selesai');
+        expect(document.querySelector('[data-operation-responsible]')).toBeNull();
+    });
 
-        document.querySelector<HTMLElement>('[data-operation-force="occurrence-public-1"]')?.click();
-        submit('operational-action-form');
-        await flush();
-        expect(m.forceClose).not.toHaveBeenCalled(); // note is required
+    it('warns before rejecting a return that is already past its deadline', async () => {
+        m.getProfile.mockResolvedValue(profile('sarpras'));
+        m.getOperations.mockResolvedValue([operationalOccurrence({
+            operational_status: 'awaiting_verification',
+            return_due_at: '2020-01-01T10:00:00+07:00',
+            return: {
+                return_ref: 'return-public-1', status: 'pending', version: 1,
+                submitted_at: '2020-01-01T09:50:00+07:00', requester_note: null, decision_note: null,
+                key_received_at: null, verified_at: null,
+                evidence: {
+                    original_name: 'bukti.jpg', mime: 'image/jpeg', size_bytes: 1024,
+                    preview_url: '/api/peminjaman-ruangan/returns/return-public-1/evidence/preview',
+                    download_url: '/api/peminjaman-ruangan/returns/return-public-1/evidence/download',
+                },
+            },
+            capabilities: {
+                can_submit_return: false, can_withdraw_return: false, can_resubmit_return: false,
+                can_issue_key: false, can_verify_return: true,
+            },
+        })]);
 
-        setValue('operational-note', 'Peminjam sudah dihubungi, kunci diterima.');
-        submit('operational-action-form');
+        await renderPeminjamanRuanganTendik();
+        document.querySelector<HTMLElement>('[data-tendik-tab="operations"]')?.click();
         await flush();
-        expect(m.forceClose).toHaveBeenCalledWith(
-            expect.objectContaining({ occurrence_ref: 'occurrence-public-1' }),
-            expect.objectContaining({ note: 'Peminjam sudah dihubungi, kunci diterima.' }),
-            'operation-idempotency-key',
-        );
+        document.querySelector<HTMLElement>('[data-operation-verify="occurrence-public-1"]')?.click();
+
+        expect(document.querySelector('[data-verify-past-due]')?.textContent).toContain('Tidak mengembalikan kunci');
     });
 
     it('renders loading, empty, error/retry, and success queue states', async () => {

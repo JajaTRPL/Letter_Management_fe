@@ -53,9 +53,7 @@ const isReturnSummary = (value: unknown): boolean => isRecord(value)
     && (value.decision_note === null || typeof value.decision_note === 'string')
     && (value.key_received_at === null || typeof value.key_received_at === 'string')
     && (value.verified_at === null || typeof value.verified_at === 'string')
-    && (value.is_forced === undefined || typeof value.is_forced === 'boolean')
     && (value.requester_note === undefined || value.requester_note === null || typeof value.requester_note === 'string')
-    // A force-closed return has no photo.
     && (value.evidence === null || (isRecord(value.evidence)
         && typeof value.evidence.original_name === 'string'
         && typeof value.evidence.mime === 'string'

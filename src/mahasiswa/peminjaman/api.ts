@@ -434,27 +434,6 @@ export async function decideRoomReturn(
 }
 
 /**
- * "Paksa Selesai": close a rejected or overdue return after contacting the
- * applicant and receiving the key. The note is required and kept in history.
- */
-export async function forceCloseRoomReturn(
-    occurrence: TendikOperationalOccurrence,
-    input: { note: string; keyReceivedAt?: string },
-    idempotencyKey: string,
-): Promise<MahasiswaBooking> {
-    const response = await apiFetch(`${TENDIK_BASE}/operations/${encodeURIComponent(occurrence.occurrence_ref)}/return/force-close`, {
-        method: 'POST',
-        body: JSON.stringify({
-            expected_occurrence_version: occurrence.version,
-            note: input.note.trim(),
-            key_received_at: input.keyReceivedAt || null,
-            idempotency_key: idempotencyKey,
-        }),
-    });
-    return readMutationBooking(response, 'Paksa selesai gagal disimpan.');
-}
-
-/**
  * Replace (or upload the first) surat peminjaman PDF for a revision. Dedicated
  * multipart route — the normal PUT edit stays file-free. Backend enforces
  * owner + revision_requested.

@@ -13,7 +13,6 @@ import {
     getTendikOperationalOccurrences,
     issueRoomKey,
     decideRoomReturn,
-    forceCloseRoomReturn,
     generateRoomBookingIdempotencyKey,
     fetchReturnEvidenceObjectUrl,
 } from '../mahasiswa/peminjaman/api';
@@ -925,7 +924,7 @@ const operationalStatusLabel = (status: string): string => ({
     return_due: 'Pengembalian jatuh tempo', awaiting_verification: 'Menunggu verifikasi',
     revision_required: 'Perlu perbaikan bukti', returned_on_time: 'Selesai tepat waktu',
     returned_late: 'Selesai terlambat', overdue: 'Terlambat', cancelled: 'Dibatalkan',
-    return_rejected: 'Bukti ditolak', force_closed: 'Diselesaikan paksa',
+    return_rejected: 'Bukti ditolak', not_returned: 'Tidak mengembalikan kunci',
 }[status] ?? 'Status operasional');
 
 const formatJakarta = (iso: string): string =>
@@ -942,25 +941,16 @@ const renderApplicantContact = (name: string | null | undefined, phone: string |
 
 const renderOperationalFollowUp = (item: TendikOperationalOccurrence): string => {
     const parts: string[] = [];
-    if (item.key_blocked_by) {
-        parts.push(renderApplicantContact(
-            item.key_blocked_by.applicant_name,
-            item.key_blocked_by.applicant_phone,
-            `Kunci belum bisa diserahkan: masih dipegang peminjam sebelumnya (${item.key_blocked_by.activity_name}, selesai ${formatJakarta(item.key_blocked_by.end_at)}). Hubungi:`,
-        ));
-    }
-    if (item.operational_status === 'return_rejected' || item.operational_status === 'overdue') {
+    if (['return_rejected', 'not_returned', 'overdue'].includes(item.operational_status)) {
         parts.push(renderApplicantContact(
             item.booking.applicant_name,
             item.booking.applicant_phone,
             item.operational_status === 'return_rejected'
-                ? 'Bukti pengembalian ditolak. Hubungi peminjam:'
-                : 'Kunci belum dikembalikan melewati batas waktu. Hubungi peminjam:',
+                ? `Bukti ditolak — peminjam dapat mengirim ulang sampai ${formatJakarta(item.return_due_at)}. Kontak peminjam:`
+                : 'Tidak mengembalikan kunci dalam 1 jam (selesai). Kontak peminjam:',
         ));
     }
-    if (item.return?.is_forced) {
-        parts.push(`<p data-operation-forced class="mt-2 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-700"><strong>Diselesaikan paksa</strong> oleh ${escapeHtml(item.return.verified_by?.name ?? 'petugas')}: ${escapeHtml(item.return.decision_note ?? '-')}</p>`);
-    } else if (item.return?.requester_note) {
+    if (item.return?.requester_note) {
         parts.push(`<p class="mt-2 text-xs text-gray-600">Catatan peminjam: ${escapeHtml(item.return.requester_note)}</p>`);
     }
     return parts.join('');
@@ -969,7 +959,7 @@ const renderOperationalFollowUp = (item: TendikOperationalOccurrence): string =>
 const renderOperationalTab = (): string => {
     const tabs: Array<[OperationalTab, string]> = [
         ['today', 'Hari Ini'], ['key_handover', 'Penyerahan Kunci'], ['returns', 'Pengembalian'],
-        ['overdue', 'Terlambat / Ditolak'], ['all', 'Semua'],
+        ['overdue', 'Ditolak / Tidak Dikembalikan'], ['all', 'Semua'],
     ];
     const state = operationalLoading
         ? '<div data-operational-state="loading" class="py-14 text-center text-sm font-semibold text-gray-600">Memuat operasional penggunaan...</div>'
@@ -982,14 +972,13 @@ const renderOperationalTab = (): string => {
                         <div class="flex flex-wrap items-start justify-between gap-2"><div class="min-w-0"><h4 class="break-words text-sm font-bold text-gray-900">${escapeHtml(item.booking.room.code)} · ${escapeHtml(item.booking.room.name)}</h4><p class="mt-1 text-xs text-gray-500">${escapeHtml(item.booking.applicant_name ?? 'Pemohon')} · ${escapeHtml(item.booking.activity_name)}</p></div><span class="rounded-full border border-teal-100 bg-teal-50 px-2.5 py-1 text-[10px] font-bold text-teal-800">${escapeHtml(operationalStatusLabel(item.operational_status))}</span></div>
                         <p class="mt-3 text-xs font-semibold text-gray-700">${escapeHtml(new Date(item.start_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))} – ${escapeHtml(new Date(item.end_at).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }))}</p>
                         <p class="mt-1 text-xs text-gray-600">Tenggat pengembalian: ${escapeHtml(new Date(item.return_due_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>
-                        ${item.return && !item.return.is_forced ? `<p class="mt-2 text-xs text-gray-600">Bukti dikirim: ${escapeHtml(new Date(item.return.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>` : ''}
+                        ${item.return ? `<p class="mt-2 text-xs text-gray-600">Bukti dikirim: ${escapeHtml(new Date(item.return.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>` : ''}
                         ${renderOperationalFollowUp(item)}
                         <div class="mt-3 flex flex-wrap gap-2">
                             ${item.capabilities.can_issue_key ? `<button type="button" data-operation-issue="${escapeHtml(item.occurrence_ref)}" class="rounded-xl bg-teal-700 px-3 py-2 text-xs font-bold text-white">Serahkan Kunci</button>` : ''}
                             ${item.capabilities.can_verify_return ? `<button type="button" data-operation-verify="${escapeHtml(item.occurrence_ref)}" class="rounded-xl bg-teal-700 px-3 py-2 text-xs font-bold text-white">Verifikasi Pengembalian</button>` : ''}
-                            ${item.capabilities.can_force_close ? `<button type="button" data-operation-force="${escapeHtml(item.occurrence_ref)}" class="rounded-xl bg-red-700 px-3 py-2 text-xs font-bold text-white">Paksa Selesai</button>` : ''}
                             ${item.return?.evidence ? `<button type="button" data-operation-preview="${escapeHtml(item.occurrence_ref)}" class="rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700">Lihat Bukti</button>` : ''}
-                            ${!item.capabilities.can_issue_key && !item.capabilities.can_verify_return && !item.capabilities.can_force_close && !item.key_blocked_by && item.responsible_label
+                            ${!item.capabilities.can_issue_key && !item.capabilities.can_verify_return && !['return_rejected', 'not_returned', 'returned_on_time', 'returned_late'].includes(item.operational_status) && item.responsible_label
                                 ? `<span data-operation-responsible class="inline-flex items-center rounded-xl bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-500">${escapeHtml(item.responsible_label)}</span>`
                                 : ''}
                         </div>
@@ -1034,17 +1023,13 @@ const attachOperationalListeners = (): void => {
         const item = operationalItem(button.dataset.operationVerify ?? '');
         if (item) openOperationalAction(item, 'verify');
     }));
-    document.querySelectorAll<HTMLElement>('[data-operation-force]').forEach((button) => button.addEventListener('click', () => {
-        const item = operationalItem(button.dataset.operationForce ?? '');
-        if (item) openOperationalAction(item, 'force');
-    }));
     document.querySelectorAll<HTMLElement>('[data-operation-preview]').forEach((button) => button.addEventListener('click', () => {
         const item = operationalItem(button.dataset.operationPreview ?? '');
         if (item?.return) void openOperationalEvidence(item);
     }));
 };
 
-const openOperationalAction = (item: TendikOperationalOccurrence, mode: 'issue' | 'verify' | 'force'): void => {
+const openOperationalAction = (item: TendikOperationalOccurrence, mode: 'issue' | 'verify'): void => {
     const defaultReceivedAt = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16);
     const previousReturns = item.return_history ?? [];
     const actionKey = generateRoomBookingIdempotencyKey();
@@ -1054,23 +1039,26 @@ const openOperationalAction = (item: TendikOperationalOccurrence, mode: 'issue' 
     root.innerHTML = `
         <div class="fixed inset-0 z-[250] bg-black/50"></div>
         <section role="dialog" aria-modal="true" aria-labelledby="operational-action-title" class="fixed left-1/2 top-1/2 z-[251] max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
-            <h2 id="operational-action-title" class="text-lg font-bold">${mode === 'issue' ? 'Serahkan Kunci' : mode === 'force' ? 'Paksa Selesai Pengembalian' : 'Verifikasi Pengembalian'}</h2>
+            <h2 id="operational-action-title" class="text-lg font-bold">${mode === 'issue' ? 'Serahkan Kunci' : 'Verifikasi Pengembalian'}</h2>
             <p class="mt-2 text-xs text-gray-600">${escapeHtml(item.booking.room.code)} · ${escapeHtml(item.booking.activity_name)} · Tenggat ${escapeHtml(new Date(item.return_due_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>
             <p id="operational-action-error" role="alert" aria-live="assertive" class="mt-2 hidden text-xs text-red-700"></p>
-            ${mode === 'verify' && item.return ? `<div class="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600"><p>Bukti dikirim ${escapeHtml(new Date(item.return.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>${item.return.requester_note ? `<p class="mt-1">Catatan peminjam: <strong>${escapeHtml(item.return.requester_note)}</strong></p>` : '<p class="mt-1 italic">Peminjam tidak menulis catatan.</p>'}${item.return.evidence ? '<button id="operational-action-preview" type="button" class="mt-2 font-bold text-teal-700">Lihat bukti pengembalian</button>' : ''}<p class="mt-2">Pilih <strong>Terima</strong> jika foto dan catatan valid. Pilih <strong>Tolak</strong> jika tidak valid; kontak peminjam akan ditampilkan untuk dihubungi, lalu selesaikan dengan <strong>Paksa Selesai</strong> setelah kunci kembali.</p></div>` : ''}
-            ${mode === 'force' ? `${renderApplicantContact(item.booking.applicant_name, item.booking.applicant_phone, 'Peminjam yang dihubungi:')}<p class="mt-3 text-xs text-gray-600">Gunakan setelah Anda menghubungi peminjam dan kunci <strong>sudah diterima kembali</strong>. Catatan wajib diisi dan tercatat di riwayat peminjaman.</p>` : ''}
-            ${mode === 'verify' && previousReturns.length > 0 ? `<div class="mt-3"><p class="text-xs font-bold text-gray-800">Riwayat bukti dan revisi</p><ol class="mt-1 space-y-1">${previousReturns.map((entry) => `<li class="text-xs text-gray-600">${escapeHtml(entry.status)} · ${escapeHtml(new Date(entry.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}${entry.decision_note ? ` · ${escapeHtml(entry.decision_note)}` : ''}</li>`).join('')}</ol></div>` : ''}
+            ${mode === 'verify' && item.return ? `<div class="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600"><p>Bukti dikirim ${escapeHtml(new Date(item.return.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}</p>${item.return.requester_note ? `<p class="mt-1">Catatan peminjam: <strong>${escapeHtml(item.return.requester_note)}</strong></p>` : '<p class="mt-1 italic">Peminjam tidak menulis catatan.</p>'}${item.return.evidence ? '<button id="operational-action-preview" type="button" class="mt-2 font-bold text-teal-700">Lihat bukti pengembalian</button>' : ''}<p class="mt-2">Pilih <strong>Terima</strong> jika foto dan catatan valid. Pilih <strong>Tolak</strong> jika tidak valid (catatan wajib); peminjam dapat mengirim ulang selama masih dalam batas 1 jam.</p>${new Date(item.return_due_at).getTime() < Date.now() ? '<p data-verify-past-due class="mt-2 rounded-lg bg-amber-50 px-2 py-1 font-semibold text-amber-900">Batas pengembalian sudah lewat. Jika ditolak, status menjadi <strong>Tidak mengembalikan kunci</strong> dan selesai.</p>' : ''}</div>` : ''}
+            ${mode === 'verify' && previousReturns.length > 0 ? `<div class="mt-3"><p class="text-xs font-bold text-gray-800">Riwayat bukti</p><ol class="mt-1 space-y-1">${previousReturns.map((entry) => `<li class="text-xs text-gray-600">${escapeHtml(entry.status)} · ${escapeHtml(new Date(entry.submitted_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }))}${entry.decision_note ? ` · ${escapeHtml(entry.decision_note)}` : ''}</li>`).join('')}</ol></div>` : ''}
             <form id="operational-action-form" class="mt-4 space-y-3">
                 ${mode === 'verify' ? `<label for="operational-decision" class="block text-sm font-bold">Keputusan</label><select id="operational-decision" class="w-full rounded-xl border px-3 py-2"><option value="accept">Terima (foto dan catatan valid)</option><option value="reject">Tolak (tidak valid)</option></select>` : ''}
-                ${mode !== 'issue' ? `<div id="operational-received-block"><label for="operational-received-at" class="block text-sm font-bold">Waktu fisik kunci diterima</label><input id="operational-received-at" type="datetime-local" value="${defaultReceivedAt}" class="mt-1 w-full rounded-xl border px-3 py-2"><p id="operational-lateness-preview" aria-live="polite" class="mt-1 text-xs font-semibold text-gray-700"></p>${mode === 'verify' ? '<label for="operational-time-reason" class="mt-2 block text-sm font-bold">Alasan perubahan waktu (jika bukan sekarang)</label><textarea id="operational-time-reason" class="mt-1 w-full rounded-xl border px-3 py-2"></textarea>' : ''}</div>` : ''}
-                <label for="operational-note" class="block text-sm font-bold">${mode === 'force' ? 'Catatan penyelesaian (wajib)' : 'Catatan'}</label><textarea id="operational-note" class="w-full rounded-xl border px-3 py-2" maxlength="2000" ${mode === 'force' ? 'placeholder="Contoh: Sudah menghubungi peminjam, kunci diterima di ruang Sarpras pukul 14.10."' : ''}></textarea>
+                ${mode === 'verify' ? `<div id="operational-received-block"><label for="operational-received-at" class="block text-sm font-bold">Waktu fisik kunci diterima</label><input id="operational-received-at" type="datetime-local" value="${defaultReceivedAt}" class="mt-1 w-full rounded-xl border px-3 py-2"><p id="operational-lateness-preview" aria-live="polite" class="mt-1 text-xs font-semibold text-gray-700"></p>${mode === 'verify' ? '<label for="operational-time-reason" class="mt-2 block text-sm font-bold">Alasan perubahan waktu (jika bukan sekarang)</label><textarea id="operational-time-reason" class="mt-1 w-full rounded-xl border px-3 py-2"></textarea>' : ''}</div>` : ''}
+                <label for="operational-note" class="block text-sm font-bold">Catatan</label><textarea id="operational-note" class="w-full rounded-xl border px-3 py-2" maxlength="2000"></textarea>
                 <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button id="operational-action-cancel" type="button" class="rounded-xl border px-4 py-2 text-sm font-bold">Batal</button><button id="operational-action-submit" type="submit" class="rounded-xl bg-teal-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">Simpan</button></div>
             </form>
         </section>`;
     document.body.appendChild(root);
     const showFeedback = (message: string): void => {
         const feedback = root.querySelector<HTMLElement>('#operational-action-error');
-        if (feedback) { feedback.textContent = message; feedback.classList.remove('hidden'); }
+        if (feedback) {
+            feedback.textContent = message; feedback.classList.remove('hidden');
+            // The dialog may be scrolled down to the buttons: bring the error into view.
+            feedback.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+        }
     };
     const updateLatenessPreview = (): void => {
         const field = root.querySelector<HTMLInputElement>('#operational-received-at');
@@ -1096,14 +1084,10 @@ const openOperationalAction = (item: TendikOperationalOccurrence, mode: 'issue' 
         const decision = mode === 'verify'
             ? (root.querySelector('#operational-decision') as HTMLSelectElement).value as 'accept' | 'reject'
             : null;
-        const local = mode !== 'issue' ? (root.querySelector('#operational-received-at') as HTMLInputElement).value : '';
+        const local = mode === 'verify' ? (root.querySelector('#operational-received-at') as HTMLInputElement).value : '';
         const receivedTimeReason = mode === 'verify' ? (root.querySelector('#operational-time-reason') as HTMLTextAreaElement).value : '';
         if (decision === 'reject' && note.trim() === '') {
             showFeedback('Catatan wajib diisi saat menolak bukti pengembalian.');
-            return;
-        }
-        if (mode === 'force' && note.trim() === '') {
-            showFeedback('Catatan penyelesaian wajib diisi (misalnya: peminjam sudah dihubungi dan kunci telah diterima).');
             return;
         }
         if (decision === 'accept' && local && Math.abs(new Date(`${local}:00+07:00`).getTime() - Date.now()) > 60_000 && receivedTimeReason.trim() === '') {
@@ -1115,12 +1099,7 @@ const openOperationalAction = (item: TendikOperationalOccurrence, mode: 'issue' 
         if (submitButton) submitButton.disabled = true;
         try {
             if (mode === 'issue') await issueRoomKey(item, note, actionKey);
-            else if (mode === 'force') {
-                await forceCloseRoomReturn(item, {
-                    note,
-                    keyReceivedAt: local ? `${local}:00+07:00` : undefined,
-                }, actionKey);
-            } else if (decision) {
+            else if (decision) {
                 await decideRoomReturn(item, decision, {
                     note,
                     keyReceivedAt: local ? `${local}:00+07:00` : undefined,
