@@ -46,6 +46,13 @@ export const renderProfilKaprodi = async (role: string) => {
     let pendingPhotoPreviewUrl: string | null = null;
     let pendingSignatureFile: File | null = null;
     let pendingSignaturePreviewUrl: string | null = null;
+    // Stamped signature (TTD + cap departemen) - Kadep only, gated by the
+    // backend's `can_upload_tanda_tangan_cap` flag.
+    let canUploadStampedSignature = false;
+    let stampedSignatureObjectUrl: string | null = null;
+    let pendingStampedSignatureFile: File | null = null;
+    let pendingStampedSignaturePreviewUrl: string | null = null;
+    let stampedSignatureError = '';
     // Field-level validation errors (populated on 422 response, cleared on edit).
     let nameError = '';
     let photoError = '';
@@ -73,18 +80,25 @@ export const renderProfilKaprodi = async (role: string) => {
 
                 const photoPath: string | null = data?.profile?.pas_foto_path || null;
                 const signaturePath: string | null = data?.profile?.tanda_tangan_path || null;
+                const stampedSignaturePath: string | null = data?.profile?.tanda_tangan_cap_path || null;
+                canUploadStampedSignature = data?.profile?.can_upload_tanda_tangan_cap === true;
                 if (photoPath) {
                     localStorage.setItem('auth_photo', photoPath);
                 }
 
-                const [nextPhoto, nextSignature] = await Promise.all([
+                const [nextPhoto, nextSignature, nextStampedSignature] = await Promise.all([
                     photoPath ? loadProtectedImageObjectUrl(photoPath) : Promise.resolve(null),
                     signaturePath ? loadProtectedImageObjectUrl(signaturePath) : Promise.resolve(null),
+                    canUploadStampedSignature && stampedSignaturePath
+                        ? loadProtectedImageObjectUrl(stampedSignaturePath)
+                        : Promise.resolve(null),
                 ]);
                 revokeProtectedImageObjectUrl(photoObjectUrl);
                 revokeProtectedImageObjectUrl(signatureObjectUrl);
+                revokeProtectedImageObjectUrl(stampedSignatureObjectUrl);
                 photoObjectUrl = nextPhoto;
                 signatureObjectUrl = nextSignature;
+                stampedSignatureObjectUrl = nextStampedSignature;
                 render();
             }
         } catch (e) {
@@ -286,6 +300,32 @@ export const renderProfilKaprodi = async (role: string) => {
                             </div>
                         </div>
 
+                        ${canUploadStampedSignature ? `
+                        <div class="flex flex-col md:flex-row gap-2 md:gap-6">
+                            <label class="w-48 text-sm font-bold text-gray-500 pt-3">Tanda Tangan dengan Cap</label>
+                            <div class="flex-1 flex flex-col gap-3">
+                                <div class="w-full max-w-[280px] h-[120px] bg-gray-100 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden relative group">
+                                    ${(pendingStampedSignaturePreviewUrl || stampedSignatureObjectUrl)
+                ? `<img id="sig-cap-preview" src="${pendingStampedSignaturePreviewUrl || stampedSignatureObjectUrl}" alt="Tanda Tangan dengan Cap" class="max-h-full max-w-full object-contain p-2">`
+                : `<div id="sig-cap-placeholder" class="text-gray-400 flex flex-col items-center gap-1 font-bold">
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M8 12h8"></path></svg>
+                                            <span class="text-[10px] font-bold">Belum ada Tanda Tangan dengan Cap</span>
+                                          </div>`
+            }
+                                    ${isEditingData ? `
+                                        <label class="absolute inset-0 bg-black/40 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                            <span class="text-xs font-bold">${(pendingStampedSignaturePreviewUrl || stampedSignatureObjectUrl) ? 'Ganti' : 'Unggah'} Tanda Tangan dengan Cap</span>
+                                            <input type="file" id="sig-cap-input" class="hidden" accept="image/jpeg,image/jpg,image/png,image/webp">
+                                        </label>
+                                    ` : ''}
+                                </div>
+                                <p class="text-[10px] text-gray-500 font-medium">Opsional. Saat menandatangani pengajuan, Anda dapat memilih tanda tangan biasa atau tanda tangan dengan cap ini.</p>
+                                ${isEditingData ? `<p class="text-[10px] text-gray-400 font-medium font-bold">* JPG/PNG/WEBP, maksimal 2 MB. PNG transparan sangat disarankan</p>` : ''}
+                                ${stampedSignatureError ? `<p class="text-[10px] text-red-500 font-bold">${stampedSignatureError}</p>` : ''}
+                            </div>
+                        </div>
+                        ` : ''}
+
                         ${isEditingData ? `
                             <div class="flex justify-end pt-4">
                                 <button type="submit" class="bg-teal-800 hover:bg-teal-900 text-white px-8 py-3 rounded-xl font-bold text-sm shadow-lg shadow-teal-900/20 transition-all hover:scale-[1.02]">
@@ -358,12 +398,15 @@ export const renderProfilKaprodi = async (role: string) => {
             nameError = '';
             photoError = '';
             signatureError = '';
+            stampedSignatureError = '';
             // Discard any locally-selected files when leaving edit mode.
             if (!isEditingData) {
                 pendingPhotoFile = null;
                 pendingPhotoPreviewUrl = null;
                 pendingSignatureFile = null;
                 pendingSignaturePreviewUrl = null;
+                pendingStampedSignatureFile = null;
+                pendingStampedSignaturePreviewUrl = null;
             }
             render();
         });
@@ -431,6 +474,33 @@ export const renderProfilKaprodi = async (role: string) => {
             reader.readAsDataURL(file);
         });
 
+        // Stamped Signature Preview
+        document.getElementById('sig-cap-input')?.addEventListener('change', (e) => {
+            const input = e.currentTarget as HTMLInputElement;
+            const file = input.files?.[0];
+            if (!file) return;
+            if (!AKADEMIK_FOTO_MIME_RE.test(file.type)) {
+                stampedSignatureError = 'Format tanda tangan dengan cap harus JPG, PNG, atau WEBP.';
+                input.value = '';
+                render();
+                return;
+            }
+            if (file.size > MAX_AKADEMIK_FOTO_BYTES) {
+                stampedSignatureError = 'Ukuran tanda tangan dengan cap maksimal 2 MB.';
+                input.value = '';
+                render();
+                return;
+            }
+            stampedSignatureError = '';
+            pendingStampedSignatureFile = file;
+            const reader = new FileReader();
+            reader.onload = (re) => {
+                pendingStampedSignaturePreviewUrl = typeof re.target?.result === 'string' ? re.target.result : null;
+                render();
+            };
+            reader.readAsDataURL(file);
+        });
+
         // Submit Personal Info
         document.getElementById('personal-info-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -444,6 +514,7 @@ export const renderProfilKaprodi = async (role: string) => {
             nameError = '';
             photoError = '';
             signatureError = '';
+            stampedSignatureError = '';
 
             if (!newName) {
                 nameError = 'Nama tidak boleh kosong.';
@@ -461,6 +532,9 @@ export const renderProfilKaprodi = async (role: string) => {
             if (pendingSignatureFile) {
                 formData.append('tanda_tangan', pendingSignatureFile);
             }
+            if (canUploadStampedSignature && pendingStampedSignatureFile) {
+                formData.append('tanda_tangan_cap', pendingStampedSignatureFile);
+            }
 
             try {
                 const res = await apiFetch('/api/profile', { method: 'POST', isFormData: true, body: formData });
@@ -476,6 +550,8 @@ export const renderProfilKaprodi = async (role: string) => {
                     pendingPhotoPreviewUrl = null;
                     pendingSignatureFile = null;
                     pendingSignaturePreviewUrl = null;
+                    pendingStampedSignatureFile = null;
+                    pendingStampedSignaturePreviewUrl = null;
                     isEditingData = false;
                     fetchProfile();
                     return;
@@ -488,6 +564,7 @@ export const renderProfilKaprodi = async (role: string) => {
                     const nameErrors = body.errors.name;
                     const photoErrors = body.errors.pas_foto;
                     const signatureErrors = body.errors.tanda_tangan;
+                    const stampedSignatureErrors = body.errors.tanda_tangan_cap;
                     if (Array.isArray(nameErrors) && nameErrors.length > 0) {
                         nameError = String(nameErrors[0]);
                     }
@@ -497,7 +574,10 @@ export const renderProfilKaprodi = async (role: string) => {
                     if (Array.isArray(signatureErrors) && signatureErrors.length > 0) {
                         signatureError = String(signatureErrors[0]);
                     }
-                    if (!nameError && !photoError && !signatureError) {
+                    if (Array.isArray(stampedSignatureErrors) && stampedSignatureErrors.length > 0) {
+                        stampedSignatureError = String(stampedSignatureErrors[0]);
+                    }
+                    if (!nameError && !photoError && !signatureError && !stampedSignatureError) {
                         showError(body?.message || 'Gagal memperbarui profil');
                     }
                     render();

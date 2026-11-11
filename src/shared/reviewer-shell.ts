@@ -51,6 +51,26 @@ export type ReviewerShellModalField = {
     requiredMessage: string;
 };
 
+export type ReviewerShellModalChoiceOption = {
+    value: string;
+    label: string;
+    description?: string;
+};
+
+/**
+ * Optional single-choice (radio) input inside an action modal. It always has a
+ * selected value (`defaultValue`), so it never blocks submit; the selected
+ * value is sent under `payloadKey`.
+ */
+export type ReviewerShellModalChoice = {
+    id: string;
+    payloadKey: string;
+    label: string;
+    options: readonly ReviewerShellModalChoiceOption[];
+    defaultValue: string;
+    helper?: string;
+};
+
 export type ReviewerShellModalNotice = {
     title: string;
     message: string;
@@ -68,6 +88,7 @@ export type ReviewerShellModal = {
     notices?: readonly ReviewerShellModalNotice[];
     summaryRows?: readonly ReviewerShellRow[];
     fields?: readonly ReviewerShellModalField[];
+    choices?: readonly ReviewerShellModalChoice[];
 };
 
 /**
@@ -81,6 +102,34 @@ export type ReviewerShellModal = {
 export const APPROVE_ACTION_BUTTON_CLASS = 'bg-teal-800 hover:bg-teal-900 text-white';
 export const APPROVE_ACTION_HEADER_CLASS = 'bg-teal-800 text-white';
 export const APPROVE_ACTION_CONFIRM_CLASS = 'bg-teal-800 text-white hover:bg-teal-900';
+
+/**
+ * Kadep/Sekdep final-signature choice: the regular Kadep signature or the one
+ * with the department stamp (uploaded by the Kadep under Profil > "Tanda
+ * Tangan dengan Cap"). Sent as `signature_variant`; the backend falls back to
+ * the regular signature when the field is absent.
+ */
+export function kadepSignatureChoice(idPrefix: string): ReviewerShellModalChoice {
+    return {
+        id: `${idPrefix}-signature-variant`,
+        payloadKey: 'signature_variant',
+        label: 'Jenis Tanda Tangan Kadep',
+        defaultValue: 'default',
+        options: [
+            {
+                value: 'default',
+                label: 'Tanda tangan biasa',
+                description: 'Menggunakan tanda tangan Kadep tanpa cap.',
+            },
+            {
+                value: 'stamped',
+                label: 'Tanda tangan dengan cap',
+                description: 'Menggunakan tanda tangan Kadep yang sudah dibubuhi cap departemen.',
+            },
+        ],
+        helper: 'Tanda tangan dengan cap harus sudah diunggah Kadep di menu Profil.',
+    };
+}
 
 export type ReviewerShellAction = {
     buttonId: string;
@@ -462,6 +511,7 @@ function renderActionModal(modal: ReviewerShellModal): string {
                             ${modal.summaryRows.map(renderModalRow).join('')}
                         </div>
                     ` : ''}
+                    ${(modal.choices || []).map(renderModalChoice).join('')}
                     ${(modal.fields || []).map(renderModalField).join('')}
                 </div>
                 <div class="px-6 pb-6 flex gap-3 sm:px-8 sm:pb-8">
@@ -497,6 +547,30 @@ function renderModalField(field: ReviewerShellModalField): string {
             ${input}
             ${field.helper ? `<p class="text-xs font-medium text-gray-600">${escapeReviewerShellHtml(field.helper)}</p>` : ''}
         </div>
+    `;
+}
+
+function renderModalChoice(choice: ReviewerShellModalChoice): string {
+    const options = choice.options.map((option, index) => {
+        const optionId = `${choice.id}-${index}`;
+        const checked = option.value === choice.defaultValue ? 'checked' : '';
+        return `
+            <label for="${escapeReviewerShellHtml(optionId)}" class="flex items-start gap-3 rounded-2xl border border-gray-200 px-4 py-3 cursor-pointer hover:border-teal-500 has-[:checked]:border-teal-600 has-[:checked]:bg-teal-50 transition-colors">
+                <input id="${escapeReviewerShellHtml(optionId)}" type="radio" name="${escapeReviewerShellHtml(choice.id)}" value="${escapeReviewerShellHtml(option.value)}" class="mt-1 accent-teal-700" ${checked}>
+                <span class="flex flex-col">
+                    <span class="text-sm font-bold text-gray-800">${escapeReviewerShellHtml(option.label)}</span>
+                    ${option.description ? `<span class="text-xs font-medium text-gray-500">${escapeReviewerShellHtml(option.description)}</span>` : ''}
+                </span>
+            </label>
+        `;
+    }).join('');
+
+    return `
+        <fieldset id="${escapeReviewerShellHtml(choice.id)}" class="space-y-2">
+            <legend class="block text-sm font-bold text-gray-700 mb-2">${escapeReviewerShellHtml(choice.label)}</legend>
+            ${options}
+            ${choice.helper ? `<p class="text-xs font-medium text-gray-600">${escapeReviewerShellHtml(choice.helper)}</p>` : ''}
+        </fieldset>
     `;
 }
 
@@ -598,6 +672,11 @@ async function submitReviewerShellAction(
             return;
         }
         payload[field.payloadKey] = value;
+    }
+    for (const choice of action.modal.choices || []) {
+        const selected = Array.from(document.getElementsByName(choice.id))
+            .find((input): input is HTMLInputElement => input instanceof HTMLInputElement && input.checked);
+        payload[choice.payloadKey] = selected?.value || choice.defaultValue;
     }
 
     const button = document.getElementById(action.modal.confirmId) as HTMLButtonElement | null;

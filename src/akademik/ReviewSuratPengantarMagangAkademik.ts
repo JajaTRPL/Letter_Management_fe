@@ -6,6 +6,7 @@ import {
     APPROVE_ACTION_BUTTON_CLASS,
     APPROVE_ACTION_HEADER_CLASS,
     APPROVE_ACTION_CONFIRM_CLASS,
+    kadepSignatureChoice,
 } from '../shared/reviewer-shell';
 import {
     buildMagangReviewerView,
@@ -135,6 +136,7 @@ function createApproveAction(
                 classes: 'bg-amber-50 border border-amber-100 text-amber-900',
             }],
             summaryRows: magangActionSummaryRows(app, identity),
+            choices: isDepartmentStage ? [kadepSignatureChoice('magang-akademik')] : undefined,
         },
     };
 }

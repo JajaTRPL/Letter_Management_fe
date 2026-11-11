@@ -5,6 +5,7 @@ import {
     APPROVE_ACTION_BUTTON_CLASS,
     APPROVE_ACTION_HEADER_CLASS,
     APPROVE_ACTION_CONFIRM_CLASS,
+    kadepSignatureChoice,
 } from '../shared/reviewer-shell';
 import {
     buildSkaReviewerView,
@@ -129,6 +130,7 @@ function createApproveAction(
                 classes: 'bg-amber-50 border border-amber-100 text-amber-900',
             }],
             summaryRows: skaActionSummaryRows(app, identity),
+            choices: isDepartmentStage ? [kadepSignatureChoice('aktif-akademik')] : undefined,
         },
     };
 }

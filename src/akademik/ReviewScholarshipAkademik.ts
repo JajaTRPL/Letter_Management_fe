@@ -16,7 +16,7 @@ import {
     resolveReviewerOrigin,
     type ReviewerNavigationOptions,
 } from '../shared/reviewer-navigation';
-import { renderReviewerShell, type ReviewerShellAction, APPROVE_ACTION_BUTTON_CLASS, APPROVE_ACTION_HEADER_CLASS, APPROVE_ACTION_CONFIRM_CLASS } from '../shared/reviewer-shell';
+import { renderReviewerShell, type ReviewerShellAction, APPROVE_ACTION_BUTTON_CLASS, APPROVE_ACTION_HEADER_CLASS, APPROVE_ACTION_CONFIRM_CLASS, kadepSignatureChoice } from '../shared/reviewer-shell';
 
 type ReviewerStage = 'prodi' | 'department';
 
@@ -126,6 +126,7 @@ function createApproveAction(
                 classes: 'bg-amber-50 border border-amber-100 text-amber-900',
             }],
             summaryRows: beasiswaActionSummaryRows(identity),
+            choices: isDepartmentStage ? [kadepSignatureChoice('scholarship-akademik')] : undefined,
         },
     };
 }

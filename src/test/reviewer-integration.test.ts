@@ -200,6 +200,39 @@ describe('Surat Tugas reviewer (Akademik)', () => {
         expect(hasElement('surat-tugas-nomor-surat')).toBe(false);
     });
 
+    it('Departemen approval offers the Kadep signature choice and defaults to the regular signature', async () => {
+        setAuthRole('akademik', 'kadep');
+        m.detailJson = suratTugasDetail({ status: 'Approved_Kaprodi' });
+        await renderReviewSuratTugasAkademik(7);
+        expect(hasElement('surat-tugas-akademik-signature-variant')).toBe(true);
+        clickById('surat-tugas-akademik-approve-btn');
+        clickById('surat-tugas-akademik-confirm-approve');
+        await flush();
+        expect(payloadOf(patch('approve'))).toEqual({ signature_variant: 'default' });
+    });
+
+    it('Departemen approval sends the stamped signature choice when selected', async () => {
+        setAuthRole('akademik', 'kadep');
+        m.detailJson = suratTugasDetail({ status: 'Approved_Kaprodi' });
+        await renderReviewSuratTugasAkademik(7);
+        clickById('surat-tugas-akademik-approve-btn');
+        (document.getElementById('surat-tugas-akademik-signature-variant-1') as HTMLInputElement).checked = true;
+        clickById('surat-tugas-akademik-confirm-approve');
+        await flush();
+        expect(payloadOf(patch('approve'))).toEqual({ signature_variant: 'stamped' });
+    });
+
+    it('Prodi paraf has no Kadep signature choice and sends no signature_variant', async () => {
+        setAuthRole('akademik', 'kaprodi');
+        m.detailJson = suratTugasDetail({ status: 'Approved_Tendik' });
+        await renderReviewSuratTugasAkademik(7);
+        expect(hasElement('surat-tugas-akademik-signature-variant')).toBe(false);
+        clickById('surat-tugas-akademik-approve-btn');
+        clickById('surat-tugas-akademik-confirm-approve');
+        await flush();
+        expect(payloadOf(patch('approve'))).not.toHaveProperty('signature_variant');
+    });
+
     it('keeps Akademik read-only outside the reviewer stage gate', async () => {
         setAuthRole('akademik', 'kaprodi');
         m.detailJson = suratTugasDetail({ status: 'Submitted' });
