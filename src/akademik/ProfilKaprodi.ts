@@ -167,6 +167,12 @@ export const renderProfilKaprodi = async (role: string) => {
         return getRoleDisplayName('akademik', subRole, scopeCode);
     };
 
+    // Kaprodi/Sekprodi approve with a paraf, not a full signature, so the
+    // upload field is worded as "Paraf" for them. Kadep/Sekdep keep "Tanda Tangan".
+    const isParafRole = () =>
+        ['kaprodi', 'sekprodi'].includes(firstText(userData.sub_role, userData.role).toLowerCase());
+    const markLabel = () => (isParafRole() ? 'Paraf' : 'Tanda Tangan');
+
     const render = () => {
         const content = `
             ${styleBlock}
@@ -277,24 +283,28 @@ export const renderProfilKaprodi = async (role: string) => {
                         </div>
 
                         <div class="flex flex-col md:flex-row gap-2 md:gap-6">
-                            <label class="w-48 text-sm font-bold text-gray-500 pt-3">Tanda Tangan (TTD)</label>
+                            <label class="w-48 text-sm font-bold text-gray-500 pt-3">${isParafRole() ? 'Paraf' : 'Tanda Tangan (TTD)'}</label>
                             <div class="flex-1 flex flex-col gap-3">
                                 <div class="w-full max-w-[280px] h-[120px] bg-gray-100 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden relative group">
                                     ${(pendingSignaturePreviewUrl || signatureObjectUrl)
                 ? `<img id="sig-preview" src="${pendingSignaturePreviewUrl || signatureObjectUrl}" class="max-h-full max-w-full object-contain p-2">`
                 : `<div id="sig-placeholder" class="text-gray-400 flex flex-col items-center gap-1 font-bold">
                                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 9.5-9.5z"></path></svg>
-                                            <span class="text-[10px] font-bold">Belum ada Tanda Tangan</span>
+                                            <span class="text-[10px] font-bold">Belum ada ${markLabel()}</span>
                                           </div>`
             }
                                     ${isEditingData ? `
                                         <label class="absolute inset-0 bg-black/40 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                                            <span class="text-xs font-bold">Ganti Tanda Tangan</span>
+                                            <span class="text-xs font-bold">Ganti ${markLabel()}</span>
                                             <input type="file" id="sig-input" class="hidden" accept="image/jpeg,image/jpg,image/png,image/webp">
                                         </label>
                                     ` : ''}
                                 </div>
-                                <p class="text-[10px] text-gray-500 font-medium">Tanda tangan digunakan untuk dokumen yang memerlukan tanda tangan pribadi. Paraf persetujuan Prodi dikelola oleh sistem.</p>
+                                <p class="text-[10px] text-gray-500 font-medium">${isParafRole()
+                    ? (firstText(userData.sub_role, userData.role).toLowerCase() === 'kaprodi'
+                        ? 'Paraf ini dicetak sebagai paraf persetujuan Prodi pada surat mahasiswa program studi Anda, termasuk yang disetujui Sekprodi. Wajib diunggah: pengajuan tidak dapat disetujui sebelum paraf tersedia.'
+                        : 'Paraf persetujuan Prodi pada surat memakai paraf Kaprodi program studi Anda. Pengajuan tidak dapat disetujui sebelum Kaprodi mengunggah paraf.')
+                    :'Tanda tangan digunakan untuk dokumen yang memerlukan tanda tangan pribadi. Paraf persetujuan Prodi memakai paraf Kaprodi program studi mahasiswa.'}</p>
                                 ${isEditingData ? `<p class="text-[10px] text-gray-400 font-medium font-bold">* Format PNG transparan sangat disarankan</p>` : ''}
                                 ${signatureError ? `<p class="text-[10px] text-red-500 font-bold">${signatureError}</p>` : ''}
                             </div>
@@ -453,13 +463,13 @@ export const renderProfilKaprodi = async (role: string) => {
             const file = input.files?.[0];
             if (!file) return;
             if (!AKADEMIK_FOTO_MIME_RE.test(file.type)) {
-                signatureError = 'Format tanda tangan harus JPG, PNG, atau WEBP.';
+                signatureError = `Format ${markLabel().toLowerCase()} harus JPG, PNG, atau WEBP.`;
                 input.value = '';
                 render();
                 return;
             }
             if (file.size > MAX_AKADEMIK_FOTO_BYTES) {
-                signatureError = 'Ukuran tanda tangan maksimal 2 MB.';
+                signatureError = `Ukuran ${markLabel().toLowerCase()} maksimal 2 MB.`;
                 input.value = '';
                 render();
                 return;
