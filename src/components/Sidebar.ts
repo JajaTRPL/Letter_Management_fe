@@ -1,4 +1,6 @@
-export const renderSidebar = (currentRole: string, activePage: string = 'dashboard') => {
+import { isMahasiswaPeminjamanEnabled } from '../shared/feature-flags';
+
+export const renderSidebar =(currentRole: string, activePage: string = 'dashboard') => {
     let menuItems = '';
 
     if (currentRole === 'mahasiswa') {
@@ -17,10 +19,11 @@ export const renderSidebar = (currentRole: string, activePage: string = 'dashboa
                 <img src="pengajuan-logo.png" class="w-5 h-5 object-contain" />
                 <span class="font-medium text-sm">Administrasi Surat</span>
             </a>
+            ${isMahasiswaPeminjamanEnabled() ? `
             <a href="#" id="sidebar-peminjaman-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'peminjaman' ? activeClass : inactiveClass}">
                 <img src="pengajuan-logo.png" class="w-5 h-5 object-contain" />
                 <span class="font-medium text-sm">Peminjaman Ruangan</span>
-            </a>
+            </a>` : ''}
             <a href="#" id="sidebar-history-link" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activePage === 'history' ? activeClass : inactiveClass}">
                 <img src="history.png" class="w-5 h-5 object-contain" />
                 <span class="font-medium text-sm truncate">Riwayat Pengajuan</span>

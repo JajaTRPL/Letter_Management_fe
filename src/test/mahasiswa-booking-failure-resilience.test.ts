@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const m = vi.hoisted(() => ({
     apiFetch: vi.fn(),
@@ -34,6 +34,7 @@ vi.mock('../shared/mahasiswa-application-list', () => ({
 vi.mock('toastify-js', () => ({ default: vi.fn(() => ({ showToast: vi.fn() })) }));
 
 import { renderMahasiswaDashboard } from '../dashboard/MahasiswaDashboard';
+import { featureFlags } from '../shared/feature-flags';
 
 const BOOKING_ERROR_COPY = 'Data peminjaman ruangan gagal dimuat. Coba refresh halaman.';
 const BOOKINGS_URL = '/api/mahasiswa/peminjaman-ruangan/requests';
@@ -77,6 +78,28 @@ beforeEach(() => {
     m.apiFetch.mockReset();
     m.loadMahasiswaApplications.mockClear();
     m.loadMahasiswaApplications.mockResolvedValue({ items: [], failedEndpointCount: 0 });
+    // These tests cover the booking path, so turn the (hidden) feature on.
+    featureFlags.mahasiswaPeminjaman = true;
+});
+
+afterEach(() => {
+    featureFlags.mahasiswaPeminjaman = false;
+});
+
+describe('Mahasiswa dashboard with Peminjaman hidden', () => {
+    it('does not fetch bookings or mention peminjaman when the feature is off', async () => {
+        featureFlags.mahasiswaPeminjaman = false;
+        mockApi({ message: 'Server error' }, false, 500);
+        m.loadMahasiswaApplications.mockResolvedValue({ items: [letterItem], failedEndpointCount: 0 });
+
+        await renderMahasiswaDashboard();
+        await settle();
+
+        expect(m.apiFetch.mock.calls.map((call) => call[0])).not.toContain(BOOKINGS_URL);
+        expect(document.body.textContent).not.toContain(BOOKING_ERROR_COPY);
+        expect(document.body.textContent?.toLowerCase()).not.toContain('peminjaman');
+        expect(document.body.textContent).toContain('Surat Keterangan Aktif');
+    });
 });
 
 describe('Mahasiswa dashboard booking-failure resilience', () => {

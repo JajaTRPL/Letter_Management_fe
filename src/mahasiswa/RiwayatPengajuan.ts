@@ -44,6 +44,7 @@ import {
     getLifecycleStatusTone,
 } from './peminjaman/workflow';
 import type { MahasiswaBooking } from './peminjaman/types';
+import { isMahasiswaPeminjamanEnabled } from '../shared/feature-flags';
 
 const LIST_ID_PREFIX = 'riwayat-list';
 const LIST_ROWS_ID = `${LIST_ID_PREFIX}-rows`;
@@ -96,7 +97,9 @@ const riwayatPengajuanFilters = [
         label: 'Jenis Pengajuan',
         options: [
             ...filterOptionsFor('type'),
-            { value: PEMINJAMAN_TYPE_VALUE, label: 'Peminjaman Ruangan' },
+            ...(isMahasiswaPeminjamanEnabled()
+                ? [{ value: PEMINJAMAN_TYPE_VALUE, label: 'Peminjaman Ruangan' }]
+                : []),
         ],
     },
     {
@@ -279,12 +282,15 @@ export const renderRiwayatPengajuan = async (): Promise<void> => {
 
     // Peminjaman Ruangan history is fetched in parallel and merged into the
     // same list model below. Its status labels stay Peminjaman-specific.
-    const peminjamanRequest = getMahasiswaBookings()
-        .then((bookings) => ({ bookings, error: null as string | null }))
-        .catch(() => ({
-            bookings: [] as MahasiswaBooking[],
-            error: 'Riwayat peminjaman ruangan gagal dimuat. Silakan coba lagi.',
-        }));
+    // Skipped entirely while Peminjaman for Mahasiswa is hidden (feature-flags.ts).
+    const peminjamanRequest = !isMahasiswaPeminjamanEnabled()
+        ? Promise.resolve({ bookings: [] as MahasiswaBooking[], error: null as string | null })
+        : getMahasiswaBookings()
+            .then((bookings) => ({ bookings, error: null as string | null }))
+            .catch(() => ({
+                bookings: [] as MahasiswaBooking[],
+                error: 'Riwayat peminjaman ruangan gagal dimuat. Silakan coba lagi.',
+            }));
 
     // Initial shell with a loading state inside the rows container.
     const shell = (rowsInner: string): string => `
@@ -309,7 +315,9 @@ export const renderRiwayatPengajuan = async (): Promise<void> => {
         failedEndpointCount = loaded.failedEndpointCount;
     } catch (e) {
         console.error('Failed to fetch applications', e);
-        letterLoadError = 'Riwayat surat administrasi gagal dimuat. Data Peminjaman Ruangan tetap ditampilkan jika tersedia.';
+        letterLoadError = isMahasiswaPeminjamanEnabled()
+            ? 'Riwayat surat administrasi gagal dimuat. Data Peminjaman Ruangan tetap ditampilkan jika tersedia.'
+            : 'Riwayat surat administrasi gagal dimuat. Silakan coba lagi.';
     }
 
     const peminjamanResult = await peminjamanRequest;

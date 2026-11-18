@@ -69,7 +69,8 @@ describe('Tendik Peminjaman navigation', () => {
         expect(tendik).toContain('sidebar-riwayat-tendik-link');
 
         expect(renderSidebar('akademik')).not.toContain('sidebar-peminjaman-tendik-link');
-        expect(renderSidebar('mahasiswa')).toContain('sidebar-peminjaman-link');
+        // Mahasiswa Peminjaman is hidden while under development (feature-flags.ts).
+        expect(renderSidebar('mahasiswa')).not.toContain('sidebar-peminjaman-link');
     });
 
     it.each(['sarpras', 'kepala_lab', 'laboran'])(

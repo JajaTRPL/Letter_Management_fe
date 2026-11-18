@@ -1,5 +1,6 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
 import { SPINNER_CLASS, surfaceClass } from '../shared/design-system';
+import { isMahasiswaPeminjamanEnabled } from '../shared/feature-flags';
 
 export const MAHASISWA_MANUAL_URL = '/panduan/user-manual-mahasiswa.pdf';
 
@@ -11,7 +12,7 @@ export const renderPanduanMahasiswa = (): void => {
                     <div>
                         <p class="text-xs font-semibold uppercase tracking-[0.16em] text-teal-600">Panduan Pengguna</p>
                         <h2 id="panduan-mahasiswa-title" class="mt-1 text-xl font-bold text-gray-900">User Manual Mahasiswa</h2>
-                        <p class="mt-1 max-w-2xl text-sm leading-6 text-gray-500">Pelajari pengajuan surat, peminjaman ruangan, revisi, pemantauan status, dan pengunduhan dokumen final.</p>
+                        <p class="mt-1 max-w-2xl text-sm leading-6 text-gray-500">Pelajari pengajuan surat${isMahasiswaPeminjamanEnabled() ? ', peminjaman ruangan' : ''}, revisi, pemantauan status, dan pengunduhan dokumen final.</p>
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <a id="panduan-open-full" href="${MAHASISWA_MANUAL_URL}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-teal px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-300">

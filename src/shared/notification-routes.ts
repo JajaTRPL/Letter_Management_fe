@@ -10,6 +10,8 @@
  * app's page-to-page convention and keep the static import graph acyclic).
  */
 
+import { isMahasiswaPeminjamanEnabled } from './feature-flags';
+
 export type NotificationWorkbench =
     | { surface: 'mahasiswa-booking-detail'; bookingId: number }
     | { surface: 'mahasiswa-booking-list' }
@@ -82,6 +84,14 @@ export async function navigateForNotification(
 ): Promise<boolean> {
     const target = resolveNotificationWorkbench(routeKey, subjectId);
     if (!target) return false;
+    // Mahasiswa Peminjaman is hidden while under development — don't let an
+    // old booking notification open the hidden pages (see feature-flags.ts).
+    if (
+        !isMahasiswaPeminjamanEnabled()
+        && (target.surface === 'mahasiswa-booking-detail' || target.surface === 'mahasiswa-booking-list')
+    ) {
+        return false;
+    }
 
     try {
         switch (target.surface) {

@@ -250,7 +250,8 @@ describe('Super Admin retention control panel', () => {
         expect(renderSidebar('mahasiswa')).not.toContain('sidebar-retention-link');
         expect(renderSidebar('tendik_persuratan')).not.toContain('sidebar-retention-link');
         expect(renderSidebar('akademik')).not.toContain('sidebar-retention-link');
-        expect(renderSidebar('mahasiswa')).toContain('sidebar-peminjaman-link');
+        // Mahasiswa Peminjaman is hidden while under development (feature-flags.ts).
+        expect(renderSidebar('mahasiswa')).not.toContain('sidebar-peminjaman-link');
         expect(peminjamanSource).not.toContain('retention');
     });
 

@@ -34,6 +34,7 @@ import { loadMahasiswaApplications } from '../shared/mahasiswa-application-list'
 import { getMahasiswaBookings } from '../mahasiswa/peminjaman/api';
 import { isActivePeminjamanBooking, renderPeminjamanTrackingCards } from '../mahasiswa/peminjaman/views';
 import type { MahasiswaBooking } from '../mahasiswa/peminjaman/types';
+import { isMahasiswaPeminjamanEnabled } from '../shared/feature-flags';
 
 // Endpoint identity is centralized in the shared letter registry so the
 // dashboard, Riwayat, and the /complete resolver stay in lockstep. There is no
@@ -343,12 +344,17 @@ export const renderMahasiswaDashboard = async () => {
     // Peminjaman Ruangan uses its OWN status vocabulary and detail dialog —
     // it is intentionally kept out of the letter aggregate (counts, timeline,
     // letter-workflow labels) and rendered as a dedicated section below.
-    const peminjamanRequest = getMahasiswaBookings()
-        .then((items) => ({ items, error: null as string | null }))
-        .catch(() => ({
-            items: [] as MahasiswaBooking[],
-            error: 'Data peminjaman ruangan gagal dimuat. Coba refresh halaman.',
-        }));
+    // Hidden while Peminjaman for Mahasiswa is under development: skip the
+    // fetch entirely so no booking section/error shows (see feature-flags.ts).
+    const peminjamanEnabled = isMahasiswaPeminjamanEnabled();
+    const peminjamanRequest = !peminjamanEnabled
+        ? Promise.resolve({ items: [] as MahasiswaBooking[], error: null as string | null })
+        : getMahasiswaBookings()
+            .then((items) => ({ items, error: null as string | null }))
+            .catch(() => ({
+                items: [] as MahasiswaBooking[],
+                error: 'Data peminjaman ruangan gagal dimuat. Coba refresh halaman.',
+            }));
 
     try {
         const loaded = await loadMahasiswaApplications((url) => apiFetch(url, { cache: 'no-store' }));
@@ -425,7 +431,7 @@ export const renderMahasiswaDashboard = async () => {
                     <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div class="flex-1">
                             <h2 class="text-[32px] font-semibold text-gray-900 font-['Inter']">Halo, ${getGreetingName(localStorage.getItem('auth_name'))}! </h2>
-                            <p class="mt-1 text-sm text-gray-500">Pantau pengajuan surat dan peminjaman ruangan Anda di sini.</p>
+                            <p class="mt-1 text-sm text-gray-500">${peminjamanEnabled ? 'Pantau pengajuan surat dan peminjaman ruangan Anda di sini.' : 'Pantau pengajuan surat Anda di sini.'}</p>
                         </div>
                         <div>
                             <button id="btn-lengkapi-profil" class="font-['Inter'] hidden px-6 py-2.5 bg-primary-teal text-white font-semibold rounded-xl hover:bg-black hover:text-white transition-all duration-200 shadow-sm whitespace-nowrap">
@@ -475,7 +481,9 @@ export const renderMahasiswaDashboard = async () => {
             <div>
                 ${renderDashboardSectionHeader({
                     title: 'Pelacakan Pengajuan Aktif',
-                    subtitle: 'Surat dan peminjaman ruangan yang sedang berjalan',
+                    subtitle: peminjamanEnabled
+                        ? 'Surat dan peminjaman ruangan yang sedang berjalan'
+                        : 'Surat yang sedang berjalan',
                     iconHtml: dashboardSectionIcon('monitor'),
                     extraClass: 'mb-6',
                 })}

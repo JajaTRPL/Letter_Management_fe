@@ -106,7 +106,7 @@ describe('DashboardLayout responsive sidebar drawer', () => {
     });
 
     it.each([
-        ['mahasiswa', ['Dashboard', 'Administrasi Surat', 'Peminjaman Ruangan', 'Riwayat Pengajuan']],
+        ['mahasiswa', ['Dashboard', 'Administrasi Surat', 'Riwayat Pengajuan']],
         ['tendik', ['Dashboard', 'Dokumen', 'Riwayat']],
         ['akademik', ['Dashboard', 'Dokumen', 'Riwayat']],
         ['super_admin', ['Dashboard', 'Peminjaman Ruangan', 'Monitoring Surat', 'Manajemen Akun', 'Template Dokumen', 'Periode Akademik', 'Arsip & Masa Simpan', 'Riwayat Aktivitas']],
