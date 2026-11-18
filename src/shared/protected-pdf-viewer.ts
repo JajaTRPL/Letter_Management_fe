@@ -179,7 +179,7 @@ export function attachProtectedPdfViewer(options: AttachProtectedPdfViewerOption
         scale = defaultScale;
         clearCanvas();
         if (pdf) {
-            void pdf.destroy().catch(() => undefined);
+            void pdf.loadingTask.destroy().catch(() => undefined);
         }
     };
 
@@ -297,7 +297,7 @@ export function attachProtectedPdfViewer(options: AttachProtectedPdfViewerOption
 
             const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
             if (currentRequestId !== requestId) {
-                void pdf.destroy().catch(() => undefined);
+                void pdf.loadingTask.destroy().catch(() => undefined);
                 return;
             }
 

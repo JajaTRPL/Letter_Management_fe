@@ -37,7 +37,7 @@ const extractHtmlFromPdf = async (url: string): Promise<string> => {
     try {
         console.log('Fetching PDF from:', url);
         await workerReady;
-        const loadingTask = pdfjsLib.getDocument(url);
+        const loadingTask = pdfjsLib.getDocument({ url });
         const pdf = await loadingTask.promise;
         console.log(`PDF loaded. Pages: ${pdf.numPages}`);
         

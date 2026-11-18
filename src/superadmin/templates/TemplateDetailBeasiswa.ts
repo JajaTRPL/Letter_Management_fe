@@ -180,7 +180,7 @@ export const renderTemplateDetail = async (template: TemplateInfo) => {
         const finalUrl = template.pdfUrl.startsWith('/') ? `${template.pdfUrl}${cacheBuster}` : template.pdfUrl;
 
         await workerReady;
-        pdfDoc = await pdfjsLib.getDocument(finalUrl).promise;
+        pdfDoc = await pdfjsLib.getDocument({ url: finalUrl }).promise;
         totalPages = pdfDoc.numPages;
         currentPage = 1;
         currentScale = 1.0;

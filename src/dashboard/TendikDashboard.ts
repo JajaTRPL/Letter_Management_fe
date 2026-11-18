@@ -324,9 +324,14 @@ export const renderTendikDashboard = async (role: string) => {
                 </div>
                 <h3 class="text-lg font-bold text-gray-800">Gagal Memuat Data</h3>
                 <p class="text-sm text-gray-500 mt-1">Terjadi kesalahan saat memproses data dashboard.</p>
-                <button onclick="window.location.reload()" class="mt-4 px-6 py-2 bg-teal-600 text-white rounded-lg text-sm font-bold">Coba Lagi</button>
+                <button type="button" id="tendik-dashboard-retry" class="mt-4 px-6 py-2 bg-teal-600 text-white rounded-lg text-sm font-bold">Coba Lagi</button>
             </div>
         `, role, 'dashboard');
+        // Bound here instead of an inline onclick so a strict CSP
+        // (no 'unsafe-inline' scripts) does not block the button.
+        document.getElementById('tendik-dashboard-retry')?.addEventListener('click', () => {
+            window.location.reload();
+        });
     }
 };
 
