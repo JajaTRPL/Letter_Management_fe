@@ -1,4 +1,5 @@
 import { renderDashboardLayout } from '../dashboard/DashboardLayout';
+import { describeApiError, describeFetchFailure } from '../shared/api-error';
 import { renderDashboardLoadingState } from '../shared/ui-primitives';
 import { apiFetch } from '../shared/api-client';
 import { attachProtectedPdfViewer, renderProtectedPdfViewer } from '../shared/protected-pdf-viewer';
@@ -237,7 +238,7 @@ export const renderSuratPengantarMagangDetail = async (applicationId: number | s
         attachDetailEvents(detailApplication, origin);
     } catch (error) {
         console.error(error);
-        showError(error instanceof Error ? error.message : 'Gagal memuat detail pengajuan.');
+        showError(describeFetchFailure(error, 'Gagal memuat detail pengajuan.'));
         if (origin === 'riwayat') {
             goToMahasiswaDetailOrigin(origin);
         } else {
@@ -728,7 +729,7 @@ const saveDraft = async () => {
         return true;
     } catch (error) {
         console.error(error);
-        showError(error instanceof Error ? error.message : 'Gagal menyimpan draf pengajuan.');
+        showError(describeFetchFailure(error, 'Gagal menyimpan draf pengajuan.'));
         return false;
     } finally {
         isSubmitting = false;
@@ -756,7 +757,7 @@ const submitApplication = async () => {
         renderSuratPengantarMagangDetail(payload.application.id);
     } catch (error) {
         console.error(error);
-        showError(error instanceof Error ? error.message : 'Gagal mengirim pengajuan.');
+        showError(describeFetchFailure(error, 'Gagal mengirim pengajuan.'));
         isSubmitting = false;
         renderForm();
     }
@@ -984,7 +985,7 @@ const completeApplicationAfterReview = async (detailApplication: MagangApplicati
         renderSuratPengantarMagangDetail(payload.application?.id || detailApplication.id, { origin });
     } catch (error) {
         console.error(error);
-        showError(error instanceof Error ? error.message : 'Gagal menyelesaikan pengajuan. Status pengajuan tidak diubah.');
+        showError(describeFetchFailure(error, 'Gagal menyelesaikan pengajuan. Status pengajuan tidak diubah.'));
         restoreButton(button, `${iconCheck('18')}<span>Selesaikan Pengajuan</span>`);
     }
 };
@@ -1019,7 +1020,7 @@ const downloadCompletedDocument = async (detailApplication: MagangApplication) =
         setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
     } catch (error) {
         console.error(error);
-        showWarning(error instanceof Error ? error.message : 'Gagal mengunduh dokumen. Silakan coba beberapa saat lagi.');
+        showWarning(describeFetchFailure(error, 'Gagal mengunduh dokumen. Silakan coba beberapa saat lagi.'));
     } finally {
         restoreButton(button, `${iconDownload('18')}<span>Unduh Dokumen Final</span>`);
     }
@@ -1072,18 +1073,9 @@ const readInputValue = (id: string) => {
     return element?.value.trim() || '';
 };
 
-const parseApiError = async (response: Response) => {
-    try {
-        const payload = await response.json();
-        if (payload.errors) {
-            const firstKey = Object.keys(payload.errors)[0];
-            return payload.errors[firstKey]?.[0] || 'Validasi gagal.';
-        }
-        return payload.message || `Terjadi kesalahan (${response.status}).`;
-    } catch {
-        return `Terjadi kesalahan (${response.status}).`;
-    }
-};
+// Shared helper: backend validation/message first, then a clear Indonesian
+// explanation per HTTP status (e.g. 413 when an upload is too large).
+const parseApiError = (response: Response) => describeApiError(response);
 
 const goToAdministrasiSurat = () => {
     import('./AdministrasiSurat').then(({ renderAdministrasiSurat }) => {

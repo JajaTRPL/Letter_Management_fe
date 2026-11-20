@@ -1,54 +1,54 @@
 export const renderStep3Akademik = (formData: any, supportingDocumentsHtml = '') => `
-    <div class="animate-enter-right space-y-8 pb-8">
-        <div class="border-b border-gray-100 pb-4">
-            <h3 class="text-xl font-bold text-gray-800">Data Pengajuan & Akademik</h3>
-            <p class="text-sm text-gray-500">Harap isi data di bawah ini dengan benar untuk mendukung kelancaran pengajuan surat</p>
+    <div class="space-y-9">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-800">Data Pengajuan &amp; Akademik</h2>
+            <p class="text-sm text-gray-600 mt-2">Lengkapi data berikut sesuai kebutuhan pengajuan surat</p>
         </div>
 
         <div class="space-y-4">
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">Nama Beasiswa</label>
-                <input type="text" name="scholarship_name" value="${formData.scholarship_name || ''}" placeholder="Contoh: Beasiswa Djarum Plus" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                <input type="text" name="scholarship_name" value="${formData.scholarship_name || ''}" placeholder="Contoh: Beasiswa Djarum Plus" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">Jenjang Studi</label>
                 <input type="text" name="study_level" value="${formData.study_level || 'D4'}" readonly class="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-md text-sm text-gray-500 cursor-not-allowed">
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">Semester Saat Ini</label>
-                <input type="number" name="current_semester" value="${formData.current_semester || ''}" placeholder="Contoh: 4" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                <input type="number" name="current_semester" value="${formData.current_semester || ''}" placeholder="Contoh: 4" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">Jumlah Tanggungan Keluarga</label>
-                <input type="number" name="family_dependents" value="${formData.family_dependents || ''}" placeholder="Contoh: 3" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                <input type="number" name="family_dependents" value="${formData.family_dependents || ''}" placeholder="Contoh: 3" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">IP 2 Semester Terakhir</label>
-                <input type="number" step="0.01" name="gpa_last_semesters" value="${formData.gpa_last_2_semesters || ''}" placeholder="Contoh: 3.75" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                <input type="number" step="0.01" name="gpa_last_semesters" value="${formData.gpa_last_2_semesters || ''}" placeholder="Contoh: 3.75" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">IPK</label>
-                <input type="number" step="0.01" name="ipk" value="${formData.ipk || ''}" placeholder="Contoh: 3.75" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                <input type="number" step="0.01" name="ipk" value="${formData.ipk || ''}" placeholder="Contoh: 3.75" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">Jumlah SKS 2 Semester Terakhir</label>
-                <input type="number" name="sks_last_semesters" value="${formData.sks_last_2_semesters || ''}" placeholder="Contoh: 24" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                <input type="number" name="sks_last_semesters" value="${formData.sks_last_2_semesters || ''}" placeholder="Contoh: 24" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-start gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-start">
                 <label class="text-sm font-bold text-gray-800 pt-2">SKSK (SKS Kumulatif)</label>
                 <div class="space-y-1">
-                    <input type="number" name="total_sks_passed" value="${formData.total_sks_passed || ''}" placeholder="Contoh: 38" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                    <input type="number" name="total_sks_passed" value="${formData.total_sks_passed || ''}" placeholder="Contoh: 38" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
                     <p class="text-[10px] text-gray-400">Total SKS yang sudah ditempuh sampai saat ini.</p>
                 </div>
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-start gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-start">
                 <label class="text-sm font-bold text-gray-800 pt-2">Jumlah Beban SKS untuk Lulus</label>
                 <div class="space-y-1">
-                    <input type="number" name="total_sks_required" value="${formData.total_sks_required || ''}" placeholder="Contoh: 144" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                    <input type="number" name="total_sks_required" value="${formData.total_sks_required || ''}" placeholder="Contoh: 144" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
                     <p class="text-[10px] text-gray-400">Total minimal SKS kurikulum untuk lulus. Contoh: 144.</p>
                 </div>
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">Status Cuti Kuliah</label>
                 <div class="flex items-center gap-6">
                     <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
@@ -61,11 +61,11 @@ export const renderStep3Akademik = (formData: any, supportingDocumentsHtml = '')
                     </label>
                     <div id="leave-semester-container" class="${formData.on_leave === 'Sudah' ? 'flex' : 'hidden'} items-center gap-2">
                         <span class="text-sm font-bold text-gray-800 ml-2">Semester</span>
-                        <input type="number" name="leave_semester" value="${formData.leave_semester || ''}" placeholder="Contoh: 4" class="w-24 px-3 py-1 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                        <input type="number" name="leave_semester" value="${formData.leave_semester || ''}" placeholder="Contoh: 4" class="w-24 px-3 py-1 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
                     </div>
                 </div>
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">Status Skripsi</label>
                 <div class="flex items-center gap-6">
                     <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
@@ -78,11 +78,11 @@ export const renderStep3Akademik = (formData: any, supportingDocumentsHtml = '')
                     </label>
                 </div>
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">Rencana Ujian Pendadaran <span class="text-[10px] text-gray-400 font-normal ml-1">(opsional)</span></label>
-                <input type="date" name="exam_plan_date" value="${formData.exam_plan_date || ''}" class="w-full px-4 py-2 border border-gray-200 rounded-md text-sm outline-none focus:border-teal-500">
+                <input type="date" name="exam_plan_date" value="${formData.exam_plan_date || ''}" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-teal focus:ring-2 focus:ring-teal-50">
             </div>
-            <div class="grid grid-cols-[200px_1fr] items-center gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-2 md:gap-4 md:items-center">
                 <label class="text-sm font-bold text-gray-800">Riwayat Menerima Beasiswa</label>
                 <div class="flex items-center gap-6">
                     <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">

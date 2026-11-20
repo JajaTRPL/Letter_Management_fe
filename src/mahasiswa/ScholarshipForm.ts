@@ -60,6 +60,9 @@ import {
     resolveMahasiswaRetentionState,
 } from '../shared/retention-state';
 import { renderLetterApprovalTimeline } from '../shared/letter-approval-timeline';
+import { renderFormActionFooter } from '../shared/form-primitives';
+import { describeApiError, describeFetchFailure } from '../shared/api-error';
+import { displaySupportingDocumentFilename } from '../shared/supporting-document-upload';
 
 const BEASISWA_API_PREFIX = '/api/mahasiswa/surat-permohonan-beasiswa';
 const GENERATED_LETTER_PREVIEW_ROOT_ID = 'beasiswa-mahasiswa-generated-letter-preview';
@@ -99,23 +102,9 @@ const showSuccessToast = (text: string) => {
     showSuccess(text);
 };
 
-const parseApiError = async (res: Response, fallback: string): Promise<string> => {
-    try {
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-            const body = await res.json();
-            if (body?.errors && typeof body.errors === 'object') {
-                const firstKey = Object.keys(body.errors)[0];
-                const value = body.errors[firstKey];
-                if (Array.isArray(value) && value.length > 0) return String(value[0]);
-            }
-            if (body?.message) return String(body.message);
-        }
-    } catch {
-        // fall through
-    }
-    return `${fallback} (${res.status})`;
-};
+const parseApiError = (res: Response, fallback: string): Promise<string> => describeApiError(res, fallback);
+
+const iconArrowLeft = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>';
 
 // Picks the latest still-in-flight application. Terminal rows (Completed,
 // Rejected) are filtered out so a finalized prior application cannot be
@@ -182,57 +171,50 @@ const renderScholarshipFormEditable = () => {
         autosaveState = state;
         const badge = document.getElementById('scholarship-save-badge');
         if (!badge) return;
-        badge.className = `hidden md:flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border ${badgeToneFor(state, formData.status)}`;
+        badge.className = `${SAVE_BADGE_BASE_CLASS} ${badgeToneFor(state, formData.status)}`;
         badge.innerHTML = badgeContentFor(state, formData.status);
     };
 
     const render = () => {
         const isRevision = formData.status === LETTER_WORKFLOW_STATUS.REVISION;
+        // Same page shell as Magang / Surat Tugas: back link + status row,
+        // revision banner, stepper, one white form card, shared action footer.
         const content = `
-            <div class="max-w-4xl mx-auto space-y-8 animate-fade-in pb-20">
-                <div class="flex justify-between items-center bg-white p-6 rounded-[24px] shadow-sm border border-gray-100">
-                    <div class="flex items-center gap-4">
-                        <button id="btn-back-to-docs" class="p-2.5 hover:bg-gray-50 rounded-xl text-gray-500 transition-colors">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="19" y1="12" x2="5" y2="12"></line>
-                                <polyline points="12 19 5 12 12 5"></polyline>
-                            </svg>
-                        </button>
-                        <div>
-                            <h2 class="text-xl font-bold text-gray-800">Permohonan Beasiswa</h2>
-                            <p class="text-xs text-gray-500">Lengkapi formulir pengajuan surat rekomendasi</p>
-                        </div>
-                    </div>
-                    <div id="scholarship-save-badge" class="${`hidden md:flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border ${badgeToneFor(autosaveState, formData.status)}`}">
+            <div class="max-w-5xl mx-auto space-y-6 animate-fade-in pb-16">
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <button id="btn-back-to-docs" type="button" class="inline-flex items-center gap-2 text-gray-700 hover:text-primary-teal font-semibold w-fit" aria-label="Kembali ke administrasi surat">
+                        ${iconArrowLeft}
+                        <span>Kembali</span>
+                    </button>
+                    <span id="scholarship-save-badge" class="${SAVE_BADGE_BASE_CLASS} ${badgeToneFor(autosaveState, formData.status)}" role="status" aria-live="polite">
                         ${badgeContentFor(autosaveState, formData.status)}
-                    </div>
+                    </span>
                 </div>
-
-                ${renderScholarshipStepper(currentStep)}
 
                 ${isRevision ? renderRevisionBanner(formData.revision_note) : ''}
+                ${renderScholarshipStepper(currentStep)}
 
-                <div class="bg-white rounded-[32px] shadow-xl shadow-teal-900/5 border border-gray-100 overflow-hidden min-h-[400px]">
-                    <div class="p-8 md:p-12">
-                        <form id="scholarship-form" class="space-y-8">
-                            ${renderStepContent()}
-
-                            <div class="pt-8 flex justify-between items-center border-t border-gray-50">
-                                <button type="button" id="btn-prev" class="px-8 py-3.5 text-gray-500 font-bold hover:text-gray-800 transition-colors ${currentStep === 1 ? 'invisible' : ''}">
-                                    Sebelumnya
-                                </button>
-                                <button type="button" id="btn-next" class="px-10 py-3.5 bg-primary-teal text-white font-bold rounded-2xl hover:bg-teal-800 transition-all shadow-lg active:scale-95 flex items-center gap-2">
-                                    ${currentStep === 4 ? (isRevision ? 'Perbaiki & Kirim Ulang' : 'Kirim Pengajuan') : 'Lanjutkan'}
-                                    ${currentStep < 4 ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>' : ''}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+                <section class="bg-white rounded-[24px] border border-gray-100 shadow-sm overflow-hidden">
+                    <form id="scholarship-form" class="p-6 md:p-10" novalidate>
+                        ${renderStepContent()}
+                        ${renderFormActionFooter({
+                            previous: {
+                                id: 'btn-prev',
+                                label: currentStep === 1 ? 'Batalkan' : 'Kembali',
+                            },
+                            next: {
+                                id: 'btn-next',
+                                label: currentStep === 4 ? (isRevision ? 'Perbaiki & Kirim Ulang' : 'Kirim Pengajuan') : 'Lanjutkan',
+                                // Step 4 starts disabled until the declaration is ticked.
+                                disabled: currentStep === 4,
+                            },
+                        })}
+                    </form>
+                </section>
             </div>
         `;
 
-        renderDashboardLayout('Permohonan Beasiswa', content, 'mahasiswa', 'administrasi');
+        renderDashboardLayout('Formulir Surat', content, 'mahasiswa', 'administrasi');
         attachEvents();
     };
 
@@ -254,21 +236,37 @@ const renderScholarshipFormEditable = () => {
                 );
                 return renderStep3Akademik(formData, supportingDocumentsHtml);
             }
-            case 4: return renderStep4Submit(formData);
+            case 4: return renderStep4Submit(formData, supportingDocumentReviewRows());
             default: return '';
         }
     };
 
-    const attachEvents = () => {
-        document.getElementById('btn-back-to-docs')?.addEventListener('click', () => {
-            void import('./AdministrasiSurat').then(({ renderAdministrasiSurat }) => renderAdministrasiSurat());
+    const supportingDocumentReviewRows = (): Array<[string, string]> => {
+        const existing = beasiswaExistingSupportingDocumentValues(formData);
+        return BEASISWA_SUPPORTING_DOCUMENT_UPLOADS.map((definition) => {
+            const selected = supportingDocumentUploadState.selectedFiles[definition.key];
+            const name = selected?.name
+                ?? displaySupportingDocumentFilename(existing[definition.key])
+                ?? 'Belum diunggah';
+            return [definition.label, name];
         });
+    };
+
+    const goBackToAdministrasi = () => {
+        cancelPendingAutosave();
+        void import('./AdministrasiSurat').then(({ renderAdministrasiSurat }) => renderAdministrasiSurat());
+    };
+
+    const attachEvents = () => {
+        document.getElementById('btn-back-to-docs')?.addEventListener('click', goBackToAdministrasi);
 
         document.getElementById('btn-prev')?.addEventListener('click', () => {
-            if (currentStep > 1) {
-                currentStep--;
-                render();
+            if (currentStep === 1) {
+                goBackToAdministrasi();
+                return;
             }
+            currentStep--;
+            render();
         });
 
         document.getElementById('btn-next')?.addEventListener('click', async (e) => {
@@ -283,7 +281,7 @@ const renderScholarshipFormEditable = () => {
             }
 
             const originalText = btn.innerHTML;
-            btn.innerHTML = '<span class="animate-spin mr-2">⏳</span> Menyimpan...';
+            btn.innerHTML = currentStep === 4 ? 'Mengirim...' : 'Menyimpan...';
             btn.disabled = true;
             // While the user explicitly advances or submits, suspend autosave to avoid overlapping writes.
             submitInProgress = currentStep === 4;
@@ -508,14 +506,14 @@ const renderScholarshipFormEditable = () => {
             }
 
             if (!options.silent) {
-                const errorMsg = await parseApiError(res, 'Gagal menyimpan');
-                showErrorToast('Gagal menyimpan: ' + errorMsg);
+                const errorMsg = await parseApiError(res, 'Data belum dapat disimpan. Silakan coba lagi.');
+                showErrorToast(errorMsg);
             }
             return false;
         } catch (error) {
             console.error(error);
             if (!options.silent) {
-                showErrorToast('Koneksi terputus atau server mati');
+                showErrorToast(describeFetchFailure(error));
             }
             return false;
         }
@@ -531,11 +529,14 @@ const renderScholarshipFormEditable = () => {
         const submitBtn = document.getElementById('btn-next') as HTMLButtonElement | null;
         if (!checkbox || !submitBtn) return;
 
+        // Mirrors renderFormActionFooter's disabled/enabled button styling.
         const sync = () => {
             const accepted = checkbox.checked;
             submitBtn.disabled = !accepted;
-            submitBtn.classList.toggle('opacity-50', !accepted);
+            submitBtn.classList.toggle('bg-gray-300', !accepted);
             submitBtn.classList.toggle('cursor-not-allowed', !accepted);
+            submitBtn.classList.toggle('bg-primary-teal', accepted);
+            submitBtn.classList.toggle('hover:bg-teal-800', accepted);
         };
 
         sync();
@@ -556,6 +557,9 @@ const renderScholarshipFormEditable = () => {
         );
         if (!uploadValidation.valid) {
             showErrorToast(uploadValidation.firstError || 'Dokumen pendukung wajib dilengkapi.');
+            // The upload fields live on step 3 — take the student there.
+            currentStep = 3;
+            render();
             return;
         }
 
@@ -577,12 +581,12 @@ const renderScholarshipFormEditable = () => {
                     void renderScholarshipForm();
                 }, 1500);
             } else {
-                const errorMsg = await parseApiError(res, 'Gagal mengirim pengajuan');
+                const errorMsg = await parseApiError(res, 'Pengajuan belum dapat dikirim. Silakan coba lagi.');
                 showErrorToast(errorMsg);
             }
         } catch (e) {
             console.error(e);
-            showErrorToast('Terjadi kesalahan sistem.');
+            showErrorToast(describeFetchFailure(e));
         }
     };
 
@@ -594,10 +598,10 @@ const renderScholarshipFormEditable = () => {
 // which step is current and which are done, instead of an unlabeled div grid.
 const renderScholarshipStepper = (currentStep: number): string => {
     const steps: Array<{ number: number; label: string }> = [
-        { number: 1, label: 'Biodata' },
-        { number: 2, label: 'Keluarga' },
-        { number: 3, label: 'Akademik' },
-        { number: 4, label: 'Submit' },
+        { number: 1, label: 'Profil SSO' },
+        { number: 2, label: 'Data Keluarga' },
+        { number: 3, label: 'Data Pengajuan' },
+        { number: 4, label: 'Tinjau Pengajuan' },
     ];
 
     return `
@@ -628,6 +632,8 @@ const renderScholarshipStepper = (currentStep: number): string => {
     `;
 };
 
+const SAVE_BADGE_BASE_CLASS = 'inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold border w-fit';
+
 const badgeToneFor = (state: AutosaveState, status?: string): string => {
     if (status === LETTER_WORKFLOW_STATUS.REVISION) {
         return 'bg-red-50 text-red-700 border-red-100';
@@ -657,42 +663,25 @@ const badgeContentFor = (state: AutosaveState, status?: string): string => {
     return icon + label;
 };
 
+// Same banners as the other letter forms (SKA / Magang / Surat Tugas / PLN).
+const iconAlert = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+
 const renderRevisionBanner = (note?: string | null) => `
-    <div class="bg-amber-50 border border-amber-200 rounded-[24px] p-6 shadow-sm">
-        <div class="flex items-start gap-4">
-            <div class="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                    <line x1="12" y1="9" x2="12" y2="13"></line>
-                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
-            </div>
-            <div>
-                <h3 class="text-sm font-black text-amber-900 uppercase tracking-wide">Catatan Revisi</h3>
-                <p class="mt-2 text-sm text-amber-900 leading-relaxed whitespace-pre-line">
-                    ${escapeHtml(note || 'Pengajuan Anda memerlukan perbaikan. Silakan periksa kembali data dan dokumen sebelum mengirim ulang.')}
-                </p>
-            </div>
+    <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex gap-3">
+        <div class="text-amber-600 shrink-0">${iconAlert}</div>
+        <div>
+            <p class="font-bold text-amber-900">Pengajuan membutuhkan revisi</p>
+            <p class="text-sm text-amber-800 mt-1 whitespace-pre-line">${escapeHtml(note || 'Silakan periksa kembali data dan dokumen pengajuan sebelum mengirim ulang.')}</p>
         </div>
     </div>
 `;
 
 const renderRejectedBanner = (reason?: string | null) => `
-    <div class="bg-red-50 border border-red-200 rounded-[24px] p-6 shadow-sm">
-        <div class="flex items-start gap-4">
-            <div class="w-10 h-10 rounded-full bg-red-100 text-red-700 flex items-center justify-center shrink-0">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="15" y1="9" x2="9" y2="15"></line>
-                    <line x1="9" y1="9" x2="15" y2="15"></line>
-                </svg>
-            </div>
-            <div>
-                <h3 class="text-sm font-black text-red-900 uppercase tracking-wide">Pengajuan Ditolak</h3>
-                <p class="mt-2 text-sm text-red-900 leading-relaxed whitespace-pre-line">
-                    ${escapeHtml(reason || 'Pengajuan ini ditolak. Silakan hubungi staf beasiswa untuk informasi lebih lanjut.')}
-                </p>
-            </div>
+    <div class="bg-red-50 border border-red-200 rounded-2xl p-5 flex gap-3">
+        <div class="text-red-600 shrink-0">${iconAlert}</div>
+        <div>
+            <p class="font-bold text-red-900">Pengajuan ditolak</p>
+            <p class="text-sm text-red-800 mt-1 whitespace-pre-line">${escapeHtml(reason || 'Pengajuan ini telah ditolak.')}</p>
         </div>
     </div>
 `;
