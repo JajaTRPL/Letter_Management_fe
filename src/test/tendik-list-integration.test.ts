@@ -169,6 +169,29 @@ describe('Riwayat Tendik list integration (CP6B history)', () => {
         expect(riwRows()?.textContent).toContain('Belum ada riwayat');
     });
 
+    it('offers a 1 Bulan / 3 Bulan / Semua period filter that refetches with ?period=', async () => {
+        const { apiFetch } = await import('../shared/api-client');
+        const fetchMock = vi.mocked(apiFetch);
+        m.riwayatByScope = { mine: [task({ id: 1, status: 'Completed' })] };
+        await renderRiwayatTendik('tendik');
+        await flush();
+
+        const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.riwayat-period'));
+        expect(buttons.map((b) => b.textContent?.trim())).toEqual(['1 Bulan', '3 Bulan', 'Semua']);
+        expect(buttons.find((b) => b.dataset.period === 'all')?.getAttribute('aria-pressed')).toBe('true');
+        expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/api/tendik/riwayat?scope=mine&period=all');
+
+        buttons.find((b) => b.dataset.period === '1m')!.click();
+        await flush();
+        expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/api/tendik/riwayat?scope=mine&period=1m');
+        expect(document.querySelector('.riwayat-period[data-period="1m"]')?.getAttribute('aria-pressed')).toBe('true');
+
+        // Switching tab keeps the chosen period.
+        (document.querySelector('.riwayat-tab[data-scope="team"]') as HTMLElement).click();
+        await flush();
+        expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/api/tendik/riwayat?scope=team&period=1m');
+    });
+
     it('never exposes raw storage URLs, markers, or unsafe embeds', async () => {
         m.riwayatByScope = { mine: [task({ id: 1 })] };
         await renderRiwayatTendik('tendik');

@@ -13,7 +13,7 @@ const STATUS_MESSAGES: Record<number, string> = {
     404: 'Data yang diminta tidak ditemukan. Muat ulang halaman lalu coba lagi.',
     408: 'Permintaan terlalu lama diproses. Periksa koneksi Anda lalu coba lagi.',
     409: 'Data pengajuan sudah berubah. Muat ulang halaman lalu coba lagi.',
-    413: 'Ukuran file yang diunggah terlalu besar. Perkecil ukuran file (maksimal 2 MB per dokumen) lalu coba lagi.',
+    413: 'Ukuran file yang diunggah terlalu besar. Perkecil ukuran file (total maksimal 15 MB untuk semua dokumen) lalu coba lagi.',
     419: 'Sesi Anda telah berakhir. Muat ulang halaman lalu coba lagi.',
     422: 'Data yang dikirim belum valid. Periksa kembali isian Anda.',
     429: 'Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.',

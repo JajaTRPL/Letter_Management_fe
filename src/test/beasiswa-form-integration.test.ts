@@ -150,8 +150,8 @@ describe('Surat Permohonan Beasiswa Mahasiswa form integration (CP5D)', () => {
         selectFormFile('transkrip_nilai', createFormFile('notes.txt', 'text/plain'));
         expect(m.toasts).toContain('Transkrip Nilai harus berupa file PDF.');
 
-        selectFormFile('transkrip_nilai', createFormFile('big.pdf', 'application/pdf', 2 * 1024 * 1024 + 1));
-        expect(m.toasts).toContain('Ukuran Transkrip Nilai maksimal 2 MB.');
+        selectFormFile('transkrip_nilai', createFormFile('big.pdf', 'application/pdf', 5 * 1024 * 1024 + 1));
+        expect(m.toasts).toContain('Ukuran Transkrip Nilai maksimal 5 MB.');
 
         selectFormFile('transkrip_nilai', createFormFile('transkrip.pdf'));
         expect(document.getElementById('transkrip_nilai-status')?.textContent).toContain('transkrip.pdf');

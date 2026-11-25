@@ -155,7 +155,7 @@ describe('Surat Pengantar Magang Mahasiswa form integration', () => {
         ]);
     });
 
-    it('accepts PDFs, rejects non-PDF files, rejects files over 2 MB, and displays selected filenames', async () => {
+    it('accepts PDFs, rejects non-PDF files, rejects files over the per-document cap, and displays selected filenames', async () => {
         await mount();
         goToDetailStep();
 
@@ -167,9 +167,9 @@ describe('Surat Pengantar Magang Mahasiswa form integration', () => {
 
         selectFormFile(
             'proposal_kegiatan_magang',
-            createFormFile('too-large.pdf', 'application/pdf', 2 * 1024 * 1024 + 1),
+            createFormFile('too-large.pdf', 'application/pdf', 15 * 1024 * 1024 + 1),
         );
-        expect(m.warnings).toContain('Ukuran Proposal Kegiatan Magang maksimal 2 MB.');
+        expect(m.warnings).toContain('Ukuran Proposal Kegiatan Magang maksimal 15 MB.');
     });
 
     it('reopens draft metadata as a safe filename only', async () => {

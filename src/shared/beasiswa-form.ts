@@ -1,5 +1,6 @@
 import {
     getSelectedSupportingDocumentFile,
+    perDocumentMaxBytes,
     type SupportingDocumentUploadDefinition,
     type SupportingDocumentUploadState,
 } from './supporting-document-upload';
@@ -42,7 +43,7 @@ export const BEASISWA_SUPPORTING_DOCUMENT_UPLOADS: readonly SupportingDocumentUp
         label: 'Transkrip Nilai',
         requiredOnSubmit: true,
         accept: 'application/pdf',
-        maxSizeBytes: 2 * 1024 * 1024,
+        maxSizeBytes: perDocumentMaxBytes(3),
     },
     {
         key: 'slip_gaji_ayah',
@@ -50,7 +51,7 @@ export const BEASISWA_SUPPORTING_DOCUMENT_UPLOADS: readonly SupportingDocumentUp
         label: 'Slip Gaji / Penghasilan Ayah/Wali',
         requiredOnSubmit: true,
         accept: 'application/pdf',
-        maxSizeBytes: 2 * 1024 * 1024,
+        maxSizeBytes: perDocumentMaxBytes(3),
     },
     {
         key: 'slip_gaji_ibu',
@@ -58,7 +59,7 @@ export const BEASISWA_SUPPORTING_DOCUMENT_UPLOADS: readonly SupportingDocumentUp
         label: 'Slip Gaji / Penghasilan Ibu',
         requiredOnSubmit: true,
         accept: 'application/pdf',
-        maxSizeBytes: 2 * 1024 * 1024,
+        maxSizeBytes: perDocumentMaxBytes(3),
     },
 ];
 

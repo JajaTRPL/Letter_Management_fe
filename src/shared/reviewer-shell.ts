@@ -232,6 +232,7 @@ export async function renderReviewerShell<Application>(
             cleanupCallbacks.push(attachSupportingDocumentGallery(
                 view.supportingGalleryRootId,
                 supportingDocuments,
+                { onDownloadError: (message) => showError(message) },
             ));
         }
 
@@ -416,7 +417,7 @@ function renderSupportingDocumentsCard(
                 ${renderSupportingDocumentGallery(
                     view.supportingGalleryRootId,
                     supportingDocuments,
-                    { emptyLabel },
+                    { emptyLabel, allowDownload: true },
                 )}
             </div>
         </div>

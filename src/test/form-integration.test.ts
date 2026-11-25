@@ -146,7 +146,7 @@ describe('Surat Tugas Mahasiswa form integration', () => {
         ]);
     });
 
-    it('accepts PDFs, rejects non-PDF files, rejects files over 2 MB, and displays selected filenames', async () => {
+    it('accepts PDFs, rejects non-PDF files, rejects files over the per-document cap, and displays selected filenames', async () => {
         await mount();
         goToDetailStep();
 
@@ -158,9 +158,9 @@ describe('Surat Tugas Mahasiswa form integration', () => {
 
         selectFormFile(
             'surat_pengantar_magang',
-            createFormFile('too-large.pdf', 'application/pdf', 2 * 1024 * 1024 + 1),
+            createFormFile('too-large.pdf', 'application/pdf', 7.5 * 1024 * 1024 + 1),
         );
-        expect(m.warnings).toContain('Ukuran Surat Pengantar Magang maksimal 2 MB.');
+        expect(m.warnings).toContain('Ukuran Surat Pengantar Magang maksimal 7.5 MB.');
     });
 
     it('reopens draft metadata as safe filenames only', async () => {

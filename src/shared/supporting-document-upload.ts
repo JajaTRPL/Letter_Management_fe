@@ -8,6 +8,20 @@ import { textClass } from './design-system';
 
 const PDF_MIME_TYPE = 'application/pdf';
 
+/**
+ * Total upload budget for all supporting documents of one letter type.
+ * Mirrors backend LetterAttachmentDefinitionRegistry::TOTAL_BUDGET_KB.
+ */
+export const SUPPORTING_DOCUMENT_TOTAL_BUDGET_KB = 15 * 1024;
+
+/**
+ * Per-file cap when the total budget is split evenly across `slotCount`
+ * documents (3 slots → 5 MB each). Mirrors the backend's intdiv().
+ */
+export function perDocumentMaxBytes(slotCount: number): number {
+    return Math.floor(SUPPORTING_DOCUMENT_TOTAL_BUDGET_KB / Math.max(1, slotCount)) * 1024;
+}
+
 export interface SupportingDocumentUploadDefinition {
     key: string;
     inputName: string;

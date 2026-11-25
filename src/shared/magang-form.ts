@@ -1,5 +1,6 @@
 import {
     getSelectedSupportingDocumentFile,
+    perDocumentMaxBytes,
     type SupportingDocumentUploadDefinition,
     type SupportingDocumentUploadState,
 } from './supporting-document-upload';
@@ -54,7 +55,7 @@ export const MAGANG_SUPPORTING_DOCUMENT_UPLOADS: readonly SupportingDocumentUplo
         label: 'Proposal Kegiatan Magang',
         requiredOnSubmit: true,
         accept: 'application/pdf',
-        maxSizeBytes: 2 * 1024 * 1024,
+        maxSizeBytes: perDocumentMaxBytes(1),
     },
 ];
 

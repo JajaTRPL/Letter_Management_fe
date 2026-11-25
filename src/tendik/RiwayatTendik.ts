@@ -37,6 +37,17 @@ const RIWAYAT_SCOPES: Record<RiwayatScope, { label: string; emptyText: string }>
     team: { label: 'Riwayat Tim', emptyText: 'Belum ada riwayat pengajuan dalam tim Anda.' },
 };
 
+export type RiwayatPeriod = '1m' | '3m' | 'all';
+
+/** Period filter, based on "Tanggal Masuk"; filtered server-side (?period=). */
+export const RIWAYAT_PERIODS: Record<RiwayatPeriod, string> = {
+    '1m': '1 Bulan',
+    '3m': '3 Bulan',
+    all: 'Semua',
+};
+
+const DEFAULT_PERIOD: RiwayatPeriod = 'all';
+
 const LIST_ID_PREFIX = 'riwayat-tendik-list';
 const LIST_ROWS_ID = `${LIST_ID_PREFIX}-rows`;
 
@@ -54,14 +65,17 @@ const resolveTendikReviewRenderer = (letterType: string): TendikReviewRenderer |
 const hasDetail = (letterType: string): boolean => resolveTendikReviewRenderer(letterType) !== null;
 
 export const renderRiwayatTendik = async (role: string): Promise<void> => {
-    await loadRiwayatScope(role, 'mine');
+    await loadRiwayatScope(role, 'mine', DEFAULT_PERIOD);
 };
 
-const loadRiwayatScope = async (role: string, scope: RiwayatScope): Promise<void> => {
+const loadRiwayatScope = async (role: string, scope: RiwayatScope, period: RiwayatPeriod): Promise<void> => {
     const shell = (rowsInner: string, items: readonly TendikListItem[], state = createListQueryState({ pageSize: 10 })): string => `
         <div class="w-full max-w-6xl mx-auto pb-12 animate-fade-in space-y-6">
             <p class="text-gray-600 text-sm mb-4">Daftar pengajuan surat yang telah diproses</p>
-            ${renderTabs(scope)}
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+                ${renderTabs(scope)}
+                ${renderPeriodFilter(period)}
+            </div>
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 <div class="px-7 py-5 border-b border-gray-50 bg-[#F8FAFC]/50">
                     ${renderListToolbar(listConfig(scope, items), state)}
@@ -76,7 +90,7 @@ const loadRiwayatScope = async (role: string, scope: RiwayatScope): Promise<void
 
     let items: TendikListItem[] = [];
     try {
-        const response = await apiFetch(`/api/tendik/riwayat?scope=${scope}`);
+        const response = await apiFetch(`/api/tendik/riwayat?scope=${scope}&period=${period}`);
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || 'Riwayat belum berhasil dimuat. Coba muat ulang halaman.');
         items = toTendikListItems(data.tasks);
@@ -101,7 +115,8 @@ const loadRiwayatScope = async (role: string, scope: RiwayatScope): Promise<void
         bindLihatDetailButtons();
     };
 
-    bindTabs(role, scope);
+    bindTabs(role, scope, period);
+    bindPeriodFilter(role, scope, period);
     attachListControls(queryState, config, refresh);
     refresh();
 };
@@ -133,7 +148,7 @@ const listConfig = (scope: RiwayatScope, items: readonly TendikListItem[]): List
 });
 
 const renderTabs = (activeScope: RiwayatScope): string => `
-    <div class="flex items-center gap-0 mb-6 bg-white rounded-xl overflow-hidden border border-gray-200 w-fit shadow-sm">
+    <div class="flex items-center gap-0 bg-white rounded-xl overflow-hidden border border-gray-200 w-fit shadow-sm">
         ${(Object.keys(RIWAYAT_SCOPES) as RiwayatScope[]).map((scope) => {
             const isActive = scope === activeScope;
             return `
@@ -145,18 +160,44 @@ const renderTabs = (activeScope: RiwayatScope): string => `
     </div>
 `;
 
+const renderPeriodFilter = (activePeriod: RiwayatPeriod): string => `
+    <div class="flex items-center gap-2" data-riwayat-period-filter>
+        <span class="text-xs font-bold text-gray-500">Periode</span>
+        <div role="group" aria-label="Periode riwayat" class="flex items-center gap-0 bg-white rounded-xl overflow-hidden border border-gray-200 w-fit shadow-sm">
+            ${(Object.keys(RIWAYAT_PERIODS) as RiwayatPeriod[]).map((period) => {
+                const isActive = period === activePeriod;
+                return `
+                    <button class="riwayat-period ${segmentedTabClass(isActive)}" data-period="${period}" type="button" aria-pressed="${isActive ? 'true' : 'false'}">
+                        ${RIWAYAT_PERIODS[period]}
+                    </button>
+                `;
+            }).join('')}
+        </div>
+    </div>
+`;
+
 const renderLoading = (): string => `
     <div class="flex items-center justify-center min-h-[300px]">
         <div class="h-12 w-12 ${SPINNER_CLASS}"></div>
     </div>
 `;
 
-const bindTabs = (role: string, activeScope: RiwayatScope): void => {
+const bindTabs = (role: string, activeScope: RiwayatScope, period: RiwayatPeriod): void => {
     document.querySelectorAll<HTMLElement>('.riwayat-tab').forEach((button) => {
         button.addEventListener('click', () => {
             const nextScope = button.dataset.scope as RiwayatScope | undefined;
             if (!nextScope || nextScope === activeScope) return;
-            void loadRiwayatScope(role, nextScope);
+            void loadRiwayatScope(role, nextScope, period);
+        });
+    });
+};
+
+const bindPeriodFilter = (role: string, scope: RiwayatScope, activePeriod: RiwayatPeriod): void => {
+    document.querySelectorAll<HTMLElement>('.riwayat-period').forEach((button) => {
+        button.addEventListener('click', () => {
+            const nextPeriod = button.dataset.period as RiwayatPeriod | undefined;
+            if (!nextPeriod || !(nextPeriod in RIWAYAT_PERIODS) || nextPeriod === activePeriod) return;
+            void loadRiwayatScope(role, scope, nextPeriod);
         });
     });
 };

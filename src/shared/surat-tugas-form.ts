@@ -1,5 +1,6 @@
 import {
     getSelectedSupportingDocumentFile,
+    perDocumentMaxBytes,
     type SupportingDocumentUploadDefinition,
     type SupportingDocumentUploadState,
 } from './supporting-document-upload';
@@ -41,7 +42,7 @@ export const SURAT_TUGAS_SUPPORTING_DOCUMENT_UPLOADS: readonly SupportingDocumen
         label: 'Proposal Kegiatan Magang',
         requiredOnSubmit: true,
         accept: 'application/pdf',
-        maxSizeBytes: 2 * 1024 * 1024,
+        maxSizeBytes: perDocumentMaxBytes(2),
     },
     {
         key: 'surat_pengantar_magang',
@@ -49,7 +50,7 @@ export const SURAT_TUGAS_SUPPORTING_DOCUMENT_UPLOADS: readonly SupportingDocumen
         label: 'Surat Pengantar Magang',
         requiredOnSubmit: true,
         accept: 'application/pdf',
-        maxSizeBytes: 2 * 1024 * 1024,
+        maxSizeBytes: perDocumentMaxBytes(2),
     },
 ];
 

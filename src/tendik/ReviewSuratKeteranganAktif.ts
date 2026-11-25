@@ -21,6 +21,7 @@ import {
     resolveReviewerOrigin,
     type ReviewerNavigationOptions,
 } from '../shared/reviewer-navigation';
+import { TENDIK_READ_ONLY_MESSAGE, tendikViewerCanAct } from '../shared/tendik-viewer-access';
 
 export const renderReviewSuratKeteranganAktif = async (
     applicationId: number,
@@ -36,7 +37,9 @@ export const renderReviewSuratKeteranganAktif = async (
         buildView: (app) => {
             const identity = getSkaReviewerIdentity(app);
             const endpointPrefix = `/api/tendik/surat-keterangan-aktif/${applicationId}`;
-            const canAct = app.status === LETTER_WORKFLOW_STATUS.SUBMITTED;
+            const isTendikStage = app.status === LETTER_WORKFLOW_STATUS.SUBMITTED;
+            const viewerCanAct = tendikViewerCanAct(app);
+            const canAct = isTendikStage && viewerCanAct;
             const actions = canAct
                 ? [
                     ...createSkaTextActions({
@@ -57,7 +60,9 @@ export const renderReviewSuratKeteranganAktif = async (
                 generatedPreviewRootId: 'aktif-tendik-generated-letter-preview',
                 generatedPreviewEndpointUrl: `${endpointPrefix}/generated-preview`,
                 actionTitle: 'Tindakan Verifikasi',
-                unavailableMessage: `Pengajuan berada pada status ${statusLabel(app)}, sehingga tindakan Tendik tidak tersedia.`,
+                unavailableMessage: isTendikStage && !viewerCanAct
+                    ? TENDIK_READ_ONLY_MESSAGE
+                    : `Pengajuan berada pada status ${statusLabel(app)}, sehingga tindakan Tendik tidak tersedia.`,
                 actions,
                 actionNote: canAct
                     ? 'Pastikan data pengajuan sudah sesuai sebelum melanjutkan. Nomor surat wajib diisi manual saat menyetujui pengajuan.'

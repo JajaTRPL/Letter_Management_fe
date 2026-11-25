@@ -21,6 +21,7 @@ import {
     resolveReviewerOrigin,
     type ReviewerNavigationOptions,
 } from '../shared/reviewer-navigation';
+import { TENDIK_READ_ONLY_MESSAGE, tendikViewerCanAct } from '../shared/tendik-viewer-access';
 
 export const renderReviewSuratPengantarMagang = async (
     applicationId: number,
@@ -36,7 +37,9 @@ export const renderReviewSuratPengantarMagang = async (
         buildView: (app) => {
             const identity = getMagangReviewerIdentity(app);
             const endpointPrefix = `/api/tendik/surat-pengantar-magang/${applicationId}`;
-            const canAct = app.status === LETTER_WORKFLOW_STATUS.SUBMITTED;
+            const isTendikStage = app.status === LETTER_WORKFLOW_STATUS.SUBMITTED;
+            const viewerCanAct = tendikViewerCanAct(app);
+            const canAct = isTendikStage && viewerCanAct;
             const actions = canAct
                 ? [
                     ...createMagangTextActions({
@@ -58,7 +61,9 @@ export const renderReviewSuratPengantarMagang = async (
                 generatedPreviewRootId: 'magang-tendik-generated-letter-preview',
                 generatedPreviewEndpointUrl: `${endpointPrefix}/generated-preview`,
                 actionTitle: 'Tindakan Verifikasi',
-                unavailableMessage: `Pengajuan berada pada status ${statusLabel(app)}, sehingga tindakan Tendik tidak tersedia.`,
+                unavailableMessage: isTendikStage && !viewerCanAct
+                    ? TENDIK_READ_ONLY_MESSAGE
+                    : `Pengajuan berada pada status ${statusLabel(app)}, sehingga tindakan Tendik tidak tersedia.`,
                 actions,
                 actionNote: canAct
                     ? 'Pastikan data dan proposal sudah sesuai sebelum melanjutkan. Nomor surat wajib diisi manual saat menyetujui pengajuan.'

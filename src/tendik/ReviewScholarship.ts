@@ -17,6 +17,7 @@ import {
     type ReviewerNavigationOptions,
 } from '../shared/reviewer-navigation';
 import { renderReviewerShell, type ReviewerShellAction, APPROVE_ACTION_BUTTON_CLASS, APPROVE_ACTION_HEADER_CLASS, APPROVE_ACTION_CONFIRM_CLASS } from '../shared/reviewer-shell';
+import { TENDIK_READ_ONLY_MESSAGE, tendikViewerCanAct } from '../shared/tendik-viewer-access';
 
 export const renderReviewScholarship = async (
     applicationId: number,
@@ -32,7 +33,9 @@ export const renderReviewScholarship = async (
         buildView: ({ application, student }) => {
             const identity = getBeasiswaReviewerIdentity(application, student);
             const endpointPrefix = beasiswaReviewerEndpointPrefix('tendik', applicationId);
-            const canAct = application.status === LETTER_WORKFLOW_STATUS.SUBMITTED;
+            const isTendikStage = application.status === LETTER_WORKFLOW_STATUS.SUBMITTED;
+            const viewerCanAct = tendikViewerCanAct(application);
+            const canAct = isTendikStage && viewerCanAct;
             const actions = canAct
                 ? [
                     ...createBeasiswaTextActions({
@@ -55,7 +58,9 @@ export const renderReviewScholarship = async (
                 generatedPreviewRootId: 'beasiswa-generated-letter-preview',
                 generatedPreviewEndpointUrl: beasiswaGeneratedPreviewEndpoint('tendik', applicationId),
                 actionTitle: 'Tindakan Verifikasi',
-                unavailableMessage: `Pengajuan berada pada status ${statusLabel(application.status)}, sehingga tindakan Tendik tidak tersedia.`,
+                unavailableMessage: isTendikStage && !viewerCanAct
+                    ? TENDIK_READ_ONLY_MESSAGE
+                    : `Pengajuan berada pada status ${statusLabel(application.status)}, sehingga tindakan Tendik tidak tersedia.`,
                 actions,
                 actionNote: canAct
                     ? 'Pastikan seluruh dokumen telah sesuai dengan persyaratan sebelum melanjutkan. Nomor surat wajib diisi manual saat menyetujui pengajuan.'
